@@ -1,0 +1,4 @@
+RewriteEngine On
+
+# Reindirizza tutte le richieste che iniziano con /api/ al file bridge.php
+RewriteRule ^api/(.*)$ api_bridge.php [QSA,L]

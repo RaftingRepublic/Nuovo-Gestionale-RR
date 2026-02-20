@@ -1,0 +1,136 @@
+🛠️ Guida Ripristino Backend (Golden Image)
+📋 Prerequisiti
+Sistema Operativo: Windows
+
+Python: Versione 3.10 (Tassativa. La 3.11+ o la 3.9 possono creare problemi con Paddle).
+
+Powershell: Eseguita come Amministratore (consigliato).
+
+FASE 1: Tabula Rasa (Pulizia)
+Se esiste già una cartella venv, distruggila per evitare "residui tossici".
+
+PowerShell
+cd C:\Users\theob\Desktop\quartoRRgestionale\backend
+Remove-Item -Recurse -Force venv -ErrorAction SilentlyContinue
+FASE 2: Creazione del "Golden File"
+Crea un file chiamato requirements_lock.txt nella cartella backend. Copia e incolla esattamente questo contenuto. Contiene le versioni specifiche che garantiscono la pace tra Paddle, YOLO e GLiNER.
+
+File: backend/requirements_lock.txt
+
+Plaintext
+# --- IL BLOCCO FONDAMENTA (Non toccare mai) ---
+# Numpy 1.26.4 è l'unica che piace a Paddle. La 2.0 rompe tutto.
+numpy==1.26.4
+# OpenCV bloccato a una versione stabile che non richiede Numpy 2
+opencv-python-headless==4.8.0.76
+# Protobuf specifico per evitare conflitti con Paddle
+protobuf==3.20.2
+
+# --- AI CORE: PADDLE (OCR) ---
+paddlepaddle==2.6.2
+paddleocr==2.7.3
+
+# --- AI CORE: PYTORCH CPU (No GPU) ---
+# Versioni stabili per CPU su Windows
+torch==2.4.1
+torchvision==0.19.1
+torchaudio==2.4.1
+
+# --- AI CORE: YOLO (Vision) ---
+# Versione 8.3.20 necessaria per leggere i modelli v11 (fix errore C3k2)
+ultralytics==8.3.20
+
+# --- AI CORE: GLINER (Data Extraction) ---
+# Versione legacy 0.2.7 per stabilità
+gliner==0.2.7
+# HuggingFace Hub bloccato per compatibilità con GLiNER 0.2.7
+huggingface_hub==0.22.2
+
+# --- FRAMEWORK & UTILS ---
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pillow
+pyyaml==6.0.2
+reportlab
+aiofiles
+python-jose
+passlib[bcrypt]
+email-validator
+pytesseract
+tqdm
+attrdict
+lmdb
+shapely
+scikit-image
+imgaug
+pyclipper
+FASE 3: Installazione Chirurgica
+Questa è la parte critica. Usiamo un comando unico che forza PyTorch a scaricarsi dal repository CPU (evitando l'errore shm.dll).
+
+Crea e attiva l'ambiente:
+
+PowerShell
+py -3.10 -m venv venv
+.\venv\Scripts\activate
+Aggiorna pip (opzionale ma consigliato):
+
+PowerShell
+python -m pip install --upgrade pip setuptools wheel
+IL COMANDO MAGICO (Installazione):
+
+PowerShell
+pip install -r requirements_lock.txt --extra-index-url https://download.pytorch.org/whl/cpu
+FASE 4: Verifica (Check Full Stack)
+Non avviare il server alla cieca. Usa lo script di diagnostica che abbiamo perfezionato.
+
+Assicurati che tools/check_full_stack.py sia aggiornato (quello senza show_log deprecato).
+
+Esegui:
+
+PowerShell
+python tools/check_full_stack.py
+Cosa devi vedere:
+
+✅ Numpy: 1.26.4
+
+✅ Paddle Core: 2.6.2
+
+✅ PaddleOCR: Istanziato OK
+
+✅ PyTorch: 2.4.1+cpu
+
+✅ GLINER: Importato OK
+
+🚀 AMBIENTE STABILE
+
+FASE 5: Avvio
+Se la Fase 4 è verde:
+
+PowerShell
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+⚠️ Risoluzione Problemi Comuni (FAQ)
+Errore shm.dll o WinError 127:
+
+Causa: Hai installato PyTorch standard invece di quello CPU.
+
+Soluzione: pip uninstall torch torchvision torchaudio poi riesegui il comando della Fase 3.
+
+Errore AttributeError: C3k2 (YOLO):
+
+Causa: ultralytics è troppo vecchio (< 8.3).
+
+Soluzione: pip install ultralytics==8.3.20 --no-deps.
+
+Errore GLiNER missing arguments:
+
+Causa: huggingface_hub è troppo nuovo.
+
+Soluzione: pip install huggingface_hub==0.22.2 --no-deps.
+
+Errore Numpy 2.x detected:
+
+Causa: Qualche pacchetto ha aggiornato Numpy di nascosto.
+
+Soluzione: pip install "numpy==1.26.4".

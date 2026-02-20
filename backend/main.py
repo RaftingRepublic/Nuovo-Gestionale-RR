@@ -1,0 +1,76 @@
+### backend/main.py
+# --- FIX CRITICO WINDOWS ---
+# Importiamo torch per primo per evitare conflitti DLL (WinError 127) 
+# con altre lib come Paddle o OpenCV.
+import os
+import sys
+try:
+    import torch
+except ImportError:
+    pass
+# ---------------------------
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Import dei Router
+from app.api.v1.endpoints import vision
+from app.api.v1.endpoints import registration
+
+# --- NUOVO: Importiamo il router delle risorse ---
+try:
+    from app.api.v1.endpoints import resources
+except ImportError as e:
+    print(f"⚠️ ERRORE IMPORT RESOURCES: {e}")
+    resources = None
+# -----------------------------------------------
+
+app = FastAPI(title="AI Modular Backend", version="0.2.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def read_root():
+    return {"status": "active", "message": "Backend Operativo v2"}
+
+# --- HEALTH CHECK per monitoring produzione ---
+@app.get("/api/v1/health")
+def health_check():
+    ai_status = getattr(vision, 'AI_AVAILABLE', False)
+    return {
+        "status": "healthy",
+        "ai_available": ai_status,
+        "version": "0.2.0"
+    }
+
+# --- REGISTRAZIONE ROTTE ---
+
+# 1. Vision AI
+app.include_router(vision.router, prefix="/api/v1/vision", tags=["AI Vision"])
+
+# 2. Registration (Ha già prefix interno, ma per sicurezza mappiamo su /api/v1)
+# Nota: registration.router ha già "/registration" nel suo file, quindi qui usiamo /api/v1
+app.include_router(registration.router, prefix="/api/v1", tags=["Registration"])
+
+# 3. Resources (Gestione Staff e Turni)
+if resources:
+    app.include_router(resources.router, prefix="/api/v1/resources", tags=["Resources"])
+else:
+    print("❌ Router Resources NON caricato. Controlla gli errori sopra.")
+
+# 4. Reservations & Overrides
+from app.api.v1.endpoints import reservations
+app.include_router(reservations.router, prefix="/api/v1/reservations", tags=["Reservations"])
+
+# --- LOG AVVIO ---
+print("\n" + "="*60)
+print("🚀 BACKEND AVVIATO")
+print(f"   AI Vision: {'✅ Abilitato' if getattr(vision, 'AI_AVAILABLE', False) else '❌ Disabilitato (librerie non installate)'}")
+print(f"   Resources: {'✅ Caricato' if resources else '❌ Non caricato'}")
+print("="*60 + "\n")

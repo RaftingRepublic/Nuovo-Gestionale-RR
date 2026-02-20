@@ -1,0 +1,32 @@
+# ============================================
+# DIPENDENZE PRODUZIONE (SENZA AI / LEGGERO)
+# ============================================
+# Usa questo file per server con risorse limitate (1GB RAM)
+# Le funzioni AI (Vision/OCR) saranno disabilitate ma il codice resta
+#
+# Per installare:
+#   pip install -r requirements_production.txt
+# ============================================
+
+# --- APP FRAMEWORK ---
+fastapi
+uvicorn[standard]
+gunicorn
+python-multipart
+python-dotenv
+pillow
+reportlab
+aiofiles
+requests
+httpx
+pydantic
+email-validator
+starlette
+typing-extensions
+
+# --- OPZIONALE: Abilita se necessario ---
+# numpy
+# opencv-python-headless
+
+# --- AZURE AI (Document Intelligence per OCR documenti) ---
+azure-ai-documentintelligence

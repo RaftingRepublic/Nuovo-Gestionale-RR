@@ -1,0 +1,17 @@
+# backend/dataset.yaml
+
+# Percorso base dove si trovano i dati (relativo alla cartella backend)
+path: datasets/id_cards
+
+# Dove trovare le immagini di training (relativo a 'path')
+train: train/images
+
+# Dove trovare le immagini di validazione (relativo a 'path')
+val: val/images
+
+# Numero di classi (solo 1: il documento d'identità generico)
+nc: 1
+
+# Nomi delle classi
+names:
+  0: id_card

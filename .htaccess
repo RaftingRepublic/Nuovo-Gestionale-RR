@@ -1,0 +1,21 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # 1. API PROXY 
+    # Tutte le richieste che iniziano con /api/ vengono mandate al bridge PHP
+    RewriteRule ^api/(.*)$ api_bridge.php [QSA,L]
+
+    # 2. SPA ROUTING (Quasar/Vue)
+    # Se il file o la directory richiesta non esiste fisicamente...
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    # ...rimanda tutto a index.html (così Vue Router gestisce l'URL)
+    RewriteRule . index.html [L]
+</IfModule>
+
+# Opzionale: Aumenta limiti PHP se possibile (spesso bloccato su hosting condivisi)
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 20M
+    php_value post_max_size 20M
+</IfModule>

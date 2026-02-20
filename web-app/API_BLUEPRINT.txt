@@ -1,0 +1,550 @@
+1. 🔐 AUTENTICAZIONE (JWT)
+1.1 Login — Ottenimento Token JWT
+Campo	Valore
+Endpoint	/wp-json/jwt-auth/v1/token
+Metodo	POST
+File sorgente	
+
+Login.vue
+Scopo	Autenticazione utente amministrativo al gestionale
+Payload (body JSON):
+json
+{
+  "username": "string",
+  "password": "string"
+}
+Risposta attesa (res.data):
+
+json
+{
+  "token": "string (JWT)",
+  "user_display_name": "string",
+  "roles": "string (es. 'administrator', 'editor')"
+}
+Flusso post-login:
+
+Il token viene salvato in this.$store.user.token
+Il nome viene salvato in this.$store.user.name
+Il ruolo admin viene valutato: ['administrator', 'editor'].includes(res.data.roles)
+Le credenziali vengono persistite in LocalStorage codificate in Base64 (btoa()) con chiavi u e p
+Al prossimo accesso, le credenziali vengono decodificate (atob()) e precompilate nel form
+CAUTION
+
+ANOMALIA CRITICA: Il token JWT viene salvato nello store ma non viene MAI iniettato nelle chiamate successive. Non esistono:
+
+Nessun axios.interceptors.request
+Nessun axios.defaults.headers.common['Authorization']
+Nessun header Authorization: Bearer sulle chiamate verso /wp-json/v2/*
+Questo significa che tutte le API custom WP funzionano senza autenticazione (o l'autenticazione avviene lato server via cookie di sessione WP dopo il login JWT). Le credenziali (username/password) sono salvate in LocalStorage in Base64 (non è crittografia, è reversibile).
+
+2. 📅 CALENDARIO
+2.1 Fetch Eventi Calendario
+Campo	Valore
+Endpoint	/wp-json/v2/calendar
+Endpoint alternativo	/wp-json/v2/calendar/future (se filtro "solo giorni futuri" attivo)
+Metodo	GET
+File sorgente	
+
+Index.vue
+Scopo	Ottenere tutte le prenotazioni/discese programmate per popolare il calendario
+Query params:
+
+Param	Tipo	Note
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data.data): Array di oggetti "ride" con campi:
+
+ride_code, ride_date, ride_time, total_participants
+3. 🚣 ATTIVITÀ / RIDES (Stagione)
+3.1 Fetch Lista Attività (Rides)
+Campo	Valore
+Endpoint	/wp-json/v2/rides/
+Metodo	GET
+File sorgente	
+
+Index.vue
+, 
+
+addRideDialog.vue
+, 
+
+EditRideDialog.vue
+Scopo	Ottenere l'anagrafica di tutte le attività/discese configurate (stagione, codice, date apertura/chiusura, orari, prezzi, colori)
+Query params:
+
+Param	Tipo	Note
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data): Array di oggetti con campi:
+
+
+id
+, 
+
+code
+, name, from_date, to_date, price, duration, 
+
+color
+, enabled
+ride1...ride6 (orari delle discese)
+managed_by
+4. 📋 STAGIONE (Season)
+4.1 Salva/Aggiorna Configurazione Stagione
+Campo	Valore
+Endpoint	/wp-json/v2/season/
+Metodo	POST
+File sorgente	
+
+SeasonRideForm.vue
+Scopo	Salvare le modifiche alla configurazione di una attività stagionale (date, prezzi, orari, colore)
+Payload (body JSON):
+
+json
+{
+  "id": "number",
+  "price": "number",
+  "duration": "number",
+  "code": "string",
+  "fromDate": "string (YYYY-MM-DD)",
+  "toDate": "string (YYYY-MM-DD)",
+  "color": "string (hex, es. #4682dc)",
+  "ride1": "string|null (HH:mm)",
+  "ride2": "string|null (HH:mm)",
+  "ride3": "string|null (HH:mm)",
+  "ride4": "string|null (HH:mm)",
+  "ride5": "string|null (HH:mm)",
+  "ride6": "string|null (HH:mm)",
+  "enabled": "string ('0'|'1')",
+  "managedBy": "string ('Grape'|'Anatre')"
+}
+5. 📦 SOTTOPERIODI (Subseason)
+5.1 Fetch Sottoperiodi di una Attività
+Campo	Valore
+Endpoint	/wp-json/v2/subseason/
+Metodo	GET
+File sorgente	
+
+AddSubseasonButton.vue
+Scopo	Caricare i sottoperiodi (override di orari/prezzi) per una specifica attività
+Query params:
+
+Param	Tipo	Note
+ride_id	number	ID dell'attività madre
+seed	number	Timestamp per cache-busting
+5.2 Crea Sottoperiodo
+Campo	Valore
+Endpoint	/wp-json/v2/subseason/
+Metodo	POST
+File sorgente	
+
+AddSubseasonButton.vue
+Scopo	Creare un nuovo sottoperiodo con orari e prezzo diversi dalla stagione principale
+Payload (body JSON):
+
+json
+{
+  "id": "number (ride_id dell'attività madre)",
+  "price": "number",
+  "days": "array (date o range {from, to} in formato YYYY-MM-DD)",
+  "ride1": "string|null (HH:mm)",
+  "ride2": "string|null (HH:mm)",
+  "ride3": "string|null (HH:mm)",
+  "ride4": "string|null (HH:mm)",
+  "ride5": "string|null (HH:mm)",
+  "ride6": "string|null (HH:mm)"
+}
+5.3 Elimina Sottoperiodo
+Campo	Valore
+Endpoint	/wp-json/v2/subseason/{id}
+Metodo	DELETE
+File sorgente	
+
+SubseasonItem.vue
+Scopo	Eliminare un sottoperiodo specifico
+Parametro URL:
+
+Param	Tipo	Note
+
+id
+number	ID del sottoperiodo da eliminare
+6. 🛒 ORDINI (Orders)
+6.1 Fetch Ordini per Data/Attività/Ora
+Campo	Valore
+Endpoint	/wp-json/v2/orders/
+Metodo	GET
+File sorgente	
+
+OrderList.vue
+Scopo	Caricare la lista ordini per una specifica discesa (data + ora + codice attività)
+Query params:
+
+Param	Tipo	Note
+ride_date	string	Data della discesa
+ride_code	string	Codice attività (es. "RA", "FA")
+ride_time	string	Orario della discesa
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data.data): Array di oggetti ordine.
+
+6.2 Crea Nuovo Ordine (Prenotazione)
+Campo	Valore
+Endpoint	/wp-json/v2/orders/
+Metodo	POST
+File sorgente	
+
+addRideDialog.vue
+Scopo	Creare una nuova prenotazione/ordine da pannello admin
+Payload (body JSON):
+
+json
+{
+  "state": "string ('COMPLETED'|'REDEEMED'|'CANCELLED'|'MANUAL')",
+  "type": "number (1=standard, 2=buono regalo)",
+  "participants": "number",
+  "date": "string (YYYY-MM-DD)",
+  "time": "string (HH:mm)",
+  "code": "string",
+  "fullship": "boolean",
+  "total": "number (€)",
+  "payed": "number (€)",
+  "by": "string ('ADMIN')",
+  "lang": "string ('it'|'en-us')",
+  "payement": {
+    "type": "string ('BONIFICO'|'CASH'|'SUMUP'|'PARTNERS')",
+    "date": "string (YYYY-MM-DD HH:mm)"
+  },
+  "notes": "string",
+  "gift": {
+    "name": "string",
+    "code": "string (auto-generato)"
+  },
+  "ride": {
+    "code": "string (codice attività)"
+  },
+  "user": {
+    "name": "string",
+    "surname": "string",
+    "email": "string",
+    "phone": "string",
+    "cf": "string|null",
+    "sex": "string ('M'|'F')|null",
+    "nationality": "string|null",
+    "birthdate": "string|undefined"
+  },
+  "company": {
+    "name": "string|null",
+    "address": "string|null",
+    "piva": "string|null",
+    "email": "string|null"
+  },
+  "transaction": {
+    "id": "null",
+    "state": "string ('MANUAL')"
+  }
+}
+6.3 Aggiorna Ordine Esistente
+Campo	Valore
+Endpoint	/wp-json/v2/orders/{id}
+Metodo	PATCH
+File sorgente	
+
+EditRideDialog.vue
+Scopo	Aggiornare i dettagli di un ordine esistente (stato, partecipanti, data, prezzo, ecc.)
+Parametro URL: {id} = ID ordine
+
+Payload (body JSON): Stesso schema dell'ordine in §6.2
+
+7. 📝 NOTE
+7.1 Fetch Note
+Campo	Valore
+Endpoint	/wp-json/v2/notes
+Endpoint alternativo	/wp-json/v2/notes/future (se filtro "solo giorni futuri" attivo)
+Metodo	GET
+File sorgente	
+
+Index.vue
+Scopo	Caricare tutte le note del calendario
+Query params:
+
+Param	Tipo	Note
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data): Array di oggetti nota:
+
+
+id
+, title, 
+
+text
+, 
+
+date
+, 
+
+time
+, 
+
+color
+7.2 Crea Nota
+Campo	Valore
+Endpoint	/wp-json/v2/notes/
+Metodo	POST
+File sorgente	
+
+addNoteDialog.vue
+Scopo	Creare una nuova nota nel calendario
+Payload (body JSON):
+
+json
+{
+  "title": "string",
+  "text": "string",
+  "date": "string (YYYY-MM-DD)",
+  "time": "string (HH:mm)"
+}
+7.3 Aggiorna Nota
+Campo	Valore
+Endpoint	/wp-json/v2/notes/{id}
+Metodo	PATCH
+File sorgente	
+
+addNoteDialog.vue
+Scopo	Modificare una nota esistente
+Parametro URL: {id} = ID nota
+
+Payload (body JSON): Stesso schema di §7.2 + 
+
+id
+
+7.4 Elimina Nota
+Campo	Valore
+Endpoint	/wp-json/v2/notes/{id}
+Metodo	DELETE
+File sorgente	
+
+Index.vue
+Scopo	Eliminare una nota dal calendario
+Parametro URL: {id} = ID nota
+
+8. 👥 PARTECIPANTI (Participants)
+8.1 Fetch Partecipanti di un Ordine
+Campo	Valore
+Endpoint	/wp-json/v2/participants/{order_id}
+Metodo	GET
+File sorgente	
+
+ParticipantDialog.vue
+Scopo	Caricare la lista dei partecipanti registrati per un ordine specifico
+Parametro URL: {order_id} = ID ordine
+
+Query params:
+
+Param	Tipo	Note
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data): Array di oggetti partecipante:
+
+
+id
+, uuid, order_id, name, surname, email, phone, cf, sex
+nationality, birthcountry, birthdate, municipality, foreigner
+tutor_name, tutor_surname, registered, contact, email_confirmed
+accepted, accepted_photos, accepted_commercial
+8.2 Fetch Partecipanti per Data (Iscritti Giornalieri)
+Campo	Valore
+Endpoint	/wp-json/v2/participants
+Metodo	GET
+File sorgente	
+
+FiraftDailyButtonList.vue
+Scopo	Ottenere tutti i partecipanti iscritti in un giorno specifico (per vista FiRaft)
+Query params:
+
+Param	Tipo	Note
+
+date
+string	Data nel formato calendario (URL-encoded)
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data.data): Array di partecipanti con name, surname, email, registered_date
+
+8.3 Crea Partecipante
+Campo	Valore
+Endpoint	/wp-json/v2/participants/
+Metodo	POST
+File sorgente	
+
+EditParticipantDialog.vue
+Scopo	Aggiungere un nuovo partecipante a un ordine
+Payload (body JSON):
+
+json
+{
+  "id": "number",
+  "order_id": "number",
+  "name": "string",
+  "surname": "string",
+  "email": "string",
+  "phone": "string",
+  "cf": "string (vuoto se straniero)",
+  "municipality": "string",
+  "foreigner": "number (0|1)",
+  "nationality": "string",
+  "birthcountry": "string",
+  "birthdate": "string (YYYY/MM/DD)",
+  "tutor_name": "string",
+  "tutor_surname": "string",
+  "sex": "string ('M'|'F')",
+  "registered": "string",
+  "contact": "string",
+  "email_confirmed": "string",
+  "accepted": "boolean",
+  "accepted_commercial": "boolean",
+  "accepted_photos": "boolean"
+}
+8.4 Aggiorna Partecipante
+Campo	Valore
+Endpoint	/wp-json/v2/participants/{id}
+Metodo	PATCH
+File sorgente	
+
+EditParticipantDialog.vue
+, 
+
+ParticipantDialog.vue
+Scopo	Aggiornare i dati anagrafici di un partecipante, OPPURE aggiornare solo il flag registered dopo il tesseramento FiRaft
+Parametro URL: {id} = ID partecipante
+
+Payload (body JSON): Stesso schema di §8.3 (aggiornamento completo) oppure solo { "registered": "string" } (dopo tesseramento)
+
+8.5 Elimina Partecipante
+Campo	Valore
+Endpoint	/wp-json/v2/participants/{id}
+Metodo	DELETE
+File sorgente	
+
+ParticipantDialog.vue
+Scopo	Eliminare un partecipante da un ordine (slide-to-delete)
+Parametro URL: {id} = ID partecipante
+
+9. ✅ DISPONIBILITÀ (Availability)
+9.1 Fetch Disponibilità Discesa
+Campo	Valore
+Endpoint	/wp-json/v2/availability/
+Metodo	GET
+File sorgente	
+
+ToggleOpening.vue
+Scopo	Verificare lo stato di disponibilità (aperto/chiuso/auto) di una specifica discesa in un giorno/orario
+Query params:
+
+Param	Tipo	Note
+ride_date	string	Data discesa
+ride_code	string	Codice attività
+ride_time	string	Orario discesa
+seed	number	Timestamp per cache-busting
+Risposta attesa (res.data.data): Array con oggetto { availability: number } — 0=chiuso, 1=aperto, array vuoto = auto
+
+9.2 Salva/Aggiorna Disponibilità
+Campo	Valore
+Endpoint	/wp-json/v2/availability/
+Metodo	POST
+File sorgente	
+
+ToggleOpening.vue
+Scopo	Impostare manualmente la disponibilità (verde/giallo/auto) per una discesa
+Payload (body JSON):
+
+json
+{
+  "ride_date": "string",
+  "ride_code": "string",
+  "ride_time": "string",
+  "availability": "string ('open'|'close'|'auto')"
+}
+10. 🔍 RICERCA ORDINI
+10.1 Cerca Ordini per Nome/Cognome
+Campo	Valore
+Endpoint	/wp-json/v2/find/
+Metodo	GET
+File sorgente	
+
+SearchDialog.vue
+Scopo	Ricerca globale ordini per nome e/o cognome cliente
+Query params:
+
+Param	Tipo	Note
+name	string	Nome del cliente
+surname	string	Cognome del cliente
+Risposta attesa (res.data.data): Array di ordini corrispondenti
+
+11. 🏅 API ESTERNA — FiRaft (Tesseramento FIRAFT)
+WARNING
+
+Questa è un'API esterna non WordPress, con un proprio bearer token hardcodato nel codice.
+
+11.1 Emissione Tessera FiRaft
+Campo	Valore
+URL completo	https://api.firaftbooking.it/extApi/emitCard
+Metodo	POST
+File sorgente	
+
+ParticipantDialog.vue
+Scopo	Emettere la tessera FiRaft (Federazione Italiana Rafting) per un partecipante
+Autenticazione	Authorization: Bearer ●●●●●●●● (token hardcodato nel sorgente)
+Payload (body JSON):
+
+json
+{
+  "nome": "string",
+  "cognome": "string",
+  "email": "string",
+  "data_nascita": "string",
+  "straniero": "number (0|1)",
+  "stato_nascita": "string",
+  "stato_residenza": "string",
+  "comune": "string (solo per italiani)",
+  "sesso": "string ('M'|'F')",
+  "privacy_istituzionale": 1,
+  "privacy_commerciale": 0,
+  "consenso_informato": "boolean",
+  "telefono": "string",
+  "codice_fiscale": "string (solo per italiani, foreigner=0)",
+  "responsabile_minore_nome": "string (solo se età < 18)",
+  "responsabile_minore_cognome": "string (solo se età < 18)",
+  "responsabile_minore_termini": 1
+}
+Post-successo: Viene chiamato PATCH /wp-json/v2/participants/{id} con { registered: '1' } per segnare il partecipante come tesserato nel DB WordPress.
+
+📊 RIEPILOGO ENDPOINTS
+#	Metodo	Endpoint	Scopo
+1	POST	/wp-json/jwt-auth/v1/token	Login JWT
+2	GET	/wp-json/v2/calendar	Fetch calendario
+3	GET	/wp-json/v2/calendar/future	Fetch calendario (solo futuro)
+4	GET	/wp-json/v2/rides/	Lista attività/stagione
+5	POST	/wp-json/v2/season/	Salva configurazione stagione
+6	GET	/wp-json/v2/subseason/	Fetch sottoperiodi
+7	POST	/wp-json/v2/subseason/	Crea sottoperiodo
+8	DELETE	/wp-json/v2/subseason/{id}	Elimina sottoperiodo
+9	GET	/wp-json/v2/orders/	Fetch ordini filtrati
+10	POST	/wp-json/v2/orders/	Crea nuovo ordine
+11	PATCH	/wp-json/v2/orders/{id}	Aggiorna ordine
+12	GET	/wp-json/v2/notes	Fetch note
+13	GET	/wp-json/v2/notes/future	Fetch note (solo futuro)
+14	POST	/wp-json/v2/notes/	Crea nota
+15	PATCH	/wp-json/v2/notes/{id}	Aggiorna nota
+16	DELETE	/wp-json/v2/notes/{id}	Elimina nota
+17	GET	/wp-json/v2/participants/{order_id}	Fetch partecipanti ordine
+18	GET	/wp-json/v2/participants?date=	Fetch iscritti giornalieri
+19	POST	/wp-json/v2/participants/	Crea partecipante
+20	PATCH	/wp-json/v2/participants/{id}	Aggiorna partecipante
+21	DELETE	/wp-json/v2/participants/{id}	Elimina partecipante
+22	GET	/wp-json/v2/availability/	Fetch disponibilità
+23	POST	/wp-json/v2/availability/	Salva disponibilità
+24	GET	/wp-json/v2/find/	Ricerca ordini
+25	POST	api.firaftbooking.it/extApi/emitCard	Emissione tessera FiRaft
+⚠️ NOTE ARCHITETTURALI PER IL PORTING
+IMPORTANT
+
+Punti chiave da indirizzare nella riscrittura Vue 3:
+
+Centralizzare le API — Tutte le 25 chiamate sono sparse in 12 componenti Vue. Creare un service layer (/services/api.ts)
+Gestire l'auth correttamente — Implementare un interceptor Axios che inietti Authorization: Bearer in ogni richiesta
+Eliminare il cache-busting seed — Usare header Cache-Control: no-cache invece di query param timestamp
+Esternalizzare la base URL — Attualmente hardcodata ovunque. Usare variabili d'ambiente (.env)
+Token FiRaft — Spostare il bearer token FiRaft in variabili d'ambiente, mai nel codice sorgente
+Eliminare il salvataggio credenziali in LocalStorage — La persistenza in Base64 delle credenziali è un rischio di sicurezza

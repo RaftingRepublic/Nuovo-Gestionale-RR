@@ -1,0 +1,31 @@
+Questa è un'ottima domanda. Passare dai dati sintetici ai dati reali (Real World Data) è il momento in cui il modello diventa veramente robusto e capace di gestire i casi limite (riflessi, ombre strane, dita che coprono i bordi, fotocamere di bassa qualità).La procedura è ciclica e segue lo schema Collect $\rightarrow$ Label $\rightarrow$ Train $\rightarrow$ Deploy.Ecco la guida passo-passo per quando deciderai di farlo:1. Raccolta Dati (Data Collection)Il tuo sistema è già configurato per farlo automaticamente grazie alla Fase 1.Cosa succede: Ogni volta che usi l'app (sia da ScannerPage che dai test), le immagini grezze vengono salvate in backend/storage/dataset_raw.Azione: Usa l'app intensamente. Scansiona documenti veri (o fac-simile stampati) in condizioni difficili:Luce scarsa.Luce solare diretta (riflessi).Angolazioni estreme.Sfondi disordinati (tavoli pieni di oggetti).Target: Raccogli almeno 50-100 foto reali.2. Etichettatura (Labeling)Qui non possiamo usare lo script automatico. Devi insegnare tu al modello dov'è il documento. Per questo useremo Label Studio, come previsto dalla roadmap.Installa e Avvia:Bashpip install label-studio
+label-studio start
+Crea Progetto:Apri http://localhost:8080.Crea un progetto chiamato "Rafting Real".Importa le immagini dalla cartella backend/storage/dataset_raw.Configura l'Interfaccia (Importante):Nelle impostazioni ("Labeling Interface"), usa un template per Computer Vision > Optical Character Recognition oppure incolla questo codice XML per abilitare i rettangoli ruotati:XML<View>
+  <Image name="image" value="$image"/>
+  <RectangleLabels name="label" toName="image">
+    <Label value="id_card" background="green"/>
+  </RectangleLabels>
+</View>
+Disegna:Per ogni immagine, traccia il rettangolo attorno al documento.Cruciale: Usa lo strumento di rotazione (di solito un pallino sopra il rettangolo) per allineare il box perfettamente ai bordi del documento inclinato.3. Esportazione e OrganizzazioneIn Label Studio, clicca Export e scegli formato YOLO.Scarica lo zip ed estrailo.Ora hai due opzioni:Opzione A (Sostituzione): Cancelli i dati sintetici in backend/datasets/id_cards e metti quelli nuovi.Opzione B (Integrazione - Consigliata): Aggiungi le nuove foto e label alle cartelle esistenti (train e val). Più dati ha, meglio è.Assicurati sempre che la struttura sia:Plaintextdatasets/id_cards/
+├── train/
+│   ├── images/ (foto reali + sintetiche)
+│   └── labels/ (txt reali + sintetici)
+└── val/
+    ├── ...
+4. Fine-Tuning (Il "Ritocco")Non dobbiamo ricominciare da zero. Possiamo prendere il modello che hai già addestrato (id_card_detector_v11n.pt) e renderlo più intelligente. Questo si chiama Fine-Tuning.Modifica leggermente lo script backend/tools/train_yolo.py:Python# Invece di caricare "yolo11n-obb.pt" (che è generico),
+# carichiamo il TUO modello attuale come punto di partenza.
+
+# Vecchia riga:
+# model = YOLO("yolo11n-obb.pt")
+
+# Nuova riga (assicurati che il percorso sia corretto):
+model = YOLO("../assets/models/id_card_detector_v11n.pt") 
+
+# ... il resto dello script rimane uguale ...
+results = model.train(
+    data=DATASET_YAML, 
+    epochs=50,  # Bastano meno epoche per il fine-tuning
+    imgsz=640,
+    # ...
+)
+5. DeployAl termine, lo script copierà il nuovo best.pt in assets/models, sovrascrivendo quello vecchio. Il backend userà immediatamente la versione migliorata senza bisogno di modificare una riga di codice dell'applicazione.Riepilogo ProceduraRaccogli foto reali usando l'app (vanno in dataset_raw).Annota con Label Studio (disegna i box ruotati).Unisci i file nuovi nella cartella datasets/id_cards.Rilancia python tools/train_yolo.py.Semplice, no? Quando avrai un po' di storico dati dalla produzione, questa procedura renderà il tuo modello infallibile.

@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quarto_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/storage:/app/storage
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Resource limits (Optional, uncomment if Docker updates allow)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 400M
+
+  frontend:
+    build:
+      context: ./web-app
+      dockerfile: Dockerfile
+    container_name: quarto_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 100M

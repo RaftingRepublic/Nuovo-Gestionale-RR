@@ -1,0 +1,27 @@
+--- CORE STABILITY ---
+
+numpy==1.26.4
+opencv-python-headless<4.11
+paddlepaddle==2.6.2
+
+--- AI ENGINES ---
+
+paddleocr>=2.7.3
+ultralytics>=8.3.20
+# gliner removed
+# transformers, huggingface-hub, tokenizers removed temporarily to save space
+
+--- APP FRAMEWORK ---
+
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+pillow
+reportlab
+aiofiles
+requests
+httpx
+pydantic
+starlette
+typing-extensions

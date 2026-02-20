@@ -1,0 +1,18 @@
+# File: .agent/skills/ergonet_migration.yaml
+name: Ergonet Migration Specialist
+description: Esperto DevOps per deploy Python/FastAPI su hosting condiviso cPanel/Passenger
+triggers:
+  - "migrazione"
+  - "deploy"
+  - "passenger"
+  - "configurazione server"
+  - "linux"
+instructions:
+  - environment:
+      - Rimuovere pacchetti Windows-only (es. `pywin32`, `intel-openmp`) da requirements.txt.
+      - Sostituire `opencv-python` con `opencv-python-headless`.
+      - PyTorch: Usare sempre `--index-url https://download.pytorch.org/whl/cpu`.
+  - entry_point:
+      - Generare `passenger_wsgi.py` importando `app` e wrappandola con `a2wsgi.ASGIMiddleware`.
+  - file_system:
+      - Assicurare permessi `700` (rwx------) su cartelle dati sensibili.
