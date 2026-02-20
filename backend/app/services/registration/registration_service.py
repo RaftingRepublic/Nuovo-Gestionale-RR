@@ -7,10 +7,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+
 from app.schemas.registration import RegistrationPayload
 from app.services.registration.email_service import EmailService
 from app.services.registration.pdf_service import PdfService
 from app.services.registration.storage_service import StorageService
+from app.db.database import SessionLocal
+from app.models.registration import RegistrationDB
 
 
 def _parse_ddmmyyyy(s: str) -> datetime:
@@ -38,7 +43,11 @@ def _safe_get(obj, key, default=None):
 
 
 def _fmt_consents_block(payload: RegistrationPayload) -> str:
-    legal = _safe_get(payload, "legal")
+    # I consensi arrivano dal frontend dentro participant.legal (alias legal_consents).
+    # Fallback: campo root payload.legal (legacy, di norma None).
+    participant = _safe_get(payload, "participant")
+    legal = _safe_get(participant, "legal_consents") or _safe_get(payload, "legal")
+
     privacy = _safe_get(legal, "privacy")
     informed = _safe_get(legal, "informed_consent")
     resp = _safe_get(legal, "responsibility")
@@ -58,49 +67,73 @@ def _fmt_consents_block(payload: RegistrationPayload) -> str:
 
 
 def _fmt_person_block(p) -> str:
+    """Formatta un blocco anagrafico completo per una persona.
+    Tutti i valori None vengono gestiti in modo pulito (mai stampati)."""
     if not p:
         return ""
-    
-    nome = _safe_get(p, "nome", "")
-    cognome = _safe_get(p, "cognome", "")
-    nascita = _safe_get(p, "data_nascita", "")
-    
-    lines = [
-        f"Nome: {nome}",
-        f"Cognome: {cognome}",
-        f"Nascita: {nascita}",
-    ]
-    
-    cittadinanza = _safe_get(p, "cittadinanza_scelta")
-    
-    if cittadinanza == "ITALIANA":
-        cf = _safe_get(p, "codice_fiscale") or _safe_get(_safe_get(p, "italian"), "codice_fiscale")
-        if cf: lines.append(f"CF: {cf}")
-            
-    doc_type = _safe_get(p, "tipo_documento")
-    doc_num = _safe_get(p, "numero_documento")
-    
-    if doc_type: lines.append(f"Doc: {doc_type}")
-    if doc_num: lines.append(f"Num: {doc_num}")
+
+    nome = _safe_get(p, "nome", "") or ""
+    cognome = _safe_get(p, "cognome", "") or ""
+    data_nascita = _safe_get(p, "data_nascita", "") or ""
+    comune_nascita = _safe_get(p, "comune_nascita", "") or ""
+    stato_nascita = _safe_get(p, "stato_nascita", "") or ""
+    comune_residenza = _safe_get(p, "comune_residenza", "") or ""
+    stato_residenza = _safe_get(p, "stato_residenza", "") or ""
+    codice_fiscale = _safe_get(p, "codice_fiscale", "") or ""
+    tipo_documento = _safe_get(p, "tipo_documento", "") or ""
+    numero_documento = _safe_get(p, "numero_documento", "") or ""
+    scadenza_documento = _safe_get(p, "scadenza_documento", "") or ""
+
+    lines = [f"Nome: {nome} {cognome}"]
+
+    # Nascita
+    nascita_parts = [data_nascita]
+    if comune_nascita:
+        nascita_parts.append(f"a {comune_nascita}")
+    if stato_nascita:
+        nascita_parts.append(f"({stato_nascita})")
+    lines.append(f"Nascita: {' '.join(nascita_parts)}")
+
+    # Residenza (solo se almeno un dato presente)
+    if comune_residenza or stato_residenza:
+        res = comune_residenza
+        if stato_residenza:
+            res = f"{res} ({stato_residenza})" if res else stato_residenza
+        lines.append(f"Residenza: {res}")
+
+    # Codice Fiscale (qualsiasi cittadinanza, se presente)
+    if codice_fiscale:
+        lines.append(f"C.F.: {codice_fiscale}")
+
+    # Documento: tipo + numero + scadenza in una riga
+    if tipo_documento or numero_documento:
+        doc_line = f"Doc: {tipo_documento}"
+        if numero_documento:
+            doc_line += f" n. {numero_documento}"
+        if scadenza_documento:
+            doc_line += f" (Scad. {scadenza_documento})"
+        lines.append(doc_line)
 
     return "\n".join(lines)
 
 
 def _fmt_full_participant_block(payload: RegistrationPayload, age: int) -> str:
+    """Formatta i dati anagrafici completi + età + contatti del partecipante.
+    I consensi vengono stampati separatamente dal PdfService."""
     p = _safe_get(payload, "participant")
     base_info = _fmt_person_block(p)
-    
-    contact = _safe_get(payload, "contact")
-    email = _safe_get(contact, "email")
-    tel = _safe_get(contact, "telefono")
 
-    contacts = []
-    if email: contacts.append(f"Email: {email}")
-    if tel: contacts.append(f"Tel: {tel}")
-        
-    consents = _fmt_consents_block(payload)
-    
-    return f"{base_info}\nEtà: {age}\n" + "\n".join(contacts) + "\n\n=== CONSENSI ===\n" + consents
+    contact = _safe_get(payload, "contact")
+    email = _safe_get(contact, "email", "") or ""
+    tel = _safe_get(contact, "telefono", "") or ""
+
+    lines = [base_info, f"Età: {age}"]
+    if email:
+        lines.append(f"Email: {email}")
+    if tel:
+        lines.append(f"Tel: {tel}")
+
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True)
@@ -217,6 +250,39 @@ class RegistrationService:
         })
         self.storage.save_json(paths.json_path, payload_dict)
 
+        # 4b. INDICE SQL — Inserisci/Aggiorna nel DB
+        contact = _safe_get(payload, "contact", {})
+        try:
+            db = SessionLocal()
+            existing = db.query(RegistrationDB).filter(RegistrationDB.id == registration_id).first()
+            if existing:
+                existing.updated_at = now
+                existing.nome = _safe_get(p, "nome", "")
+                existing.cognome = _safe_get(p, "cognome", "")
+                existing.email = _safe_get(contact, "email", "")
+                existing.telefono = _safe_get(contact, "telefono", "")
+                existing.is_minor = is_minor
+                existing.locked = True
+                existing.pdf_path = paths.pdf_path
+            else:
+                db_record = RegistrationDB(
+                    id=registration_id,
+                    created_at=now,
+                    nome=_safe_get(p, "nome", ""),
+                    cognome=_safe_get(p, "cognome", ""),
+                    email=_safe_get(contact, "email", ""),
+                    telefono=_safe_get(contact, "telefono", ""),
+                    is_minor=is_minor,
+                    locked=True,
+                    pdf_path=paths.pdf_path,
+                )
+                db.add(db_record)
+            db.commit()
+        except Exception as db_err:
+            print(f"⚠️ Errore scrittura DB: {db_err}")
+        finally:
+            db.close()
+
         # 5. AUDIT LOG
         action_type = "UPDATE" if is_update else "CREATE"
         details = "Preferenze aggiornate" if is_update else "Nuova registrazione"
@@ -224,7 +290,6 @@ class RegistrationService:
 
         # 6. INVIO EMAIL
         emailed_to = None
-        contact = _safe_get(payload, "contact")
         recipient = _safe_get(contact, "email")
         
         if recipient:
@@ -252,6 +317,33 @@ class RegistrationService:
         )
 
     def list_registrations(self, limit: int = 200, offset: int = 0, query: str | None = None) -> list[dict]:
+        """Legge le registrazioni dall'indice SQL (veloce, senza scansionare il filesystem)."""
+        try:
+            db = SessionLocal()
+            q_filter = (query or "").strip().lower()
+
+            base_query = db.query(RegistrationDB).order_by(desc(RegistrationDB.created_at))
+
+            if q_filter:
+                like_pattern = f"%{q_filter}%"
+                base_query = base_query.filter(
+                    (RegistrationDB.nome.ilike(like_pattern)) |
+                    (RegistrationDB.cognome.ilike(like_pattern)) |
+                    (RegistrationDB.email.ilike(like_pattern)) |
+                    (RegistrationDB.telefono.ilike(like_pattern)) |
+                    (RegistrationDB.id.ilike(like_pattern))
+                )
+
+            results = base_query.offset(offset).limit(limit).all()
+            return [r.to_list_dict() for r in results]
+        except Exception as e:
+            print(f"⚠️ Errore lettura DB, fallback filesystem: {e}")
+            return self._list_registrations_filesystem(limit, offset, query)
+        finally:
+            db.close()
+
+    def _list_registrations_filesystem(self, limit: int = 200, offset: int = 0, query: str | None = None) -> list[dict]:
+        """Fallback: scansiona il filesystem (usato solo se il DB è vuoto/corrotto)."""
         root = self.storage.storage_dir
         if not os.path.exists(root):
             return []
@@ -282,8 +374,9 @@ class RegistrationService:
             nome = _safe_get(p, "nome", "")
             cognome = _safe_get(p, "cognome", "")
             email = _safe_get(contact, "email", "")
+            telefono = _safe_get(contact, "telefono", "")
             
-            searchable_text = f"{reg_id} {nome} {cognome} {email}".lower()
+            searchable_text = f"{reg_id} {nome} {cognome} {email} {telefono}".lower()
             if q and q not in searchable_text:
                 continue
 
@@ -293,6 +386,7 @@ class RegistrationService:
                 "participant_nome": nome,
                 "participant_cognome": cognome,
                 "email": email,
+                "telefono": telefono,
                 "is_minor": _safe_get(data, "is_minor", False),
                 "locked": _safe_get(data, "locked", False),
             })
@@ -309,6 +403,18 @@ class RegistrationService:
         
         data["locked"] = locked
         self.storage.save_json(paths.json_path, data)
+        
+        # Aggiorna anche il DB
+        try:
+            db = SessionLocal()
+            record = db.query(RegistrationDB).filter(RegistrationDB.id == registration_id).first()
+            if record:
+                record.locked = locked
+                db.commit()
+        except Exception as e:
+            print(f"⚠️ Errore aggiornamento lock nel DB: {e}")
+        finally:
+            db.close()
         
         self.storage.append_audit_log(registration_id, "LOCK_CHANGE", f"Locked: {locked}")
         

@@ -1,8 +1,7 @@
 <template>
   <q-page class="q-pa-md bg-grey-1">
-    <div class="text-h4 q-mb-md text-primary text-weight-bold text-center" style="display: flex; align-items: center; justify-content: center;">
-      <img src="/logo.png" style="height: 32px; margin-right: 12px; object-fit: contain;" alt="Rafting Republic Logo" />
-      {{ store.isEditMode ? t.nav.confirm_edit : 'Rafting Republic' }}
+    <div class="text-h4 q-mb-md text-primary text-weight-bold text-center">
+      {{ store.isEditMode ? t.nav.confirm_edit : 'Consenso Informato' }}
     </div>
 
     <div v-if="loadingData" class="flex flex-center q-pa-xl">

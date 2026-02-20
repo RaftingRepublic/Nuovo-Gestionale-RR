@@ -25,7 +25,15 @@ except ImportError as e:
     resources = None
 # -----------------------------------------------
 
-app = FastAPI(title="AI Modular Backend", version="0.2.0")
+# --- DATABASE SQLAlchemy (SQLite) ---
+from app.db.database import engine, Base
+from app.models.registration import RegistrationDB  # noqa: F401 — import necessario per creare la tabella
+
+app = FastAPI(title="AI Modular Backend", version="0.3.0")
+
+# Crea le tabelle SQL al primo avvio (se non esistono)
+Base.metadata.create_all(bind=engine)
+print("✅ Database SQLite inizializzato (rafting.db)")
 
 app.add_middleware(
     CORSMiddleware,

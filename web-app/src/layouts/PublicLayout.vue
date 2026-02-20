@@ -3,7 +3,7 @@
     <q-header class="public-header">
       <q-toolbar>
         <q-toolbar-title class="public-brand">
-          <img src="/logo.png" style="height: 32px; margin-right: 12px; object-fit: contain;" alt="Rafting Republic Logo" />
+          <img src="/logo.png" style="height: 28px; object-fit: contain;" alt="Rafting Republic" class="q-mr-sm" />
           Rafting Republic
         </q-toolbar-title>
       </q-toolbar>

@@ -105,7 +105,9 @@
           </div>
           <div v-else class="text-caption text-grey-6">* Scansioni non modificabili</div>
 
-          <div v-if="store.guardian.ocrData.debug" class="q-mt-md">
+          <!-- Debug AI & OCR: nascosto dalla UI utente (dati disponibili nello store per il backend) -->
+          <!-- Per riabilitare in sviluppo: cambiare v-if="false" in v-if="store.guardian.ocrData.debug" -->
+          <div v-if="false" class="q-mt-md">
             <q-expansion-item dense icon="bug_report" :label="t.docs.debug_ai" header-class="text-white bg-grey-8">
               <q-card class="bg-grey-2">
                 <q-card-section>

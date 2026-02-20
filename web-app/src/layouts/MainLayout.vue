@@ -1,45 +1,46 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated>
+    <q-header elevated class="bg-primary">
       <q-toolbar>
         <q-btn flat dense round icon="menu" aria-label="Menu" @click="toggleLeftDrawer" />
-        <q-toolbar-title>Rafting Republic • Gestionale</q-toolbar-title>
-        <div class="text-caption">Quasar v{{ $q.version }}</div>
+        <img src="/logo.png" style="height: 32px; object-fit: contain;" alt="Rafting Republic" class="q-ml-sm q-mr-sm" />
+        <q-toolbar-title>Rafting Republic</q-toolbar-title>
       </q-toolbar>
     </q-header>
 
     <q-drawer v-model="leftDrawerOpen" show-if-above bordered>
       <q-list padding>
-        <q-item-label header>Menu Principale</q-item-label>
+        <q-item-label header class="text-weight-bold text-grey-8">Operativo</q-item-label>
 
-
-
-        <q-item clickable v-ripple to="/scanner">
-          <q-item-section avatar><q-icon name="document_scanner" /></q-item-section>
-          <q-item-section>Nuova registrazione</q-item-section>
+        <q-item clickable v-ripple to="/admin/pianificazione" active-class="text-primary bg-blue-1">
+          <q-item-section avatar><q-icon name="calendar_month" /></q-item-section>
+          <q-item-section>Pianificazione</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/registrazioni">
-          <q-item-section avatar><q-icon name="assignment" /></q-item-section>
-          <q-item-section>Registrazioni</q-item-section>
-        </q-item>
-
-        <q-item clickable v-ripple to="/prenotazioni">
+        <q-item clickable v-ripple to="/admin/prenotazioni" active-class="text-primary bg-blue-1">
           <q-item-section avatar><q-icon name="book_online" /></q-item-section>
           <q-item-section>Prenotazioni</q-item-section>
         </q-item>
 
         <q-separator class="q-my-md" />
-        <q-item-label header>Amministrazione</q-item-label>
+        <q-item-label header class="text-weight-bold text-grey-8">Consensi &amp; Registrazioni</q-item-label>
 
-        <q-item clickable v-ripple to="/risorse">
-          <q-item-section avatar><q-icon name="groups" /></q-item-section>
-          <q-item-section>Staff & Risorse</q-item-section>
+        <q-item clickable v-ripple to="/admin/registrazioni" active-class="text-primary bg-blue-1">
+          <q-item-section avatar><q-icon name="folder_shared" /></q-item-section>
+          <q-item-section>Archivio Consensi</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/pianificazione">
-          <q-item-section avatar><q-icon name="calendar_month" /></q-item-section>
-          <q-item-section>Pianificazione</q-item-section>
+        <q-item clickable v-ripple to="/admin/scanner" active-class="text-primary bg-blue-1">
+          <q-item-section avatar><q-icon name="document_scanner" /></q-item-section>
+          <q-item-section>Nuova Registrazione</q-item-section>
+        </q-item>
+
+        <q-separator class="q-my-md" />
+        <q-item-label header class="text-weight-bold text-grey-8">Amministrazione</q-item-label>
+
+        <q-item clickable v-ripple to="/admin/risorse" active-class="text-primary bg-blue-1">
+          <q-item-section avatar><q-icon name="groups" /></q-item-section>
+          <q-item-section>Staff &amp; Risorse</q-item-section>
         </q-item>
 
         <!-- Spacer per spingere il logout in fondo -->

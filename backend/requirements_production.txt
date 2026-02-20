@@ -23,6 +23,7 @@ pydantic
 email-validator
 starlette
 typing-extensions
+sqlalchemy
 
 # --- OPZIONALE: Abilita se necessario ---
 # numpy

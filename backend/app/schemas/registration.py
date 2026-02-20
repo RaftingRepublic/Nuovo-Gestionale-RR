@@ -37,7 +37,7 @@ class PersonData(BaseModel):
 
     nome: str = Field(..., min_length=1)
     cognome: str = Field(..., min_length=1)
-    data_nascita: str = Field(..., description="dd/mm/yyyy")
+    data_nascita: Optional[str] = Field(default=None, description="dd/mm/yyyy")
     
     # Geografici
     stato_nascita: Optional[str] = None
@@ -50,9 +50,9 @@ class PersonData(BaseModel):
     cittadinanza_scelta: Optional[CitizenshipChoice] = None
 
     # Documento
-    tipo_documento: DocType = Field(..., description="Tipo documento obbligatorio")
-    numero_documento: str = Field(..., min_length=2)
-    scadenza_documento: str = Field(..., description="dd/mm/yyyy")
+    tipo_documento: Optional[str] = Field(default=None, description="Tipo documento")
+    numero_documento: Optional[str] = Field(default=None, min_length=1)
+    scadenza_documento: Optional[str] = Field(default=None, description="dd/mm/yyyy")
 
     source: Optional[str] = None
     
@@ -90,7 +90,11 @@ class RegistrationPayload(BaseModel):
     # Legacy root legal, mantenuto per sicurezza
     legal: Optional[LegalConsents] = None
 
-    signature_base64: str = Field(..., alias="signatureBase64")
+    # Firma: accetta sia signatureBase64 (camelCase) sia signature_base64 (snake_case)
+    signature_base64: Optional[str] = Field(default=None, alias="signatureBase64")
+    
+    # NUOVO: Dati biometrici firma a livello root (FEA compliance)
+    signature_biometrics: Optional[str] = Field(default=None, alias="signatureBiometrics")
 
     @model_validator(mode="after")
     def _validate(self):
@@ -109,21 +113,44 @@ class RegistrationPayload(BaseModel):
         if self.is_minor and self.guardian is None:
             raise ValueError("Partecipante minorenne: guardian obbligatorio.")
 
-        # 3. Validità Date
-        self._check_date_format(self.participant.data_nascita, "Data nascita partecipante")
-        self._check_date_format(self.participant.scadenza_documento, "Scadenza documento partecipante")
+        # 3. Validazione Campi Obbligatori Partecipante
+        p = self.participant
+        if not p.data_nascita:
+            raise ValueError(f"Data di nascita mancante per {p.nome}")
+        if not p.tipo_documento:
+            raise ValueError(f"Tipo documento mancante per {p.nome}")
+        if not p.numero_documento:
+            raise ValueError(f"Numero documento mancante per {p.nome}")
+        if not p.scadenza_documento:
+            raise ValueError(f"Scadenza documento mancante per {p.nome}")
+        
+        self._check_date_format(p.data_nascita, "Data nascita partecipante")
+        self._check_date_format(p.scadenza_documento, "Scadenza documento partecipante")
         
         if self.guardian:
-            self._check_date_format(self.guardian.data_nascita, "Data nascita tutore")
-            self._check_date_format(self.guardian.scadenza_documento, "Scadenza documento tutore")
+            if self.guardian.data_nascita:
+                self._check_date_format(self.guardian.data_nascita, "Data nascita tutore")
+            if self.guardian.scadenza_documento:
+                self._check_date_format(self.guardian.scadenza_documento, "Scadenza documento tutore")
 
-        # 4. Firma (Controllo sulla firma root del payload)
-        if not self.signature_base64 or len(self.signature_base64.strip()) < 20:
+        # 4. Firma: controlla prima root, poi dentro participant
+        sig = self.signature_base64
+        if not sig and self.participant.signature_base64:
+            sig = self.participant.signature_base64
+            self.signature_base64 = sig  # Normalizza: copia in root
+        
+        if not sig or len(sig.strip()) < 20:
             raise ValueError("Firma principale mancante o non valida.")
+        
+        # 5. Biometrici: normalizza da participant a root se necessario
+        if not self.signature_biometrics and self.participant.signature_biometrics:
+            self.signature_biometrics = self.participant.signature_biometrics
 
         return self
 
-    def _check_date_format(self, date_str: str, field_name: str):
+    def _check_date_format(self, date_str: Optional[str], field_name: str):
+        if not date_str:
+            return  # Campo opzionale non presente, skip
         try:
             datetime.strptime(date_str, "%d/%m/%Y")
         except (ValueError, TypeError):

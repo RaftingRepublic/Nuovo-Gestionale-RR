@@ -1,8 +1,7 @@
 <template>
   <q-page class="q-pa-md bg-grey-1">
-    <div class="text-h4 q-mb-md text-primary text-weight-bold text-center" style="display: flex; align-items: center; justify-content: center;">
-      <img src="/logo.png" style="height: 32px; margin-right: 12px; object-fit: contain;" alt="Rafting Republic Logo" />
-      Rafting Republic
+    <div class="text-h4 q-mb-md text-primary text-weight-bold text-center">
+      Consenso Informato
     </div>
 
     <q-stepper
@@ -153,123 +152,30 @@
       </q-step>
 
       <!-- ═══════════════════════════════════════════════════════ -->
-      <!-- STEP 5: VERIFICA & FIRMA                               -->
+      <!-- STEP 5: VERIFICA & FIRMA (con invio integrato)         -->
       <!-- ═══════════════════════════════════════════════════════ -->
       <q-step :name="5" :title="t.steps.review" icon="edit_note" :done="step > 5">
-        <!-- Form Review + Firma (i dati sono già pre-compilati dall'OCR allo Step 2) -->
-        <StepReview @prev="step = 4" @next="step = 6" />
+        <!-- Form Review + Firma + Invio (i dati sono già pre-compilati dall'OCR allo Step 2) -->
+        <StepReview @prev="step = 4" @next="onSubmitSuccess" />
       </q-step>
 
       <!-- ═══════════════════════════════════════════════════════ -->
-      <!-- STEP 6: RIEPILOGO FINALE                               -->
+      <!-- STEP 6: CONFERMA COMPLETAMENTO                         -->
       <!-- ═══════════════════════════════════════════════════════ -->
-      <q-step :name="6" :title="t.steps.summary" icon="summarize">
+      <q-step :name="6" :title="t.steps.summary" icon="check_circle">
         <div class="row justify-center">
-          <div class="col-12 col-md-10">
-            <div class="text-h5 q-mb-md text-center">{{ t.summary.title }}</div>
-            <p class="text-grey-7 text-center q-mb-lg">{{ t.summary.subtitle }}</p>
-
-            <!-- Contatti -->
-            <q-card class="bg-blue-1 q-mb-md shadow-1">
-              <q-item>
-                <q-item-section avatar>
-                  <q-avatar color="primary" text-color="white" icon="contact_mail" />
-                </q-item-section>
-                <q-item-section>
-                  <q-item-label class="text-weight-bold">{{ t.summary.contacts_title }}</q-item-label>
-                  <q-item-label caption class="text-black">
-                    {{ store.contact.email }} <br>
-                    {{ store.contact.prefix }} {{ store.contact.telefono }}
-                  </q-item-label>
-                </q-item-section>
-              </q-item>
-            </q-card>
-
-            <!-- Adulto/Tutore -->
-            <div v-if="store.tutorParticipates || !store.hasMinors">
-              <div class="text-subtitle2 text-grey-8 q-mb-sm q-mt-md">{{ store.hasMinors ? t.summary.tutor_title : t.summary.participant_title }}</div>
-              <q-card bordered class="q-mb-md bg-white">
-                <q-card-section class="q-pa-sm">
-                  <q-list dense>
-                    <q-item>
-                      <q-item-section>
-                        <q-item-label class="text-weight-bold">{{ store.guardian.ocrData.nome }} {{ store.guardian.ocrData.cognome }}</q-item-label>
-                        <q-item-label caption>
-                          {{ t.summary.born_on }} {{ store.guardian.ocrData.data_nascita }} {{ t.summary.born_at }} {{ store.guardian.ocrData.comune_nascita }} ({{ store.guardian.ocrData.stato_nascita }})
-                        </q-item-label>
-                        <q-item-label caption>
-                          {{ t.summary.residing_at }} {{ store.guardian.ocrData.comune_residenza }} ({{ store.guardian.ocrData.stato_residenza }})
-                        </q-item-label>
-                      </q-item-section>
-                    </q-item>
-                    <q-separator spaced />
-                    <q-item>
-                      <q-item-section>
-                        <q-item-label caption>{{ t.person.doc_type }}</q-item-label>
-                        <q-item-label>{{ store.guardian.ocrData.tipo_documento }} {{ t.summary.doc_n }} {{ store.guardian.ocrData.numero_documento }}</q-item-label>
-                        <q-item-label caption>{{ t.summary.expiry }}: {{ store.guardian.ocrData.scadenza_documento }}</q-item-label>
-                      </q-item-section>
-                      <q-item-section side>
-                        <q-badge :color="store.guardian.ocrData.legal.isComplete ? 'green' : 'red'">{{ t.summary.consents_ok }}</q-badge>
-                      </q-item-section>
-                    </q-item>
-                    <q-separator spaced />
-                    <q-item>
-                      <q-item-section>
-                        <q-item-label caption>{{ t.summary.signature }}</q-item-label>
-                        <img v-if="store.guardian.ocrData.signature" :src="store.guardian.ocrData.signature" style="max-height: 40px; max-width: 100px; object-fit: contain; border: 1px solid #eee;" />
-                        <div v-else class="text-negative text-caption">{{ t.summary.missing }}</div>
-                      </q-item-section>
-                    </q-item>
-                  </q-list>
-                </q-card-section>
-              </q-card>
-            </div>
-
-            <!-- Minori -->
-            <div v-if="store.hasMinors">
-              <div class="text-subtitle2 text-grey-8 q-mb-sm q-mt-md">{{ t.summary.minors_title }}</div>
-              <div v-for="(minor, idx) in store.minors" :key="idx">
-                <q-card bordered class="q-mb-sm bg-white">
-                  <q-card-section class="q-pa-sm">
-                    <q-list dense>
-                      <q-item>
-                        <q-item-section>
-                          <q-item-label class="text-weight-bold">{{ minor.ocrData.nome }} {{ minor.ocrData.cognome }}</q-item-label>
-                          <q-item-label caption>
-                            {{ t.summary.born_on }} {{ minor.ocrData.data_nascita }}
-                          </q-item-label>
-                        </q-item-section>
-                        <q-item-section side>
-                          <q-chip size="sm" color="orange" text-color="white">{{ t.privacy.minor_label }} #{{ idx+1 }}</q-chip>
-                        </q-item-section>
-                      </q-item>
-                      <q-item>
-                        <q-item-section>
-                          <q-item-label caption>{{ t.person.doc_type }}</q-item-label>
-                          <q-item-label>{{ minor.ocrData.tipo_documento }} {{ t.summary.doc_n }} {{ minor.ocrData.numero_documento }}</q-item-label>
-                        </q-item-section>
-                      </q-item>
-                      <q-separator spaced />
-                      <q-item>
-                        <q-item-section>
-                          <q-item-label caption>{{ t.steps.privacy }}</q-item-label>
-                          <div class="text-caption text-grey-8">
-                            {{ t.summary.photo }}: <b>{{ minor.ocrData.legal.photoConsent ? t.summary.yes : t.summary.no }}</b> |
-                            {{ t.summary.news }}: <b>{{ minor.ocrData.legal.newsletterConsent ? t.summary.yes : t.summary.no }}</b>
-                          </div>
-                        </q-item-section>
-                      </q-item>
-                    </q-list>
-                  </q-card-section>
-                </q-card>
-              </div>
-            </div>
-
-            <div class="row justify-between q-mt-xl">
-              <q-btn flat :label="t.nav.back" @click="step = 5" />
-              <q-btn color="positive" size="lg" icon="check" :label="t.nav.confirm" @click="submitAll" :loading="submitting" />
-            </div>
+          <div class="col-12 col-md-8 text-center">
+            <q-icon name="check_circle" color="positive" size="80px" class="q-mb-lg" />
+            <div class="text-h4 text-positive q-mb-md">{{ t.summary.success }}</div>
+            <p class="text-grey-7 text-body1 q-mb-xl">Registrazione completata con successo. Puoi chiudere questa pagina o registrare un nuovo partecipante.</p>
+            <q-btn
+              color="primary"
+              size="lg"
+              icon="person_add"
+              label="Nuova Registrazione"
+              @click="startNewRegistration"
+              class="q-px-xl"
+            />
           </div>
         </div>
       </q-step>
@@ -372,7 +278,6 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRegistrationStore } from 'stores/registration-store'
 import { useQuasar } from 'quasar'
-import { api } from 'src/boot/axios'
 import { translations } from 'src/constants/translations'
 import { LEGAL_TEXTS } from 'src/constants/legal'
 // imageCompression rimosso: la compressione avviene già in StepDocuments
@@ -387,7 +292,6 @@ const $q = useQuasar()
 // State
 const step = ref(1)
 // loadingOcr rimosso: l'attesa OCR ora avviene in StepDocuments (Step 2)
-const submitting = ref(false)
 const syncWithTutor = ref(false)
 const stepperRef = ref(null)
 
@@ -497,94 +401,14 @@ function finalizeLegalStep() {
   step.value = 5
 }
 
-// Validation
-function validatePerson(p, label) {
-  const isItalian = (v) => v && (v.toUpperCase() === 'ITALIA' || v.toUpperCase() === 'IT')
-
-  if (!p.nome || !p.cognome || !p.data_nascita || !p.tipo_documento || !p.numero_documento || !p.scadenza_documento) {
-    return `${label}: ${t.value.errors.data_missing} (Campi base)`
-  }
-  if (!p.stato_nascita || !p.stato_residenza) {
-    return `${label}: ${t.value.errors.data_missing} (Stato Nascita/Residenza)`
-  }
-  if (isItalian(p.stato_nascita) && !p.comune_nascita) {
-    return `${label}: Comune di nascita obbligatorio per nati in Italia`
-  }
-  if (isItalian(p.stato_residenza)) {
-    if (!p.comune_residenza) return `${label}: Comune di residenza obbligatorio`
-    if (!p.codice_fiscale) return `${label}: Codice Fiscale obbligatorio`
-  }
-  if (!p.signature) return `${label}: ${t.value.errors.signature_missing}`
-  return null
+// ── Gestione Successo Invio (chiamata da StepReview) ──
+function onSubmitSuccess () {
+  step.value = 6
 }
 
-// Submission
-async function submitAll() {
-  const errors = []
-  if (store.tutorParticipates || !store.hasMinors) {
-    const err = validatePerson(store.guardian.ocrData, store.hasMinors ? t.value.summary.tutor_title : t.value.summary.participant_title)
-    if (err) errors.push(err)
-  }
-  store.minors.forEach((m, i) => {
-    const err = validatePerson(m.ocrData, `${t.value.summary.minors_title} ${i + 1}`)
-    if (err) errors.push(err)
-  })
-
-  if (errors.length > 0) {
-    $q.notify({ type: 'negative', message: errors[0] })
-    return
-  }
-
-  submitting.value = true
-  const finalContact = { email: store.contact.email, telefono: `${store.contact.prefix} ${store.contact.telefono}`.trim() }
-
-  try {
-    // 1. Gestione Adulto/Tutore
-    if (store.tutorParticipates || !store.hasMinors) {
-      const payload = {
-        participant: {
-          ...store.guardian.ocrData,
-          legal: store.guardian.ocrData.legal
-        },
-        contact: finalContact,
-        signatureBase64: store.guardian.ocrData.signature,
-        is_minor: false,
-        language: store.language,
-        tutorParticipates: store.tutorParticipates,
-        hasMinors: store.hasMinors
-      }
-      await api.post('/registration/submit', payload)
-    }
-
-    // 2. Gestione Minori
-    if (store.hasMinors) {
-      for (const minor of store.minors) {
-        const payload = {
-          participant: {
-            ...minor.ocrData,
-            legal: minor.ocrData.legal
-          },
-          guardian: store.guardian.ocrData,
-          contact: finalContact,
-          signatureBase64: minor.ocrData.signature || store.guardian.ocrData.signature,
-          is_minor: true,
-          language: store.language,
-          tutorParticipates: store.tutorParticipates,
-          hasMinors: store.hasMinors
-        }
-        await api.post('/registration/submit', payload)
-      }
-    }
-
-    $q.notify({ type: 'positive', message: t.value.summary.success })
-    // Reset e torna a Step 1 per un nuovo cliente
-    store.resetStore()
-    step.value = 1
-  } catch (e) {
-    console.error(e)
-    const detail = e.response?.data?.detail
-    $q.notify({ type: 'negative', message: typeof detail === 'string' ? detail : t.value.summary.error_submit })
-  } finally { submitting.value = false }
+function startNewRegistration () {
+  store.resetStore()
+  step.value = 1
 }
 </script>
 
