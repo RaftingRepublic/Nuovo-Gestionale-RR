@@ -28,6 +28,10 @@ except ImportError as e:
 # --- DATABASE SQLAlchemy (SQLite) ---
 from app.db.database import engine, Base
 from app.models.registration import RegistrationDB  # noqa: F401 — import necessario per creare la tabella
+from app.models.calendar import (  # noqa: F401
+    ActivityDB, DailyRideDB, OrderDB, StaffDB, FleetDB, CrewAssignmentDB,
+    ResourceExceptionDB, SystemSettingDB, ActivitySubPeriodDB,
+)
 
 app = FastAPI(title="AI Modular Backend", version="0.3.0")
 
@@ -75,6 +79,22 @@ else:
 # 4. Reservations & Overrides
 from app.api.v1.endpoints import reservations
 app.include_router(reservations.router, prefix="/api/v1/reservations", tags=["Reservations"])
+
+# 5. Calendar (BFF — Motore Calendario SQL)
+from app.api.v1.endpoints import calendar
+app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["Calendar"])
+
+# 6. Orders (Creazione Ordini, Logica Tetris, Ponte d'Oro)
+from app.api.v1.endpoints import orders
+app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
+
+# 7. FiRaft (Gestione Tesseramento)
+from app.api.v1.endpoints import firaft
+app.include_router(firaft.router, prefix="/api/v1/firaft", tags=["FiRaft"])
+
+# 8. Logistics (Motore Logistico Operativo)
+from app.api.v1.endpoints import logistics
+app.include_router(logistics.router, prefix="/api/v1/logistics", tags=["Logistics"])
 
 # --- LOG AVVIO ---
 print("\n" + "="*60)

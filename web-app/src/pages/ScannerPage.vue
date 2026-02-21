@@ -492,7 +492,10 @@ async function finalizeLegalStep() {
     try {
       await store.resolveAllOcr()
       const warnings = []
-      if (store.guardian.ocrData.warning_mismatch) warnings.push(t.value.dialogs.tutor_check)
+      if (store.guardian.ocrData.warning_mismatch) {
+        const label = store.hasMinors ? t.value.dialogs.tutor_check : (t.value.dialogs.participant_check || t.value.dialogs.tutor_check)
+        warnings.push(label)
+      }
       store.minors.forEach((m, i) => { if (m.ocrData.warning_mismatch) warnings.push(`${t.value.dialogs.minor_check} ${i+1}: ${t.value.docs.mismatch_warning}`) })
 
       if (warnings.length > 0) {

@@ -12,7 +12,8 @@ La tabella `registrations` contiene solo i campi necessari per:
   - Lock/unlock
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
@@ -37,6 +38,15 @@ class RegistrationDB(Base):
 
     # Percorso al PDF firmato (relativo a storage/)
     pdf_path = Column(Text, nullable=True, comment="Path relativo al PDF firmato")
+    # === IL PONTE VERSO IL CALENDARIO COMMERCIALE ===
+    # FK verso l'ordine (nullable=True perché al Kiosk potrei firmare PRIMA di essere associato a un ordine web)
+    order_id = Column(String(36), ForeignKey("orders.id"), nullable=True, index=True)
+    
+    # Semaforo Tesseramento
+    firaft_status = Column(String(20), default="NON_RICHIESTO", comment="NON_RICHIESTO, DA_TESSERARE, TESSERATO, RIFIUTATO")
+
+    # Relazione bidirezionale
+    order = relationship("OrderDB", back_populates="registrations")
 
     def __repr__(self):
         return f"<Registration {self.id}: {self.cognome} {self.nome}>"
@@ -52,4 +62,7 @@ class RegistrationDB(Base):
             "telefono": self.telefono or "",
             "is_minor": self.is_minor,
             "locked": self.locked,
+            "order_id": self.order_id,
+            "firaft_status": self.firaft_status,
+
         }

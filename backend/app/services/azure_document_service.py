@@ -301,6 +301,12 @@ def analyze_with_azure(
     }
 
     try:
+        # SONDA DIAGNOSTICA: verifica chiavi Azure
+        _endpoint = os.getenv("AZURE_DOCUMENT_ENDPOINT")
+        _key = os.getenv("AZURE_DOCUMENT_KEY")
+        print(f">>> [AZURE] Endpoint={_endpoint}, Key={'***' + _key[-6:] if _key else 'NONE'}")
+        print(f">>> [AZURE] image_bytes size={len(image_bytes)} bytes, hint={doc_type_hint}")
+
         client = _get_client()
 
         # Invio all'API Azure (sintassi GA SDK 1.0+)
@@ -388,6 +394,8 @@ def analyze_with_azure(
         }
 
     except Exception as e:
+        print(f"\n>>> [ERRORE FATALE AZURE]: {type(e).__name__}: {e}")
+        import traceback
         traceback.print_exc()
         result_dict = {
             "error": f"Errore Azure Document Intelligence: {str(e)}",

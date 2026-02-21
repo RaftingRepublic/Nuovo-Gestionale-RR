@@ -1,0 +1,342 @@
+"""
+Calendar API — Endpoint BFF per il Calendario Operativo.
+
+Espone i dati SQL (Attività, Discese) al Frontend con query ottimizzate.
+Sostituisce le vecchie logiche basate su file JSON.
+"""
+
+from datetime import date
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session, joinedload
+
+from app.db.database import get_db
+from app.models.calendar import ActivityDB, DailyRideDB, OrderDB, ActivitySubPeriodDB
+from app.schemas.calendar import ActivityResponse, ActivityCreate, DailyRideResponse, ActivitySeasonUpdate
+from app.schemas.orders import DailyRideDetailResponse, RideOverrideRequest
+from app.api.v1.endpoints.orders import calculate_booked_pax, recalculate_ride_status
+from app.services.availability_engine import AvailabilityEngine
+
+router = APIRouter()
+
+
+# ──────────────────────────────────────────────────────────
+# GET /activities — Lista attività attive
+# ──────────────────────────────────────────────────────────
+@router.get("/activities", response_model=List[ActivityResponse])
+def list_activities(db: Session = Depends(get_db)):
+    """
+    Ritorna tutte le attività con `is_active == True`.
+    Usato dal Frontend per popolare dropdown, filtri e legenda colori.
+    """
+    return (
+        db.query(ActivityDB)
+        .options(joinedload(ActivityDB.sub_periods))
+        .filter(ActivityDB.is_active == True)  # noqa: E712
+        .order_by(ActivityDB.name)
+        .all()
+    )
+
+
+# ──────────────────────────────────────────────────────────
+# POST /activities — Crea nuova attività
+# ──────────────────────────────────────────────────────────
+@router.post("/activities", response_model=ActivityResponse, status_code=201)
+def create_activity(payload: ActivityCreate, db: Session = Depends(get_db)):
+    """Crea una nuova attività nel catalogo."""
+    activity = ActivityDB(
+        code=payload.code,
+        name=payload.name,
+        color_hex=payload.color_hex,
+        price=payload.price,
+        duration_hours=payload.duration_hours,
+        river_segments=payload.river_segments,
+        manager=payload.manager,
+        season_start=payload.season_start,
+        season_end=payload.season_end,
+        default_times=payload.default_times,
+        allow_intersections=payload.allow_intersections,
+        activity_class=payload.activity_class,
+        yellow_threshold=payload.yellow_threshold,
+        overbooking_limit=payload.overbooking_limit,
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    return activity
+
+
+# ──────────────────────────────────────────────────────────
+# DELETE /activities/{id} — Elimina attività
+# ──────────────────────────────────────────────────────────
+@router.delete("/activities/{activity_id}", status_code=204)
+def delete_activity(activity_id: str, db: Session = Depends(get_db)):
+    """Elimina un'attività e tutti i suoi sottoperiodi (cascade)."""
+    activity = db.query(ActivityDB).filter(ActivityDB.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Attività non trovata")
+    db.delete(activity)
+    db.commit()
+    return None
+
+
+# ──────────────────────────────────────────────────────────
+# GET /daily-rides — Discese con Engine calcolato
+# ──────────────────────────────────────────────────────────
+@router.get("/daily-rides", response_model=List[DailyRideResponse])
+def list_daily_rides(
+    ride_date: Optional[date] = Query(
+        None,
+        alias="date",
+        description="Filtra per data singola (YYYY-MM-DD)."
+    ),
+    start_date: Optional[date] = Query(
+        None,
+        description="Filtra da questa data (inclusa). Usato dal calendario mensile."
+    ),
+    end_date: Optional[date] = Query(
+        None,
+        description="Filtra fino a questa data (inclusa). Usato dal calendario mensile."
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Ritorna le discese con disponibilità calcolate dall'AvailabilityEngine.
+    """
+    query = (
+        db.query(DailyRideDB)
+        .options(
+            joinedload(DailyRideDB.activity),
+            joinedload(DailyRideDB.orders),
+        )
+        .order_by(DailyRideDB.ride_date, DailyRideDB.ride_time)
+    )
+
+    if ride_date is not None:
+        query = query.filter(DailyRideDB.ride_date == ride_date)
+    elif start_date is not None and end_date is not None:
+        query = query.filter(
+            DailyRideDB.ride_date >= start_date,
+            DailyRideDB.ride_date <= end_date,
+        )
+
+    rides = query.all()
+
+    # Raggruppa per data e calcola availability per ciascuna
+    dates_seen = set()
+    for r in rides:
+        dates_seen.add(r.ride_date)
+
+    availability_map = {}
+    for d in dates_seen:
+        day_avail = AvailabilityEngine.calculate_availability(db, d)
+        availability_map.update(day_avail)
+
+    result: List[DailyRideResponse] = []
+    for ride in rides:
+        booked_pax = calculate_booked_pax(ride)
+        avail = availability_map.get(ride.id, {})
+
+        result.append(
+            DailyRideResponse(
+                id=ride.id,
+                activity_id=ride.activity_id,
+                ride_date=ride.ride_date,
+                ride_time=ride.ride_time,
+                status=ride.status,
+                is_overridden=ride.is_overridden,
+                notes=ride.notes,
+                activity_name=ride.activity.name if ride.activity else "Sconosciuta",
+                color_hex=ride.activity.color_hex if ride.activity else "#9E9E9E",
+                booked_pax=booked_pax,
+                total_capacity=avail.get("total_capacity", 0),
+                arr_bonus_seats=avail.get("arr_bonus_seats", 0),
+                remaining_seats=avail.get("remaining_seats", 0),
+                engine_status=avail.get("status", "VERDE"),
+            )
+        )
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────
+# GET /daily-rides/{ride_id} — Dettaglio "Matrioska"
+# ──────────────────────────────────────────────────────────
+@router.get("/daily-rides/{ride_id}", response_model=DailyRideDetailResponse)
+def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
+    """
+    Ritorna il dettaglio completo di una singola discesa (Ride).
+    Include: Ride → [Ordini → [Registrazioni]] + campi arricchiti.
+    """
+    ride = (
+        db.query(DailyRideDB)
+        .options(
+            joinedload(DailyRideDB.activity),
+            joinedload(DailyRideDB.orders).joinedload(OrderDB.registrations),
+        )
+        .filter(DailyRideDB.id == ride_id)
+        .first()
+    )
+
+    if not ride:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Discesa con id '{ride_id}' non trovata."
+        )
+
+    booked_pax = calculate_booked_pax(ride)
+
+    return DailyRideDetailResponse(
+        id=ride.id,
+        activity_id=ride.activity_id,
+        ride_date=ride.ride_date,
+        ride_time=ride.ride_time,
+        status=ride.status,
+        is_overridden=ride.is_overridden,
+        notes=ride.notes,
+        activity_name=ride.activity.name if ride.activity else "Sconosciuta",
+        color_hex=ride.activity.color_hex if ride.activity else "#9E9E9E",
+        booked_pax=booked_pax,
+        orders=ride.orders,
+    )
+
+
+# ──────────────────────────────────────────────────────────
+# PATCH /daily-rides/{ride_id}/override — Forzatura Semaforo
+# ──────────────────────────────────────────────────────────
+@router.patch("/daily-rides/{ride_id}/override", response_model=DailyRideResponse)
+def override_ride_status(
+    ride_id: str,
+    payload: RideOverrideRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Forza o rilascia il semaforo di una discesa.
+
+    Se clear_override=True: rilascia la forzatura e ricalcola automaticamente.
+    Altrimenti: forza lo status indicato e blocca il ricalcolo automatico.
+    """
+    try:
+        ride = (
+            db.query(DailyRideDB)
+            .options(
+                joinedload(DailyRideDB.activity),
+                joinedload(DailyRideDB.orders),
+            )
+            .filter(DailyRideDB.id == ride_id)
+            .first()
+        )
+
+        if not ride:
+            raise HTTPException(status_code=404, detail=f"Discesa '{ride_id}' non trovata.")
+
+        if payload.clear_override:
+            ride.is_overridden = False
+            recalculate_ride_status(ride, db)
+        else:
+            if payload.forced_status not in ("A", "B", "C", "D"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Status '{payload.forced_status}' non valido. Usa A, B, C o D."
+                )
+            ride.status = payload.forced_status
+            ride.is_overridden = True
+
+        db.commit()
+        db.refresh(ride)
+
+        booked_pax = calculate_booked_pax(ride)
+
+        return DailyRideResponse(
+            id=ride.id,
+            activity_id=ride.activity_id,
+            ride_date=ride.ride_date,
+            ride_time=ride.ride_time,
+            status=ride.status,
+            is_overridden=ride.is_overridden,
+            notes=ride.notes,
+            activity_name=ride.activity.name if ride.activity else "Sconosciuta",
+            color_hex=ride.activity.color_hex if ride.activity else "#9E9E9E",
+            booked_pax=booked_pax,
+        )
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Errore override: {str(e)}")
+
+
+# ──────────────────────────────────────────────────────────
+# PATCH /activities/{id}/season — Configura Stagione e Sottoperiodi
+# ──────────────────────────────────────────────────────────
+@router.patch("/activities/{activity_id}/season", response_model=ActivityResponse)
+def update_activity_season(
+    activity_id: str,
+    payload: ActivitySeasonUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Aggiorna la configurazione stagionale di un'attività:
+    - manager (Grape/Anatre)
+    - price base
+    - season_start / season_end
+    - default_times
+    - sub_periods (bulk: elimina i vecchi, inserisce i nuovi)
+    """
+    activity = (
+        db.query(ActivityDB)
+        .options(joinedload(ActivityDB.sub_periods))
+        .filter(ActivityDB.id == activity_id)
+        .first()
+    )
+    if not activity:
+        raise HTTPException(status_code=404, detail=f"Attività '{activity_id}' non trovata.")
+
+    # Aggiorna campi scalari (solo se forniti)
+    if payload.manager is not None:
+        activity.manager = payload.manager
+    if payload.price is not None:
+        activity.price = payload.price
+    if payload.season_start is not None:
+        activity.season_start = payload.season_start
+    if payload.season_end is not None:
+        activity.season_end = payload.season_end
+    if payload.default_times is not None:
+        activity.default_times = payload.default_times
+    if payload.allow_intersections is not None:
+        activity.allow_intersections = payload.allow_intersections
+    if payload.activity_class is not None:
+        activity.activity_class = payload.activity_class
+    if payload.yellow_threshold is not None:
+        activity.yellow_threshold = payload.yellow_threshold
+    if payload.overbooking_limit is not None:
+        activity.overbooking_limit = payload.overbooking_limit
+
+    # Gestione bulk sub_periods: se il campo è presente, replace all
+    if payload.sub_periods is not None:
+        # Elimina i vecchi sottoperiodi
+        db.query(ActivitySubPeriodDB).filter(
+            ActivitySubPeriodDB.activity_id == activity_id
+        ).delete(synchronize_session="fetch")
+
+        # Inserisci i nuovi
+        for sp in payload.sub_periods:
+            new_sp = ActivitySubPeriodDB(
+                activity_id=activity_id,
+                name=sp.name,
+                dates=sp.dates,
+                override_price=sp.override_price,
+                override_times=sp.override_times,
+                is_closed=sp.is_closed,
+                allow_intersections=sp.allow_intersections,
+                yellow_threshold=sp.yellow_threshold,
+                overbooking_limit=sp.overbooking_limit,
+            )
+            db.add(new_sp)
+
+    db.commit()
+    db.refresh(activity)
+    return activity

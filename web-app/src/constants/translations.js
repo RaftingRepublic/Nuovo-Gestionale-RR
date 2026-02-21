@@ -115,7 +115,8 @@ export const translations = {
       camera_analysis: 'Analisi in corso...',
       doc_check: 'Verifica Documento',
       tutor_check: 'Tutore: Tipo documento errato?',
-      minor_check: 'Minore' 
+      participant_check: 'Partecipante: Tipo documento errato?',
+      minor_check: 'Minore'
     }
   },
   en: {
@@ -234,6 +235,7 @@ export const translations = {
       camera_analysis: 'Analyzing...',
       doc_check: 'Document Check',
       tutor_check: 'Guardian: Wrong document type?',
+      participant_check: 'Participant: Wrong document type?',
       minor_check: 'Minor'
     }
   },
@@ -353,6 +355,7 @@ export const translations = {
       camera_analysis: 'Analyse en cours...',
       doc_check: 'Vérification Document',
       tutor_check: 'Tuteur : Type de document erroné ?',
+      participant_check: 'Participant : Type de document erroné ?',
       minor_check: 'Mineur'
     }
   }

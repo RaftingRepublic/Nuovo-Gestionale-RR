@@ -389,7 +389,11 @@ function finalizeLegalStep() {
   // L'OCR è già stato completato allo Step 2, qui controlliamo solo i warning
   if (!store.isManualMode) {
     const warnings = []
-    if (store.guardian.ocrData.warning_mismatch) warnings.push(t.value.dialogs.tutor_check)
+    if (store.guardian.ocrData.warning_mismatch) {
+      // Mostra "Tutore" solo se ci sono minori, altrimenti "Partecipante"
+      const label = store.hasMinors ? t.value.dialogs.tutor_check : (t.value.dialogs.participant_check || t.value.dialogs.tutor_check)
+      warnings.push(label)
+    }
     store.minors.forEach((m, i) => { if (m.ocrData.warning_mismatch) warnings.push(`${t.value.dialogs.minor_check} ${i + 1}: ${t.value.docs.mismatch_warning}`) })
 
     if (warnings.length > 0) {

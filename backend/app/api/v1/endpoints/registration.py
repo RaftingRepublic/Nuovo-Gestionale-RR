@@ -103,7 +103,11 @@ async def scan_document(
       2. Altrimenti fallback su AI locale (PaddleOCR + YOLO)
       3. Se nessuno è disponibile → errore 503
     """
+    print("\n>>> [API] RICEVUTA FOTO DAL FRONTEND <<<")
+    print(f">>> [API] front.filename={front.filename}, back={'SI' if back else 'NO'}, doc_type={doc_type}")
+    print(f">>> [API] AZURE_AVAILABLE={AZURE_AVAILABLE}, AZURE_ENDPOINT={os.getenv('AZURE_DOCUMENT_ENDPOINT', 'NONE')}")
     f_content = await front.read()
+    print(f">>> [API] Foto letta: {len(f_content)} bytes")
     b_content = None
     if back:
         b_content = await back.read()

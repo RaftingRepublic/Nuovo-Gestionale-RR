@@ -702,12 +702,12 @@ def analyze_documents_locally(front_img: Image.Image, back_img: Image.Image | No
 
         full_text = ocr_texts["FRONT"] + "\n" + ocr_texts["BACK"]
 
-        # 2. PROMO Check
+        # 2. PROMO Check (preliminare — il risultato finale dipende anche dal MRZ)
+        promo_coherent = True
         if doc_type_hint not in ["AUTO", "ALTRO"]:
-            is_coherent = verify_document_coherence(full_text, doc_type_hint)
-            if not is_coherent:
-                print("   ❌ [PROMO] Warning: Mismatch documento.")
-                final_data["warning_mismatch"] = True
+            promo_coherent = verify_document_coherence(full_text, doc_type_hint)
+            if not promo_coherent:
+                print("   ⚠️ [PROMO] Keyword non trovate, attendiamo conferma MRZ...")
 
         # 3. MRZ Extraction
         mrz_data = {}
@@ -798,6 +798,17 @@ def analyze_documents_locally(front_img: Image.Image, back_img: Image.Image | No
 
         final_data.update(merged)
         final_data["debug_log"] = debug_log
+
+        # 7. DECISIONE FINALE WARNING MISMATCH
+        # Il warning scatta SOLO se il PROMO check (keyword) ha fallito E il MRZ non conferma il tipo
+        if not promo_coherent:
+            mrz_tipo = mrz_data.get("tipo_documento", "")
+            if mrz_tipo and mrz_tipo == doc_type_hint:
+                # MRZ conferma il tipo documento → falso allarme dal PROMO check
+                print(f"   ✅ [PROMO] MRZ conferma tipo '{doc_type_hint}', warning annullato.")
+            else:
+                print(f"   ❌ [PROMO] Warning confermato: keyword assenti e MRZ non conferma (MRZ tipo: '{mrz_tipo}', hint: '{doc_type_hint}').")
+                final_data["warning_mismatch"] = True
         
         print(f"✅ ANALISI COMPLETATA. Campi trovati: {len(merged)}")
         return final_data

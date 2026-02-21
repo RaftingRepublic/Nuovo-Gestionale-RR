@@ -5,95 +5,171 @@ export const useResourceStore = defineStore('resource', {
   state: () => ({
     staffList: [],
     fleetList: [],
+    resourceExceptions: [],  // Eccezioni della risorsa selezionata
     activityRules: [],
     dailySchedule: [],
-    currentResourceRules: [], // NUOVO: Regole della risorsa selezionata (per calendario)
     loading: false,
-    selectedStaffId: null
+    selectedResourceId: null
   }),
 
   getters: {
     activeStaff: (state) => state.staffList.filter(s => s.is_active),
-    selectedStaffMember: (state) => state.staffList.find(s => s.id === state.selectedStaffId),
+    staffFisso: (state) => state.staffList.filter(s => s.contract_type === 'FISSO'),
+    staffExtra: (state) => state.staffList.filter(s => s.contract_type === 'EXTRA'),
     selectedResource: (state) => {
-      return state.staffList.find(s => s.id === state.selectedStaffId) ||
-        state.fleetList.find(f => f.id === state.selectedStaffId)
+      return state.staffList.find(s => s.id === state.selectedResourceId) ||
+        state.fleetList.find(f => f.id === state.selectedResourceId)
     },
-    rafts: (state) => state.fleetList.filter(f => f.type === 'RAFT'),
-    vans: (state) => state.fleetList.filter(f => f.type === 'VAN'),
-    trailers: (state) => state.fleetList.filter(f => f.type === 'TRAILER')
+    // Determina se la risorsa selezionata è Staff o Fleet
+    selectedResourceType: (state) => {
+      if (state.staffList.find(s => s.id === state.selectedResourceId)) return 'STAFF'
+      if (state.fleetList.find(f => f.id === state.selectedResourceId)) return 'FLEET'
+      return null
+    },
+    // Determina se la risorsa è "Extra" (turni) o "Fissa" (assenze)
+    selectedIsExtra: (state) => {
+      const staff = state.staffList.find(s => s.id === state.selectedResourceId)
+      return staff ? staff.contract_type === 'EXTRA' : false
+    },
+    rafts: (state) => state.fleetList.filter(f => f.category === 'RAFT'),
+    vans: (state) => state.fleetList.filter(f => f.category === 'VAN'),
   },
 
   actions: {
     // --- STAFF ---
     async fetchStaff() {
-      try { this.staffList = (await api.get('/resources/staff')).data }
+      try { this.staffList = (await api.get('/logistics/staff')).data }
       catch (e) { console.error(e) }
     },
     async addStaff(payload) {
-      const res = await api.post('/resources/staff', payload)
+      const res = await api.post('/logistics/staff', payload)
       this.staffList.push(res.data)
     },
     async deleteStaff(id) {
-      await api.delete(`/resources/staff/${id}`)
+      await api.delete(`/logistics/staff/${id}`)
       this.staffList = this.staffList.filter(s => s.id !== id)
-      if (this.selectedStaffId === id) this.selectedStaffId = null
+      if (this.selectedResourceId === id) this.selectedResourceId = null
+    },
+    async updateStaff(staffId, payload) {
+      const res = await api.patch(`/logistics/staff/${staffId}`, payload)
+      const idx = this.staffList.findIndex(s => s.id === staffId)
+      if (idx !== -1) this.staffList[idx] = res.data
     },
 
     // --- FLEET ---
     async fetchFleet() {
-      try { this.fleetList = (await api.get('/resources/fleet')).data }
+      try { this.fleetList = (await api.get('/logistics/fleet')).data }
       catch (e) { console.error(e) }
     },
     async addFleet(payload) {
-      const res = await api.post('/resources/fleet', payload)
+      const res = await api.post('/logistics/fleet', payload)
       this.fleetList.push(res.data)
     },
     async deleteFleet(id) {
-      await api.delete(`/resources/fleet/${id}`)
+      await api.delete(`/logistics/fleet/${id}`)
       this.fleetList = this.fleetList.filter(f => f.id !== id)
-      if (this.selectedStaffId === id) this.selectedStaffId = null
+      if (this.selectedResourceId === id) this.selectedResourceId = null
     },
 
-    // --- ACTIVITY ---
-    async fetchActivityRules() {
-      try { this.activityRules = (await api.get('/resources/activity-rules')).data }
-      catch (e) { console.error(e) }
-    },
-    async addActivityRule(payload) {
-      const res = await api.post('/resources/activity-rules', payload)
-      this.activityRules.push(res.data)
-    },
-    async deleteActivityRule(id) {
-      await api.delete(`/resources/activity-rules/${id}`)
-      this.activityRules = this.activityRules.filter(r => r.id !== id)
-    },
-    async fetchDailySchedule(date) {
-      this.loading = true
-      try { this.dailySchedule = (await api.get('/resources/daily-schedule', { params: { date } })).data }
-      catch (e) { console.error(e) }
-      finally { this.loading = false }
-    },
-    async fetchMonthOverview(year, month, detailed = false) {
-      try { return (await api.get('/resources/month-overview', { params: { year, month, detailed } })).data }
-      catch (e) { console.error(e); return [] }
+    // --- RESOURCE EXCEPTIONS (Diario Unificato) ---
+    async fetchResourceExceptions(resourceId) {
+      try {
+        this.resourceExceptions = (await api.get('/logistics/resource-exceptions', {
+          params: { resource_id: resourceId }
+        })).data
+      }
+      catch (e) { console.error(e); this.resourceExceptions = [] }
     },
 
-    // --- AVAILABILITY ---
-    async fetchResourceRules(resourceId) {
-      try { this.currentResourceRules = (await api.get(`/resources/availability/${resourceId}`)).data }
-      catch (e) { console.error(e) }
-    },
-    async addAvailability(payload) {
+    async saveException(payload) {
       this.loading = true
       try {
-        await api.post('/resources/availability', payload)
-        // Aggiorna subito le regole locali per vederle sul calendario
-        await this.fetchResourceRules(payload.staff_id)
+        await api.post('/logistics/resource-exceptions', payload)
+        await this.fetchResourceExceptions(payload.resource_id)
       }
       finally { this.loading = false }
     },
 
-    selectStaff(id) { this.selectedStaffId = id }
+    async deleteException(exceptionId, resourceId) {
+      await api.delete(`/logistics/resource-exceptions/${exceptionId}`)
+      await this.fetchResourceExceptions(resourceId)
+    },
+
+    // --- SETTINGS ---
+    async fetchSettings() {
+      try { return (await api.get('/logistics/settings')).data }
+      catch (e) { console.error(e); return [] }
+    },
+    async updateSetting(key, value) {
+      await api.patch(`/logistics/settings/${key}`, { value })
+    },
+
+    // --- DAILY SCHEDULE (Calendar) ---
+    async fetchDailySchedule(date) {
+      this.loading = true
+      try {
+        const res = await api.get('/calendar/daily-rides', { params: { date } })
+        this.dailySchedule = res.data.map(ride => ({
+          id: ride.id,
+          time: ride.ride_time,
+          activity_type: ride.activity_name,
+          activity_id: ride.activity_id,
+          color_hex: ride.color_hex,
+          status: ride.status,
+          is_overridden: ride.is_overridden,
+          notes: ride.notes,
+          booked_pax: ride.booked_pax,
+          total_capacity: ride.total_capacity || 0,
+          arr_bonus_seats: ride.arr_bonus_seats || 0,
+          remaining_seats: ride.remaining_seats || 0,
+          engine_status: ride.engine_status || 'VERDE',
+          cap_rafts_pax: ride.total_capacity || 0,
+          cap_guides_pax: ride.total_capacity || 0,
+          avail_guides: '—',
+          avail_rafts: '—',
+          avail_vans: '—',
+          status_desc: _engineStatusDesc(ride.engine_status),
+        }))
+      } catch (e) { console.error('fetchDailySchedule error:', e) }
+      finally { this.loading = false }
+    },
+
+    async fetchMonthOverview(year, month) {
+      try {
+        const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+        const lastDay = new Date(year, month, 0).getDate()
+        const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+
+        const res = await api.get('/calendar/daily-rides', {
+          params: { start_date: startDate, end_date: endDate }
+        })
+
+        const byDate = {}
+        for (const ride of res.data) {
+          if (!byDate[ride.ride_date]) byDate[ride.ride_date] = []
+          byDate[ride.ride_date].push({
+            id: ride.id, time: ride.ride_time,
+            activity_type: ride.activity_name, color_hex: ride.color_hex,
+            status: ride.status, booked_pax: ride.booked_pax, capacity: 16,
+          })
+        }
+
+        const days = []
+        for (let d = 1; d <= lastDay; d++) {
+          const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+          const slots = byDate[dateStr] || []
+          days.push({ date: dateStr, is_closed: false, slots, color: slots.length > 0 ? 'primary' : 'grey' })
+        }
+        return days
+      } catch (e) { console.error('fetchMonthOverview error:', e); return [] }
+    },
+
+    selectResource(id) { this.selectedResourceId = id }
   }
 })
+
+function _engineStatusDesc(engineStatus) {
+  if (engineStatus === 'ROSSO') return 'Pieno / Chiuso'
+  if (engineStatus === 'GIALLO') return 'Quasi Pieno'
+  return 'Disponibile'
+}
