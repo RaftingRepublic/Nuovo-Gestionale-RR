@@ -35,12 +35,18 @@ class RegistrationDB(Base):
     # Stato
     is_minor = Column(Boolean, default=False, comment="True se partecipante minorenne")
     locked = Column(Boolean, default=True, comment="True = registrazione bloccata (non modificabile)")
+    status = Column(String(20), default="EMPTY", comment="EMPTY = slot vuoto, COMPLETED = manleva compilata")
 
     # Percorso al PDF firmato (relativo a storage/)
     pdf_path = Column(Text, nullable=True, comment="Path relativo al PDF firmato")
     # === IL PONTE VERSO IL CALENDARIO COMMERCIALE ===
     # FK verso l'ordine (nullable=True perché al Kiosk potrei firmare PRIMA di essere associato a un ordine web)
     order_id = Column(String(36), ForeignKey("orders.id"), nullable=True, index=True)
+    # FK verso il turno diretto (per link veloce)
+    daily_ride_id = Column(String(36), ForeignKey("daily_rides.id"), nullable=True, index=True)
+    
+    # Flag Lead (referente gruppo)
+    is_lead = Column(Boolean, default=False, comment="True = referente del gruppo")
     
     # Semaforo Tesseramento
     firaft_status = Column(String(20), default="NON_RICHIESTO", comment="NON_RICHIESTO, DA_TESSERARE, TESSERATO, RIFIUTATO")
@@ -62,7 +68,9 @@ class RegistrationDB(Base):
             "telefono": self.telefono or "",
             "is_minor": self.is_minor,
             "locked": self.locked,
+            "status": self.status,
+            "is_lead": self.is_lead,
             "order_id": self.order_id,
+            "daily_ride_id": self.daily_ride_id,
             "firaft_status": self.firaft_status,
-
         }

@@ -1,6 +1,8 @@
 """
-Modelli SQL per il Motore Calendario (Tetris), Ordini e Logistica.
+Modelli SQL per il Motore Calendario (Tetris), Ordini, Transazioni e Logistica.
 Sostituisce i file JSON e si aggancia al modello esistente RegistrationDB.
+
+Cantiere 2: aggiunto TransactionDB (ledger multi-pagamento) e campi desk su OrderDB.
 """
 
 import uuid
@@ -97,7 +99,7 @@ class OrderDB(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
     ride_id = Column(String(36), ForeignKey("daily_rides.id"), nullable=False)
     
-    order_status = Column(String(20), default="IN_ATTESA") # IN_ATTESA, CONFERMATO, COMPLETATO
+    order_status = Column(String(20), default="IN_ATTESA") # IN_ATTESA, CONFERMATO, COMPLETATO, PAGATO
     total_pax = Column(Integer, default=1)
     
     price_total = Column(Float, default=0.0)
@@ -115,10 +117,37 @@ class OrderDB(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # ── CAMPI DESK / SEGRETERIA (Cantiere 2) ──
+    booker_name = Column(String(100), nullable=True, comment="Referente gruppo")
+    booker_phone = Column(String(50), nullable=True)
+    booker_email = Column(String(255), nullable=True)
+    adjustments = Column(Float, default=0.0, comment="Penali no-show (+) o sconti (-)")
+    extras = Column(JSON, default=list, comment='Es. [{"name":"Foto","price":15}]')
+    source = Column(String(20), default="WEB", comment="WEB, DESK, PARTNER")
+
     ride = relationship("DailyRideDB", back_populates="orders")
     
     # ---> IL PONTE D'ORO: 1 Ordine contiene N Registrazioni Fisiche (Kiosk)
-    registrations = relationship("RegistrationDB", back_populates="order")
+    registrations = relationship("RegistrationDB", back_populates="order", cascade="all, delete-orphan")
+    # ---> LIBRO MASTRO: 1 Ordine ha N Transazioni (multi-pagamento)
+    transactions = relationship("TransactionDB", back_populates="order", cascade="all, delete-orphan")
+
+# ==========================================
+# 3b. TRANSAZIONE (Libro Mastro Multi-Pagamento)
+# ==========================================
+class TransactionDB(Base):
+    """Singolo movimento contabile associato a un ordine."""
+    __tablename__ = "transactions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
+    order_id = Column(String(36), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    amount = Column(Float, nullable=False, comment="Importo del pagamento")
+    method = Column(String(20), nullable=False, comment="CASH, SUMUP, BONIFICO, PARTNERS")
+    type = Column(String(20), default="SALDO", comment="CAPARRA, SALDO")
+    note = Column(String(255), nullable=True, comment='Es. "Voucher Smartbox"')
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    order = relationship("OrderDB", back_populates="transactions")
 
 # ==========================================
 # 4. LOGISTICA E ASSEGNAZIONI (Guide e Gommoni reali)

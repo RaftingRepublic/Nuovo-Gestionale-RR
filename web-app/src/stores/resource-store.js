@@ -104,6 +104,20 @@ export const useResourceStore = defineStore('resource', {
       await api.patch(`/logistics/settings/${key}`, { value })
     },
 
+    // --- ACTIVITY RULES ---
+    async fetchActivityRules() {
+      try { this.activityRules = (await api.get('/resources/activity-rules')).data }
+      catch (e) { console.error('fetchActivityRules error:', e); this.activityRules = [] }
+    },
+    async addActivityRule(payload) {
+      const res = await api.post('/resources/activity-rules', payload)
+      this.activityRules.push(res.data)
+    },
+    async deleteActivityRule(id) {
+      await api.delete(`/resources/activity-rules/${id}`)
+      this.activityRules = this.activityRules.filter(r => r.id !== id)
+    },
+
     // --- DAILY SCHEDULE (Calendar) ---
     async fetchDailySchedule(date) {
       this.loading = true
@@ -140,25 +154,27 @@ export const useResourceStore = defineStore('resource', {
         const lastDay = new Date(year, month, 0).getDate()
         const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-        const res = await api.get('/calendar/daily-rides', {
+        // Cruscotto Operativo: ritorna solo giornate con prenotazioni reali
+        const res = await api.get('/calendar/daily-schedule', {
           params: { start_date: startDate, end_date: endDate }
         })
 
+        // Indicizza per data per lookup rapido
         const byDate = {}
-        for (const ride of res.data) {
-          if (!byDate[ride.ride_date]) byDate[ride.ride_date] = []
-          byDate[ride.ride_date].push({
-            id: ride.id, time: ride.ride_time,
-            activity_type: ride.activity_name, color_hex: ride.color_hex,
-            status: ride.status, booked_pax: ride.booked_pax, capacity: 16,
-          })
+        for (const day of res.data) {
+          byDate[day.date] = day
         }
 
+        // Genera griglia completa del mese (giorni senza dati = celle bianche)
         const days = []
         for (let d = 1; d <= lastDay; d++) {
           const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-          const slots = byDate[dateStr] || []
-          days.push({ date: dateStr, is_closed: false, slots, color: slots.length > 0 ? 'primary' : 'grey' })
+          const apiDay = byDate[dateStr]
+          days.push({
+            date: dateStr,
+            booked_rides: apiDay ? apiDay.booked_rides : [],
+            staff_count: apiDay ? apiDay.staff_count : 0,
+          })
         }
         return days
       } catch (e) { console.error('fetchMonthOverview error:', e); return [] }

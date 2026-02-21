@@ -29,7 +29,7 @@ except ImportError as e:
 from app.db.database import engine, Base
 from app.models.registration import RegistrationDB  # noqa: F401 — import necessario per creare la tabella
 from app.models.calendar import (  # noqa: F401
-    ActivityDB, DailyRideDB, OrderDB, StaffDB, FleetDB, CrewAssignmentDB,
+    ActivityDB, DailyRideDB, OrderDB, TransactionDB, StaffDB, FleetDB, CrewAssignmentDB,
     ResourceExceptionDB, SystemSettingDB, ActivitySubPeriodDB,
 )
 
@@ -95,6 +95,10 @@ app.include_router(firaft.router, prefix="/api/v1/firaft", tags=["FiRaft"])
 # 8. Logistics (Motore Logistico Operativo)
 from app.api.v1.endpoints import logistics
 app.include_router(logistics.router, prefix="/api/v1/logistics", tags=["Logistics"])
+
+# 9. Desk POS (Segreteria Operativa — Cantiere 2)
+from app.api.v1.endpoints import desk
+app.include_router(desk.router, prefix="/api/v1/orders", tags=["Desk POS"])
 
 # --- LOG AVVIO ---
 print("\n" + "="*60)

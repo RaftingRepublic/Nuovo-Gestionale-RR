@@ -112,3 +112,20 @@ class DailyRideResponse(BaseModel):
     arr_bonus_seats: int = 0
     remaining_seats: int = 0
     engine_status: str = "VERDE"
+
+
+# ─── CRUSCOTTO OPERATIVO (Calendario Mensile) ────────────
+
+class BookedRideSlot(BaseModel):
+    """Singolo 'mattoncino' colorato nel calendario mensile."""
+    time: str
+    activity_code: str
+    color_hex: str
+    pax: int
+
+class DailyScheduleResponse(BaseModel):
+    """Un giorno nel calendario mensile: solo prenotazioni reali."""
+    date: str
+    booked_rides: List[BookedRideSlot] = []
+    staff_count: int = 0
+

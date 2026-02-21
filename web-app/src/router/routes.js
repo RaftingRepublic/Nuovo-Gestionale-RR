@@ -37,7 +37,10 @@ const routes = [
       { path: 'risorse', component: () => import('pages/ResourcesPage.vue') },
 
       // Pianificazione Attività (Calendario Operativo)
-      { path: 'pianificazione', component: () => import('pages/PlanningPage.vue') }
+      { path: 'pianificazione', component: () => import('pages/PlanningPage.vue') },
+
+      // Segreteria Operativa (Desk POS — Cantiere 2)
+      { path: 'segreteria', component: () => import('pages/DeskDashboardPage.vue') },
     ]
   },
 

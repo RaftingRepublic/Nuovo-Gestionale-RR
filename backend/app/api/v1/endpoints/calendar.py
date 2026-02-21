@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db.database import get_db
 from app.models.calendar import ActivityDB, DailyRideDB, OrderDB, ActivitySubPeriodDB
-from app.schemas.calendar import ActivityResponse, ActivityCreate, DailyRideResponse, ActivitySeasonUpdate
+from app.schemas.calendar import ActivityResponse, ActivityCreate, DailyRideResponse, ActivitySeasonUpdate, DailyScheduleResponse
 from app.schemas.orders import DailyRideDetailResponse, RideOverrideRequest
 from app.api.v1.endpoints.orders import calculate_booked_pax, recalculate_ride_status
 from app.services.availability_engine import AvailabilityEngine
@@ -81,6 +81,91 @@ def delete_activity(activity_id: str, db: Session = Depends(get_db)):
     return None
 
 
+from datetime import time as dt_time
+
+
+# ──────────────────────────────────────────────────────────
+# HELPER: Materializza turni teorici per una data
+# ──────────────────────────────────────────────────────────
+def _ensure_theoretical_rides(db: Session, target_date: date) -> None:
+    """
+    Per ogni attività attiva in `target_date`, controlla se esistono
+    le DailyRideDB corrispondenti. Se mancano, le crea al volo.
+
+    Logica:
+    1. Carica tutte le ActivityDB attive con i loro sub_periods.
+    2. Per ogni attività, verifica se target_date cade nella stagione
+       (season_start..season_end). Se no, skip.
+    3. Controlla se un SubPeriod marca la data come `is_closed`. Se sì, skip.
+    4. Determina gli orari effettivi: usa `override_times` dal SubPeriod
+       attivo, oppure `default_times` dell'attività.
+    5. Per ogni orario, cerca se esiste già un DailyRideDB(activity_id, date, time).
+       Se non esiste, crealo.
+    """
+    activities = (
+        db.query(ActivityDB)
+        .options(joinedload(ActivityDB.sub_periods))
+        .filter(ActivityDB.is_active == True)  # noqa: E712
+        .all()
+    )
+
+    date_str = target_date.strftime("%Y-%m-%d")
+    created = 0
+
+    for act in activities:
+        # ─── Check stagione ───
+        if act.season_start and target_date < act.season_start:
+            continue
+        if act.season_end and target_date > act.season_end:
+            continue
+
+        # ─── Check SubPeriod (chiusure + override orari) ───
+        is_closed = False
+        effective_times = list(act.default_times or [])
+
+        for sp in (act.sub_periods or []):
+            if date_str in (sp.dates or []):
+                if sp.is_closed:
+                    is_closed = True
+                    break
+                if sp.override_times:
+                    effective_times = list(sp.override_times)
+
+        if is_closed or not effective_times:
+            continue
+
+        # ─── Crea ride mancanti ───
+        for time_str in effective_times:
+            try:
+                parts = time_str.strip().split(":")
+                ride_time = dt_time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                continue
+
+            exists = (
+                db.query(DailyRideDB.id)
+                .filter(
+                    DailyRideDB.activity_id == act.id,
+                    DailyRideDB.ride_date == target_date,
+                    DailyRideDB.ride_time == ride_time,
+                )
+                .first()
+            )
+
+            if not exists:
+                new_ride = DailyRideDB(
+                    activity_id=act.id,
+                    ride_date=target_date,
+                    ride_time=ride_time,
+                    status="A",  # Verde di default
+                )
+                db.add(new_ride)
+                created += 1
+
+    if created > 0:
+        db.commit()
+
+
 # ──────────────────────────────────────────────────────────
 # GET /daily-rides — Discese con Engine calcolato
 # ──────────────────────────────────────────────────────────
@@ -103,7 +188,23 @@ def list_daily_rides(
 ):
     """
     Ritorna le discese con disponibilità calcolate dall'AvailabilityEngine.
+
+    Per date singole: materializza automaticamente i turni teorici
+    previsti dalla stagione (solves 'invisible rides' paradox).
+    Per range mensili: materializza turni per ogni giorno del range.
     """
+    # ─── Auto-generazione turni teorici ───
+    if ride_date is not None:
+        _ensure_theoretical_rides(db, ride_date)
+    elif start_date is not None and end_date is not None:
+        # Range mensile: genera per ogni giorno
+        from datetime import timedelta
+        current = start_date
+        while current <= end_date:
+            _ensure_theoretical_rides(db, current)
+            current += timedelta(days=1)
+
+    # ─── Query ride (ora include anche quelle appena create) ───
     query = (
         db.query(DailyRideDB)
         .options(
@@ -123,7 +224,7 @@ def list_daily_rides(
 
     rides = query.all()
 
-    # Raggruppa per data e calcola availability per ciascuna
+    # ─── Calcola availability ───
     dates_seen = set()
     for r in rides:
         dates_seen.add(r.ride_date)
@@ -340,3 +441,76 @@ def update_activity_season(
     db.commit()
     db.refresh(activity)
     return activity
+
+
+# ──────────────────────────────────────────────────────────
+# GET /daily-schedule — Cruscotto Operativo (solo lavoro reale)
+# ──────────────────────────────────────────────────────────
+COUNTING_ORDER_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
+
+
+@router.get("/daily-schedule", response_model=List[DailyScheduleResponse])
+def get_daily_schedule(
+    start_date: date = Query(..., description="Data inizio range (YYYY-MM-DD)"),
+    end_date: date = Query(..., description="Data fine range (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Cruscotto Operativo mensile: ritorna SOLO le discese con prenotazioni reali.
+    I giorni senza ordini restano con booked_rides=[] (celle bianche nel calendario).
+    """
+    from app.schemas.calendar import BookedRideSlot
+
+    # Query ride con attività e ordini nel range
+    rides = (
+        db.query(DailyRideDB)
+        .options(
+            joinedload(DailyRideDB.activity),
+            joinedload(DailyRideDB.orders),
+        )
+        .filter(
+            DailyRideDB.ride_date >= start_date,
+            DailyRideDB.ride_date <= end_date,
+        )
+        .order_by(DailyRideDB.ride_date, DailyRideDB.ride_time)
+        .all()
+    )
+
+    # Raggruppa per data, includendo SOLO ride con pax reali > 0
+    schedule_dict: dict = {}
+    for ride in rides:
+        # Calcola pax reali da OrderDB
+        pax = sum(
+            o.total_pax
+            for o in (ride.orders or [])
+            if o.order_status in COUNTING_ORDER_STATUSES
+        )
+
+        if pax == 0:
+            continue  # Skip: nessuna prenotazione reale
+
+        d_str = ride.ride_date.isoformat()
+        if d_str not in schedule_dict:
+            schedule_dict[d_str] = {
+                "date": d_str,
+                "booked_rides": [],
+                "staff_count": 0,
+            }
+
+        # Crea il "mattoncino"
+        act = ride.activity
+        schedule_dict[d_str]["booked_rides"].append(
+            BookedRideSlot(
+                time=ride.ride_time.strftime("%H:%M"),
+                activity_code=act.code if act else "??",
+                color_hex=act.color_hex if act else "#9E9E9E",
+                pax=pax,
+            )
+        )
+
+    # Mocka staff_count (in attesa del modulo HR)
+    for day in schedule_dict.values():
+        if day["booked_rides"]:
+            day["staff_count"] = 5  # placeholder
+
+    return list(schedule_dict.values())

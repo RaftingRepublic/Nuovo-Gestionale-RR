@@ -29,7 +29,8 @@ DEFAULT_CAPACITY = 16
 RAFT_SIZE = 8
 
 # Stati che "occupano posti" nel calcolo del semaforo.
-COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO"}
+# PAGATO = saldato dal desk, IN_ATTESA = caparra parziale (occupa posti comunque)
+COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
 
 
 # ──────────────────────────────────────────────────────────

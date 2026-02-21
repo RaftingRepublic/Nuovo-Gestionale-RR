@@ -568,8 +568,8 @@ function changeMonth(m, y) { currentMonth.value = m; currentYear.value = y; upda
 function goToMonthView() { viewMode.value = 'MONTH'; updateMonthOverview(currentYear.value, currentMonth.value) }
 function openDayDetail(dateStr) { selectedDate.value = dateStr.replace(/-/g, '/'); viewMode.value = 'DETAIL'; loadSchedule() }
 function onNavigation(view) { if (viewMode.value === 'DETAIL') { currentYear.value = view.year; currentMonth.value = view.month; updateMonthOverview(view.year, view.month) } }
-function calendarEvents(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.slots && day.slots.length > 0 }
-function calendarEventColor(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day ? day.color : 'grey' }
+function calendarEvents(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.booked_rides && day.booked_rides.length > 0 }
+function calendarEventColor(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.booked_rides && day.booked_rides.length > 0 ? 'primary' : 'grey' }
 function formatDate(val) { if (!val) return ''; const d = new Date(val.replace(/\//g, '-')); return d.toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }
 
 async function loadSchedule() {

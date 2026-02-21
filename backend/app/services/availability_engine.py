@@ -27,7 +27,9 @@ from app.models.calendar import (
 )
 
 # Stati ordine che occupano posti
-COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO"}
+# CONFERMATO = web/bonifico confermato, COMPLETATO = turno concluso,
+# PAGATO = saldato dal desk POS, IN_ATTESA = ordine con caparra parziale (conta comunque posti)
+COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
 RAFT_PAX = 8  # Posti per gommone
 
 

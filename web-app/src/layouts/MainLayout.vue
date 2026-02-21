@@ -22,6 +22,11 @@
           <q-item-section>Prenotazioni</q-item-section>
         </q-item>
 
+        <q-item clickable v-ripple to="/admin/segreteria" active-class="text-primary bg-blue-1">
+          <q-item-section avatar><q-icon name="point_of_sale" /></q-item-section>
+          <q-item-section>Segreteria (POS)</q-item-section>
+        </q-item>
+
         <q-separator class="q-my-md" />
         <q-item-label header class="text-weight-bold text-grey-8">Consensi &amp; Registrazioni</q-item-label>
 
