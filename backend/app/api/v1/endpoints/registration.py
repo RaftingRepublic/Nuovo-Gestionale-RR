@@ -250,13 +250,29 @@ async def set_registration_lock(
 
 @router.get("/{registration_id}/pdf")
 async def get_pdf(registration_id: str):
+    """Cantiere 6: Download della liberatoria PDF firmata."""
     try:
         pdf_path = service.find_pdf_path(registration_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="PDF non trovato")
 
+    # Cerca nome/cognome nel DB per filename leggibile
+    filename = f"Liberatoria_{registration_id[:8]}.pdf"
+    try:
+        from app.db.database import SessionLocal
+        from app.models.registration import RegistrationDB
+        db = SessionLocal()
+        reg = db.query(RegistrationDB).filter(RegistrationDB.id == registration_id).first()
+        if reg and reg.cognome:
+            nome = (reg.nome or "").replace(" ", "_")
+            cognome = (reg.cognome or "").replace(" ", "_")
+            filename = f"Liberatoria_{nome}_{cognome}.pdf"
+        db.close()
+    except Exception:
+        pass  # Fallback al filename generico
+
     return FileResponse(
         pdf_path,
         media_type="application/pdf",
-        filename=f"registrazione_{registration_id}.pdf",
+        filename=filename,
     )

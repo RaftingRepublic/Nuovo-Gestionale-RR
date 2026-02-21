@@ -515,14 +515,23 @@
                         </q-item-section>
                         <q-item-section>
                           <q-item-label :class="{ 'text-grey-5': reg.status === 'EMPTY' && !reg.is_lead }">
-                            {{ reg.nome }} {{ reg.cognome }}
+                            {{ getPaxDisplayName(reg, order) }}
                           </q-item-label>
                         </q-item-section>
-                        <q-item-section side>
+                        <q-item-section side class="row no-wrap items-center q-gutter-xs">
                           <q-badge
                             :color="reg.status === 'COMPLETED' ? 'green' : 'grey-4'"
                             :label="reg.status === 'COMPLETED' ? 'Compilato' : 'Vuoto'"
                             dense
+                          />
+                          <q-btn
+                            v-if="reg.status === 'COMPLETED'"
+                            flat round dense
+                            icon="picture_as_pdf"
+                            color="red"
+                            size="sm"
+                            title="Scarica Liberatoria PDF"
+                            @click.stop="downloadPdf(reg.id)"
                           />
                         </q-item-section>
                       </q-item>
@@ -568,23 +577,37 @@
           <q-item v-for="(reg, idx) in groupDialog.registrations" :key="idx">
             <q-item-section avatar>
               <q-icon
-                :name="reg.status === 'COMPLETED' ? 'check_circle' : 'hourglass_empty'"
-                :color="reg.status === 'COMPLETED' ? 'green' : 'grey'"
+                :name="reg.is_lead ? 'star' : (reg.status === 'COMPLETED' ? 'check_circle' : 'hourglass_empty')"
+                :color="reg.is_lead ? 'amber' : (reg.status === 'COMPLETED' ? 'green' : 'grey-4')"
                 size="sm"
               />
             </q-item-section>
             <q-item-section>
-              <q-item-label v-if="reg.status === 'COMPLETED'">
-                {{ reg.nome }} {{ reg.cognome }}
-              </q-item-label>
-              <q-item-label v-else class="text-grey-5 text-italic">
-                Slot Vuoto — in attesa di compilazione
+              <q-item-label
+                :class="{
+                  'text-weight-bold': reg.status === 'COMPLETED',
+                  'text-grey-5 text-italic': reg.status !== 'COMPLETED' && !reg.is_lead
+                }"
+              >
+                {{ getPaxDisplayName(reg, groupDialog.order) }}
               </q-item-label>
             </q-item-section>
-            <q-item-section side>
-              <q-badge :color="reg.status === 'COMPLETED' ? 'green' : 'grey-4'" :text-color="reg.status === 'COMPLETED' ? 'white' : 'grey-7'">
-                {{ reg.status === 'COMPLETED' ? '✅ Compilato' : '⏳ Vuoto' }}
-              </q-badge>
+            <q-item-section side class="row no-wrap items-center q-gutter-xs">
+              <q-badge
+                :color="reg.status === 'COMPLETED' ? 'green' : 'grey-4'"
+                :text-color="reg.status === 'COMPLETED' ? 'white' : 'grey-7'"
+                :label="reg.status === 'COMPLETED' ? 'Compilato' : 'Vuoto'"
+                dense
+              />
+              <q-btn
+                v-if="reg.status === 'COMPLETED'"
+                flat round dense
+                icon="picture_as_pdf"
+                color="red"
+                size="sm"
+                title="Scarica Liberatoria PDF"
+                @click="downloadPdf(reg.id)"
+              />
             </q-item-section>
           </q-item>
         </q-list>
@@ -645,7 +668,7 @@ const newTx = reactive({
 
 // ─── CANTIERE 3: Check-in Digitale ──────────────────────
 const qrDialog = reactive({ open: false, url: '' })
-const groupDialog = reactive({ open: false, registrations: [], completedCount: 0 })
+const groupDialog = reactive({ open: false, registrations: [], completedCount: 0, order: null })
 
 function getPublicUrl(orderId) {
   return window.location.origin + '/#/consenso?order_id=' + orderId
@@ -672,6 +695,7 @@ function openGroupDialog(order) {
   const regs = order.registrations || []
   groupDialog.registrations = regs
   groupDialog.completedCount = regs.filter(r => r.status === 'COMPLETED').length
+  groupDialog.order = order
   groupDialog.open = true
 }
 
@@ -947,6 +971,25 @@ watch(() => props.externalDate, (newDate) => {
     loadDayRides()
   }
 })
+
+// ─── DISPLAY NAME INTELLIGENTE PER PARTECIPANTI ─────────
+function getPaxDisplayName (reg, order) {
+  // Se la registrazione è compilata (COMPLETED), mostra i dati reali
+  if (reg.status === 'COMPLETED') {
+    return `${reg.nome} ${reg.cognome}`
+  }
+  // Se è il referente (is_lead) ma lo slot è ancora vuoto, mostra il nome del booker
+  if (reg.is_lead && order.booker_name) {
+    return `${order.booker_name} (Referente)`
+  }
+  // Slot vuoto generico
+  return 'In attesa di compilazione...'
+}
+
+// ─── DOWNLOAD PDF LIBERATORIA ────────────────────────────
+function downloadPdf (registrationId) {
+  window.open(`/api/v1/registration/${registrationId}/pdf`, '_blank')
+}
 
 // ─── LIFECYCLE ───────────────────────────────────────────
 onMounted(() => {

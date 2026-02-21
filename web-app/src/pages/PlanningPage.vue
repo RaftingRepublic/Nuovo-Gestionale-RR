@@ -56,7 +56,7 @@
 
             <div class="col scroll">
               <!-- ── Cantiere 4: Toggle OPERATIVO / SEGRETERIA ── -->
-              <div class="q-mb-md flex flex-center">
+              <div class="q-mb-md flex flex-center q-gutter-md">
                 <q-btn-toggle
                   v-model="dayViewMode"
                   :options="[
@@ -64,6 +64,14 @@
                     { label: 'LATO SEGRETERIA (POS)', value: 'SEGRETERIA' }
                   ]"
                   rounded unelevated toggle-color="primary" color="grey-3" text-color="black"
+                />
+                <q-btn
+                  outline
+                  icon="download"
+                  label="Export FIRAFT (CSV)"
+                  color="teal"
+                  size="sm"
+                  @click="exportFiraft"
                 />
               </div>
 
@@ -914,6 +922,12 @@ async function saveAllocations() {
   } finally {
     allocationSaving.value = false
   }
+}
+
+// ═══ CANTIERE 6: Export FIRAFT CSV ═══
+function exportFiraft () {
+  const d = selectedDate.value.replace(/\//g, '-')
+  window.open(`/api/v1/calendar/daily-rides/export-firaft?date=${d}`, '_blank')
 }
 </script>
 

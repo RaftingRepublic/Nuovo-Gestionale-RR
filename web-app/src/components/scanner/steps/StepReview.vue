@@ -113,6 +113,7 @@
 
 <script setup>
 import { ref, computed, reactive } from 'vue'
+import { useRoute } from 'vue-router'
 import { useRegistrationStore } from 'stores/registration-store'
 import { useQuasar } from 'quasar'
 import { api } from 'src/boot/axios'
@@ -122,9 +123,13 @@ import SignaturePad from '../SignaturePad.vue'
 
 defineEmits(['next', 'prev'])
 
+const route = useRoute()
 const store = useRegistrationStore()
 const $q = useQuasar()
 const t = computed(() => translations[store.language] || translations.it)
+
+// Cantiere 6.3: order_id dalla URL per Slot Consumption
+const currentOrderId = computed(() => route.query.order_id || null)
 
 // ── Refs per la firma ──
 const mainSigRef = ref(null)
@@ -252,7 +257,9 @@ async function handleSubmit () {
         is_minor: false,
         language: store.language,
         tutorParticipates: store.tutorParticipates,
-        hasMinors: store.hasMinors
+        hasMinors: store.hasMinors,
+        // Cantiere 6.3: collega al desk order per Slot Consumption
+        order_id: currentOrderId.value
       }
 
       console.log('PAYLOAD INVIATO (Adulto/Tutore):', payload)
@@ -300,7 +307,9 @@ async function handleSubmit () {
           is_minor: true,
           language: store.language,
           tutorParticipates: store.tutorParticipates,
-          hasMinors: store.hasMinors
+          hasMinors: store.hasMinors,
+          // Cantiere 6.3: collega al desk order per Slot Consumption
+          order_id: currentOrderId.value
         }
 
         console.log(`PAYLOAD INVIATO (Minore #${i + 1}):`, payload)

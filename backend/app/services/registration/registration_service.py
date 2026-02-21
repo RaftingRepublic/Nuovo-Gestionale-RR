@@ -251,11 +251,16 @@ class RegistrationService:
         self.storage.save_json(paths.json_path, payload_dict)
 
         # 4b. INDICE SQL — Inserisci/Aggiorna nel DB
+        #     Cantiere 6.2: SLOT CONSUMPTION — se c'è un order_id, consuma
+        #     uno slot vuoto invece di creare un record nuovo.
         contact = _safe_get(payload, "contact", {})
+        order_id = _safe_get(payload, "order_id")
         try:
             db = SessionLocal()
             existing = db.query(RegistrationDB).filter(RegistrationDB.id == registration_id).first()
+
             if existing:
+                # ── UPDATE di registro esistente ──
                 existing.updated_at = now
                 existing.nome = _safe_get(p, "nome", "")
                 existing.cognome = _safe_get(p, "cognome", "")
@@ -263,8 +268,69 @@ class RegistrationService:
                 existing.telefono = _safe_get(contact, "telefono", "")
                 existing.is_minor = is_minor
                 existing.locked = True
+                existing.status = "COMPLETED"
                 existing.pdf_path = paths.pdf_path
+            elif order_id:
+                # ── SLOT CONSUMPTION v2: SWAP & REPLACE ──
+                # Cantiere 6.4: Elimina lo slot vuoto e lascia che il normale
+                # INSERT crei il record con l'ID del Kiosk (= cartella PDF).
+                empty_slot = (
+                    db.query(RegistrationDB)
+                    .filter(
+                        RegistrationDB.order_id == order_id,
+                        RegistrationDB.status == "EMPTY",
+                    )
+                    .order_by(RegistrationDB.is_lead.desc())  # Lead first
+                    .first()
+                )
+
+                if empty_slot:
+                    # 1. Salva i riferimenti del vecchio slot
+                    saved_order_id = empty_slot.order_id
+                    saved_ride_id = empty_slot.daily_ride_id
+                    saved_is_lead = empty_slot.is_lead
+                    print(f"🔄 Slot Swap & Replace: DELETE {empty_slot.id} → INSERT {registration_id} ({_safe_get(p, 'nome', '')} {_safe_get(p, 'cognome', '')})")
+
+                    # 2. Elimina lo slot fantasma
+                    db.delete(empty_slot)
+                    db.flush()
+
+                    # 3. Crea il nuovo record con l'ID del Kiosk
+                    db_record = RegistrationDB(
+                        id=registration_id,
+                        created_at=now,
+                        nome=_safe_get(p, "nome", ""),
+                        cognome=_safe_get(p, "cognome", ""),
+                        email=_safe_get(contact, "email", ""),
+                        telefono=_safe_get(contact, "telefono", ""),
+                        is_minor=is_minor,
+                        locked=True,
+                        status="COMPLETED",
+                        pdf_path=paths.pdf_path,
+                        order_id=saved_order_id,
+                        daily_ride_id=saved_ride_id,
+                        is_lead=saved_is_lead,
+                    )
+                    db.add(db_record)
+                else:
+                    # Nessuno slot vuoto rimasto, crea nuovo (overflow)
+                    print(f"⚠️ Nessuno slot vuoto per order {order_id}, creo registro orphan")
+                    db_record = RegistrationDB(
+                        id=registration_id,
+                        created_at=now,
+                        nome=_safe_get(p, "nome", ""),
+                        cognome=_safe_get(p, "cognome", ""),
+                        email=_safe_get(contact, "email", ""),
+                        telefono=_safe_get(contact, "telefono", ""),
+                        is_minor=is_minor,
+                        locked=True,
+                        status="COMPLETED",
+                        pdf_path=paths.pdf_path,
+                        order_id=order_id,
+                    )
+                    db.add(db_record)
             else:
+                # ── INSERT nuovo (registrazione standalone, senza ordine) ──
                 db_record = RegistrationDB(
                     id=registration_id,
                     created_at=now,
@@ -274,6 +340,7 @@ class RegistrationService:
                     telefono=_safe_get(contact, "telefono", ""),
                     is_minor=is_minor,
                     locked=True,
+                    status="COMPLETED",
                     pdf_path=paths.pdf_path,
                 )
                 db.add(db_record)

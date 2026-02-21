@@ -273,6 +273,76 @@ def list_daily_rides(
 
 
 # ──────────────────────────────────────────────────────────
+# GET /daily-rides/export-firaft — Export CSV per FIRAFT
+# NOTA: Deve stare PRIMA di /daily-rides/{ride_id} per evitare routing collision
+# ──────────────────────────────────────────────────────────
+@router.get("/daily-rides/export-firaft")
+def export_firaft_csv(
+    date: str = Query(..., description="Data in formato YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+):
+    """
+    Cantiere 6: Genera un file CSV con tutte le registrazioni COMPLETED
+    del giorno, pronte per il tesseramento FIRAFT.
+    """
+    import csv
+    import io
+    from datetime import datetime as dt_datetime
+    from fastapi.responses import StreamingResponse
+    from app.models.registration import RegistrationDB
+
+    try:
+        target_date = dt_datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato data non valido. Usa YYYY-MM-DD.")
+
+    # Query: Registrazioni → Ordine → Turno → Attività, filtrando per data e stato COMPLETED
+    results = (
+        db.query(
+            RegistrationDB,
+            DailyRideDB.ride_time,
+            ActivityDB.name.label("activity_name"),
+        )
+        .join(OrderDB, RegistrationDB.order_id == OrderDB.id)
+        .join(DailyRideDB, OrderDB.ride_id == DailyRideDB.id)
+        .join(ActivityDB, DailyRideDB.activity_id == ActivityDB.id)
+        .filter(DailyRideDB.ride_date == target_date)
+        .filter(RegistrationDB.status == "COMPLETED")
+        .order_by(DailyRideDB.ride_time, RegistrationDB.cognome)
+        .all()
+    )
+
+    # Genera CSV in memoria
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(["NOME", "COGNOME", "EMAIL", "TELEFONO", "MINORENNE", "ATTIVITA", "ORARIO_TURNO"])
+
+    for reg, ride_time, activity_name in results:
+        writer.writerow([
+            reg.nome or "",
+            reg.cognome or "",
+            reg.email or "",
+            reg.telefono or "",
+            "SI" if reg.is_minor else "NO",
+            activity_name or "",
+            str(ride_time)[:5] if ride_time else "",
+        ])
+
+    output.seek(0)
+
+    safe_date = date.replace("-", "")
+    headers = {
+        "Content-Disposition": f'attachment; filename="FIRAFT_Export_{safe_date}.csv"'
+    }
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers=headers,
+    )
+
+
+# ──────────────────────────────────────────────────────────
 # GET /daily-rides/{ride_id} — Dettaglio "Matrioska"
 # ──────────────────────────────────────────────────────────
 @router.get("/daily-rides/{ride_id}", response_model=DailyRideDetailResponse)

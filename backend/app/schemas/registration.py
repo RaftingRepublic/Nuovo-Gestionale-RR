@@ -77,6 +77,7 @@ class RegistrationPayload(BaseModel):
 
     language: str = "it"
     booking_id: Optional[str] = None
+    order_id: Optional[str] = Field(default=None, alias="orderId", description="ID ordine desk per slot consumption")
 
     tutor_participates: Optional[bool] = Field(default=None, alias="tutorParticipates")
     has_minors: Optional[bool] = Field(default=None, alias="hasMinors")

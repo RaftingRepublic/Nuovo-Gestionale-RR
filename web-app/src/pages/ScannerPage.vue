@@ -567,7 +567,8 @@ async function submitAll() {
         is_minor: false,
         language: store.language,
         tutorParticipates: store.tutorParticipates,
-        hasMinors: store.hasMinors
+        hasMinors: store.hasMinors,
+        order_id: route.query.order_id || null
       }
       await api.post('/registration/submit', payload, {
         params: store.isEditMode ? { update_id: store.editRegistrationId } : {}
@@ -589,7 +590,8 @@ async function submitAll() {
           is_minor: true,
           language: store.language,
           tutorParticipates: store.tutorParticipates,
-          hasMinors: store.hasMinors
+          hasMinors: store.hasMinors,
+          order_id: route.query.order_id || null
         }
         await api.post('/registration/submit', payload, {
           params: store.isEditMode ? { update_id: store.editRegistrationId } : {}

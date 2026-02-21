@@ -73,6 +73,8 @@ class RegistrationResponse(BaseModel):
     email: Optional[str] = None
     telefono: Optional[str] = None
     is_minor: bool = False
+    status: str = "EMPTY"
+    is_lead: bool = False
     firaft_status: str = "NON_RICHIESTO"
 
 
