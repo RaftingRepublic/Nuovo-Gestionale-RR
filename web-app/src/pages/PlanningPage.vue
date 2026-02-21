@@ -96,6 +96,15 @@
                         <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
                         <q-linear-progress :value="slot.booked_pax / Math.max(1, slot.total_capacity || 1)" :color="getStatusColorName(slot.engine_status)" class="q-mt-xs" rounded />
                       </q-card-section>
+
+                      <!-- Cantiere 5: Risorse assegnate -->
+                      <q-card-section class="q-pa-xs q-pt-none">
+                        <div class="row q-gutter-xs q-mb-xs" v-if="slot.assigned_staff?.length || slot.assigned_fleet?.length">
+                          <q-chip v-for="s in slot.assigned_staff" :key="'s'+s.id" dense icon="person" color="blue-1" text-color="primary" size="sm">{{ s.name }}</q-chip>
+                          <q-chip v-for="f in slot.assigned_fleet" :key="'f'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'teal-1' : 'orange-1'" :text-color="f.category === 'RAFT' ? 'teal-9' : 'orange-9'" size="sm">{{ f.name }}</q-chip>
+                        </div>
+                        <q-btn flat dense icon="groups" label="Assegna Risorse" color="primary" class="full-width" size="sm" @click.stop="openAllocationDialog(slot)" />
+                      </q-card-section>
                     </q-card>
                   </div>
                 </div>
@@ -165,6 +174,19 @@
             <q-btn dense unelevated size="sm" color="red-8" label="ROSSO" @click="setOverride('C')" />
             <q-btn dense outline size="sm" color="white" label="AUTO" @click="clearOverride()" />
           </div>
+        </q-card-section>
+
+        <q-separator />
+
+        <!-- Cantiere 5.1: Risorse assegnate nel Drawer -->
+        <q-card-section v-if="rideData" class="q-py-sm">
+          <div class="text-caption text-weight-bold text-grey-7 q-mb-xs">Risorse Assegnate</div>
+          <div class="row q-gutter-xs" v-if="currentSlotData?.assigned_staff?.length || currentSlotData?.assigned_fleet?.length">
+            <q-chip v-for="s in currentSlotData?.assigned_staff" :key="'ds'+s.id" dense icon="person" color="blue-1" text-color="primary" size="sm">{{ s.name }}</q-chip>
+            <q-chip v-for="f in currentSlotData?.assigned_fleet" :key="'df'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'teal-1' : 'orange-1'" :text-color="f.category === 'RAFT' ? 'teal-9' : 'orange-9'" size="sm">{{ f.name }}</q-chip>
+          </div>
+          <div v-else class="text-caption text-grey-4">Nessuna risorsa assegnata</div>
+          <q-btn flat dense icon="edit" label="Assegna Risorse" color="primary" class="q-mt-xs full-width" size="sm" @click="openAllocationDialog(currentSlotData)" />
         </q-card-section>
 
         <q-separator />
@@ -487,11 +509,55 @@
 
     <ReservationWizard v-model="wizardOpen" :defaults="wizardDefaults" @saved="onReservationSaved" />
     <SeasonConfigDialog ref="seasonDialog" />
+
+    <!-- Cantiere 5: Dialog Assegna Risorse -->
+    <q-dialog v-model="allocationDialog">
+      <q-card style="min-width: 450px;">
+        <q-card-section class="bg-primary text-white">
+          <div class="text-h6"><q-icon name="groups" class="q-mr-sm" />Assegna Risorse</div>
+          <div class="text-caption">{{ allocationRide?.activity_type }} — {{ allocationRide?.time?.slice(0,5) }}</div>
+        </q-card-section>
+        <q-card-section class="q-pt-md">
+          <q-select
+            v-model="selectedStaffIds"
+            :options="staffOptions"
+            option-value="id"
+            option-label="name"
+            emit-value
+            map-options
+            multiple
+            use-chips
+            label="👤 Guide / Staff"
+            outlined
+            dense
+            class="q-mb-md"
+          />
+          <q-select
+            v-model="selectedFleetIds"
+            :options="fleetOptions"
+            option-value="id"
+            option-label="name"
+            emit-value
+            map-options
+            multiple
+            use-chips
+            label="🚣 Mezzi / Flotta"
+            outlined
+            dense
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Annulla" v-close-popup />
+          <q-btn unelevated color="primary" icon="save" label="Salva" @click="saveAllocations" :loading="allocationSaving" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
   </q-page>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useResourceStore } from 'stores/resource-store'
 import { useQuasar } from 'quasar'
 import { api } from 'boot/axios'
@@ -510,6 +576,15 @@ const wizardDefaults = ref(null)
 const ruleDialogOpen = ref(false)
 const dayViewMode = ref('OPERATIVO')  // Cantiere 4: toggle Operativo/Segreteria nel Day Detail
 
+// Cantiere 5: Allocation Dialog State
+const allocationDialog = ref(false)
+const allocationRide = ref(null)
+const selectedStaffIds = ref([])
+const selectedFleetIds = ref([])
+const allocationSaving = ref(false)
+const staffOptions = computed(() => store.activeStaff.map(s => ({ id: s.id, name: s.name })))
+const fleetOptions = computed(() => store.fleetList.filter(f => f.is_active !== false).map(f => ({ id: f.id, name: f.name })))
+
 // Calendar view state
 const viewMode = ref('MONTH')
 const calendarDisplayMode = ref('DESCENTS')
@@ -522,6 +597,8 @@ const showRideDialog = ref(false)
 const rideData = ref(null)
 const rideLoading = ref(false)
 const currentSlotId = ref(null)
+// Cantiere 5.1: dati del turno corrente per il drawer (con assigned_staff/fleet)
+const currentSlotData = computed(() => store.dailySchedule.find(s => s.id === currentSlotId.value) || null)
 
 // ═══ LIVELLO 2: Order Dialog State ═══
 const showOrderDialog = ref(false)
@@ -561,7 +638,11 @@ const ruleCols = [
 onMounted(async () => {
   $q.loading.show({ message: 'Inizializzazione...' })
   try {
-    await store.fetchActivityRules()
+    await Promise.all([
+      store.fetchActivityRules(),
+      store.fetchStaff(),
+      store.fetchFleet(),
+    ])
     const [y, m] = selectedDate.value.split('/')
     currentYear.value = parseInt(y)
     currentMonth.value = parseInt(m)
@@ -797,6 +878,42 @@ async function deleteRule(id) {
     $q.notify({ type: 'positive', message: 'Regola eliminata' })
     await updateMonthOverview(currentYear.value, currentMonth.value)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore eliminazione' }) }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CANTIERE 5: Allocazione Risorse
+// ═══════════════════════════════════════════════════════════
+function openAllocationDialog(slot) {
+  allocationRide.value = slot
+  selectedStaffIds.value = (slot.assigned_staff || []).map(s => s.id)
+  selectedFleetIds.value = (slot.assigned_fleet || []).map(f => f.id)
+  allocationDialog.value = true
+}
+
+async function saveAllocations() {
+  if (!allocationRide.value) return
+  allocationSaving.value = true
+  try {
+    const ride = allocationRide.value
+    const d = selectedDate.value.replace(/\//g, '-')
+    await store.updateRideAllocations(ride.id, {
+      staff_ids: selectedStaffIds.value,
+      fleet_ids: selectedFleetIds.value,
+      // Campi per lazy-creation se il turno non esiste ancora in DB
+      date: d,
+      time: ride.time || null,
+      activity_id: ride.activity_id || null,
+    })
+    allocationDialog.value = false
+    $q.notify({ type: 'positive', message: 'Risorse assegnate con successo!' })
+    // Ricarica i turni per aggiornare i chip
+    await store.fetchDailySchedule(d)
+  } catch(e) {
+    console.error('saveAllocations error:', e)
+    $q.notify({ type: 'negative', message: 'Errore assegnazione risorse' })
+  } finally {
+    allocationSaving.value = false
+  }
 }
 </script>
 

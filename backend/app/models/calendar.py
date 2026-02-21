@@ -12,6 +12,7 @@ from sqlalchemy.orm import relationship
 
 # Importiamo la Base dalla VOSTRA configurazione esistente
 from app.db.database import Base
+from sqlalchemy import Table
 
 def generate_uuid():
     return str(uuid.uuid4())
@@ -70,6 +71,21 @@ class ActivitySubPeriodDB(Base):
     activity = relationship("ActivityDB", back_populates="sub_periods")
 
 # ==========================================
+# 2a. TABELLE ASSOCIATIVE M2M (Cantiere 5)
+# ==========================================
+ride_staff_link = Table(
+    "ride_staff_link", Base.metadata,
+    Column("ride_id", String(36), ForeignKey("daily_rides.id", ondelete="CASCADE"), primary_key=True),
+    Column("staff_id", String(36), ForeignKey("staff.id", ondelete="CASCADE"), primary_key=True),
+)
+
+ride_fleet_link = Table(
+    "ride_fleet_link", Base.metadata,
+    Column("ride_id", String(36), ForeignKey("daily_rides.id", ondelete="CASCADE"), primary_key=True),
+    Column("fleet_id", String(36), ForeignKey("fleet.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# ==========================================
 # 2. LA DISCESA FISICA (Il "Quadratino" sul Tetris)
 # ==========================================
 class DailyRideDB(Base):
@@ -89,6 +105,10 @@ class DailyRideDB(Base):
     activity = relationship("ActivityDB", back_populates="rides")
     orders = relationship("OrderDB", back_populates="ride")
     crew_assignments = relationship("CrewAssignmentDB", back_populates="ride")
+
+    # ── Cantiere 5: Assegnazione diretta Staff e Mezzi (M2M) ──
+    assigned_staff = relationship("StaffDB", secondary=ride_staff_link, lazy="joined")
+    assigned_fleet = relationship("FleetDB", secondary=ride_fleet_link, lazy="joined")
 
 # ==========================================
 # 3. PRENOTAZIONE COMMERCIALE (Il "Carrello")

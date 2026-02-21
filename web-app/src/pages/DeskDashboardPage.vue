@@ -232,11 +232,11 @@
                   </div>
 
                   <!-- Form aggiunta transazione -->
-                  <div class="row q-col-gutter-sm items-end">
-                    <div class="col-3">
+                  <div class="row q-col-gutter-sm items-end wrap">
+                    <div class="col-12 col-sm-3">
                       <q-input v-model.number="newTx.amount" type="number" label="Importo €" outlined dense :min="0" />
                     </div>
-                    <div class="col-3">
+                    <div class="col-12 col-sm-2">
                       <q-select
                         v-model="newTx.method"
                         :options="['CASH', 'SUMUP', 'BONIFICO', 'PARTNERS']"
@@ -244,7 +244,7 @@
                         outlined dense
                       />
                     </div>
-                    <div class="col-2">
+                    <div class="col-12 col-sm-2">
                       <q-select
                         v-model="newTx.type"
                         :options="['CAPARRA', 'SALDO']"
@@ -252,10 +252,10 @@
                         outlined dense
                       />
                     </div>
-                    <div class="col-2">
+                    <div class="col-12 col-sm-3">
                       <q-input v-model="newTx.note" label="Note" outlined dense placeholder="Es. Smartbox" />
                     </div>
-                    <div class="col-2">
+                    <div class="col-12 col-sm-2">
                       <q-btn
                         icon="add"
                         color="primary"
@@ -460,8 +460,8 @@
                     <!-- Aggiungi pagamento -->
                     <div v-if="order.remaining > 0">
                       <div class="text-caption text-grey-7 q-mb-xs">Aggiungi pagamento:</div>
-                      <div class="row q-col-gutter-sm items-end">
-                        <div class="col-3">
+                      <div class="row q-col-gutter-sm items-end wrap">
+                        <div class="col-12 col-sm-3">
                           <q-input
                             v-model.number="addTxForms[order.id].amount"
                             type="number"
@@ -469,7 +469,7 @@
                             outlined dense
                           />
                         </div>
-                        <div class="col-3">
+                        <div class="col-12 col-sm-3">
                           <q-select
                             v-model="addTxForms[order.id].method"
                             :options="['CASH', 'SUMUP', 'BONIFICO', 'PARTNERS']"
@@ -477,14 +477,14 @@
                             outlined dense
                           />
                         </div>
-                        <div class="col-3">
+                        <div class="col-12 col-sm-3">
                           <q-input
                             v-model="addTxForms[order.id].note"
                             label="Note"
                             outlined dense
                           />
                         </div>
-                        <div class="col-3">
+                        <div class="col-12 col-sm-3">
                           <q-btn
                             icon="add"
                             label="Paga"

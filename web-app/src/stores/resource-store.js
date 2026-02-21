@@ -143,9 +143,17 @@ export const useResourceStore = defineStore('resource', {
           avail_rafts: '—',
           avail_vans: '—',
           status_desc: _engineStatusDesc(ride.engine_status),
+          // Cantiere 5: risorse assegnate
+          assigned_staff: ride.assigned_staff || [],
+          assigned_fleet: ride.assigned_fleet || [],
         }))
       } catch (e) { console.error('fetchDailySchedule error:', e) }
       finally { this.loading = false }
+    },
+
+    // Cantiere 5: Aggiorna assegnazioni Staff/Fleet per una discesa
+    async updateRideAllocations(rideId, payload) {
+      await api.put(`/calendar/daily-rides/${rideId}/allocations`, payload)
     },
 
     async fetchMonthOverview(year, month) {

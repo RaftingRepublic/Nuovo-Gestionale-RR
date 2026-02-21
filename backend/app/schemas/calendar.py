@@ -91,6 +91,13 @@ class ActivitySeasonUpdate(BaseModel):
 
 # ─── DISCESA GIORNALIERA ─────────────────────────────────
 
+class AssignedResource(BaseModel):
+    """Risorsa assegnata (Staff o Mezzo) — id, nome e categoria per la UI."""
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    category: Optional[str] = None  # 'RAFT' | 'VAN' per fleet, None per staff
+
 class DailyRideResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,6 +120,20 @@ class DailyRideResponse(BaseModel):
     remaining_seats: int = 0
     engine_status: str = "VERDE"
 
+    # Cantiere 5: Risorse assegnate
+    assigned_staff: List[AssignedResource] = []
+    assigned_fleet: List[AssignedResource] = []
+
+
+class RideAllocationUpdate(BaseModel):
+    """Payload per aggiornare le assegnazioni staff/fleet di una discesa."""
+    staff_ids: List[str] = []
+    fleet_ids: List[str] = []
+    # Campi opzionali per lazy-creation del turno (se non esiste ancora in DB)
+    date: Optional[str] = None
+    time: Optional[str] = None
+    activity_id: Optional[str] = None
+
 
 # ─── CRUSCOTTO OPERATIVO (Calendario Mensile) ────────────
 
@@ -128,4 +149,5 @@ class DailyScheduleResponse(BaseModel):
     date: str
     booked_rides: List[BookedRideSlot] = []
     staff_count: int = 0
+
 
