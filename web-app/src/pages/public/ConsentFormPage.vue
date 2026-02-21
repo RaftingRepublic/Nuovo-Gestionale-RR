@@ -114,6 +114,13 @@
       <q-step :name="4" :title="t.steps.privacy" icon="gavel" :done="step > 4">
         <div class="row justify-center">
           <div class="col-12 col-md-8">
+            <!-- Cantiere 3: Hero banner con info discesa dal Magic Link -->
+            <div v-if="orderInfo" class="q-pa-md q-mb-md rounded-borders bg-blue-1" style="border-left: 4px solid var(--q-primary);">
+              <div class="text-subtitle1 text-primary text-weight-bold">
+                <q-icon name="water" class="q-mr-xs" />
+                In riferimento alla discesa {{ orderInfo.activity_name }} del {{ orderInfo.date }} alle {{ orderInfo.time }}
+              </div>
+            </div>
             <q-banner class="bg-indigo-1 q-mb-md rounded-borders text-body1">
               <q-icon name="info" color="primary" size="sm" class="q-mr-sm"/> <strong>{{ t.privacy.accept_for_all }}</strong>
             </q-banner>
@@ -167,12 +174,15 @@
           <div class="col-12 col-md-8 text-center">
             <q-icon name="check_circle" color="positive" size="80px" class="q-mb-lg" />
             <div class="text-h4 text-positive q-mb-md">{{ t.summary.success }}</div>
-            <p class="text-grey-7 text-body1 q-mb-xl">Registrazione completata con successo. Puoi chiudere questa pagina o registrare un nuovo partecipante.</p>
+            <p v-if="orderId" class="text-grey-7 text-body1 q-mb-xl">
+              Consenso registrato! Puoi passare il telefono al prossimo partecipante del gruppo.
+            </p>
+            <p v-else class="text-grey-7 text-body1 q-mb-xl">Registrazione completata con successo. Puoi chiudere questa pagina o registrare un nuovo partecipante.</p>
             <q-btn
               color="primary"
               size="lg"
-              icon="person_add"
-              label="Nuova Registrazione"
+              :icon="orderId ? 'group_add' : 'person_add'"
+              :label="orderId ? 'Prossimo Partecipante' : 'Nuova Registrazione'"
               @click="startNewRegistration"
               class="q-px-xl"
             />
@@ -276,18 +286,24 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useRegistrationStore } from 'stores/registration-store'
 import { useQuasar } from 'quasar'
+import { api } from 'src/boot/axios'
 import { translations } from 'src/constants/translations'
 import { LEGAL_TEXTS } from 'src/constants/legal'
-// imageCompression rimosso: la compressione avviene già in StepDocuments
 import CameraCapture from 'components/CameraCapture.vue'
 import StepDocuments from 'components/scanner/steps/StepDocuments.vue'
 import StepReview from 'components/scanner/steps/StepReview.vue'
 
 // Init
+const route = useRoute()
 const store = useRegistrationStore()
 const $q = useQuasar()
+
+// Cantiere 3: Magic Link (Auto-Slotting)
+const orderId = computed(() => route.query.order_id || null)
+const orderInfo = ref(null)
 
 // State
 const step = ref(1)
@@ -320,8 +336,18 @@ const allLegalCompleted = computed(() => {
 })
 
 // Lifecycle
-onMounted(() => {
+onMounted(async () => {
   store.resetStore()
+  // Cantiere 3: se c'è order_id, carica info discesa
+  if (orderId.value) {
+    try {
+      const res = await api.get(`/public/orders/${orderId.value}/info`)
+      orderInfo.value = res.data
+    } catch (e) {
+      console.error('Errore caricamento info ordine:', e)
+      $q.notify({ type: 'negative', message: 'Link non valido o ordine non trovato.', position: 'top' })
+    }
+  }
 })
 
 watch(() => store.hasMinors, (val) => { if (val && store.minors.length === 0) store.addMinor() })
@@ -406,7 +432,26 @@ function finalizeLegalStep() {
 }
 
 // ── Gestione Successo Invio (chiamata da StepReview) ──
-function onSubmitSuccess () {
+async function onSubmitSuccess () {
+  // Cantiere 3: se c'è order_id, invia fill-slot all'API pubblica
+  if (orderId.value) {
+    try {
+      const payload = {
+        first_name: store.guardian.ocrData.nome || '',
+        last_name: store.guardian.ocrData.cognome || '',
+        email: store.contact.email || '',
+        phone: `${store.contact.prefix} ${store.contact.telefono}`.trim(),
+        is_minor: store.hasMinors,
+        accepted_terms: true,
+      }
+      await api.post(`/public/orders/${orderId.value}/fill-slot`, payload)
+      $q.notify({ type: 'positive', message: 'Consenso registrato con successo!', icon: 'check_circle', position: 'top' })
+    } catch (e) {
+      const msg = e.response?.data?.detail || 'Errore durante il salvataggio del consenso.'
+      $q.notify({ type: 'negative', message: msg, position: 'top', timeout: 6000 })
+      return // Non avanzare allo step 6
+    }
+  }
   step.value = 6
 }
 

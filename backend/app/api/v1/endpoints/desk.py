@@ -148,38 +148,23 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
         firaft_default = "DA_TESSERARE" if is_anatre else "NON_RICHIESTO"
 
         for i in range(payload.pax):
-            if i == 0:
-                # Referente (Lead)
-                reg = RegistrationDB(
-                    id=f"{new_order.id}-slot-{i}",
-                    order_id=new_order.id,
-                    daily_ride_id=ride.id,
-                    nome=payload.booker_name or "Referente",
-                    cognome="",
-                    email=payload.booker_email or "",
-                    telefono=payload.booker_phone or "",
-                    is_lead=True,
-                    status="EMPTY",
-                    locked=False,
-                    created_at=datetime.utcnow(),
-                    firaft_status=firaft_default,
-                )
-            else:
-                # Slot Vuoto
-                reg = RegistrationDB(
-                    id=f"{new_order.id}-slot-{i}",
-                    order_id=new_order.id,
-                    daily_ride_id=ride.id,
-                    nome="Slot Vuoto",
-                    cognome=f"#{i + 1}",
-                    email="",
-                    telefono="",
-                    is_lead=False,
-                    status="EMPTY",
-                    locked=False,
-                    created_at=datetime.utcnow(),
-                    firaft_status=firaft_default,
-                )
+            # Cantiere 3: TUTTI gli slot partono EMPTY.
+            # I dati del bancone (booker_name) servono solo per l'ordine,
+            # NON pre-compilano le manleve. Ogni partecipante compila da zero.
+            reg = RegistrationDB(
+                id=f"{new_order.id}-slot-{i}",
+                order_id=new_order.id,
+                daily_ride_id=ride.id,
+                nome="Slot Vuoto",
+                cognome=f"#{i + 1}",
+                email="",
+                telefono="",
+                is_lead=(i == 0),
+                status="EMPTY",
+                locked=False,
+                created_at=datetime.utcnow(),
+                firaft_status=firaft_default,
+            )
             db.add(reg)
 
         # ─── 7. RICALCOLO SEMAFORO ───────────────────────

@@ -55,35 +55,58 @@
             </div>
 
             <div class="col scroll">
-              <div v-if="store.loading" class="flex flex-center h-full"><q-spinner size="3em" color="primary" /></div>
-              <div v-else-if="store.dailySchedule.length === 0" class="flex flex-center h-full text-grey-5 column">
-                <q-icon name="event_busy" size="4em" />
-                <div class="text-h6 q-mt-sm">Nessuna attività programmata per oggi.</div>
+              <!-- ── Cantiere 4: Toggle OPERATIVO / SEGRETERIA ── -->
+              <div class="q-mb-md flex flex-center">
+                <q-btn-toggle
+                  v-model="dayViewMode"
+                  :options="[
+                    { label: 'LATO OPERATIVO', value: 'OPERATIVO' },
+                    { label: 'LATO SEGRETERIA (POS)', value: 'SEGRETERIA' }
+                  ]"
+                  rounded unelevated toggle-color="primary" color="grey-3" text-color="black"
+                />
               </div>
 
-              <div v-else class="row q-col-gutter-md">
-                <div class="col-12 col-sm-6 col-md-4" v-for="(slot, idx) in store.dailySchedule" :key="idx">
-                  <q-card bordered class="slot-card transition-generic cursor-pointer" @click="openRideDialog(slot)" v-ripple>
-                    <q-item>
-                      <q-item-section avatar>
-                        <q-avatar :style="{ backgroundColor: slot.color_hex }" text-color="white" size="48px" font-size="13px">{{ slot.time?.slice(0,5) }}</q-avatar>
-                      </q-item-section>
-                      <q-item-section>
-                        <q-item-label class="text-weight-bold">{{ slot.activity_type }}</q-item-label>
-                        <q-item-label caption>
-                          <span :style="{ color: slot.color_hex, fontWeight: 'bold' }">{{ slot.status_desc }}</span>
-                          <q-icon v-if="slot.is_overridden" name="lock" size="xs" color="grey-6" class="q-ml-xs" />
-                        </q-item-label>
-                      </q-item-section>
-                    </q-item>
-                    <q-separator />
-                    <q-card-section class="q-pa-sm text-center" :class="slot.engine_status === 'ROSSO' ? 'bg-red-1' : (slot.engine_status === 'GIALLO' ? 'bg-orange-1' : 'bg-green-1')">
-                      <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax }}</span>
-                      <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
-                      <q-linear-progress :value="slot.booked_pax / Math.max(1, slot.total_capacity || 1)" :color="getStatusColorName(slot.engine_status)" class="q-mt-xs" rounded />
-                    </q-card-section>
-                  </q-card>
+              <!-- ── Contenuto OPERATIVO (griglia slot) ── -->
+              <div v-if="dayViewMode === 'OPERATIVO'">
+                <div v-if="store.loading" class="flex flex-center h-full"><q-spinner size="3em" color="primary" /></div>
+                <div v-else-if="store.dailySchedule.length === 0" class="flex flex-center h-full text-grey-5 column">
+                  <q-icon name="event_busy" size="4em" />
+                  <div class="text-h6 q-mt-sm">Nessuna attività programmata per oggi.</div>
                 </div>
+
+                <div v-else class="row q-col-gutter-md">
+                  <div class="col-12 col-sm-6 col-md-4" v-for="(slot, idx) in store.dailySchedule" :key="idx">
+                    <q-card bordered class="slot-card transition-generic cursor-pointer" @click="openRideDialog(slot)" v-ripple>
+                      <q-item>
+                        <q-item-section avatar>
+                          <q-avatar :style="{ backgroundColor: slot.color_hex }" text-color="white" size="48px" font-size="13px">{{ slot.time?.slice(0,5) }}</q-avatar>
+                        </q-item-section>
+                        <q-item-section>
+                          <q-item-label class="text-weight-bold">{{ slot.activity_type }}</q-item-label>
+                          <q-item-label caption>
+                            <span :style="{ color: slot.color_hex, fontWeight: 'bold' }">{{ slot.status_desc }}</span>
+                            <q-icon v-if="slot.is_overridden" name="lock" size="xs" color="grey-6" class="q-ml-xs" />
+                          </q-item-label>
+                        </q-item-section>
+                      </q-item>
+                      <q-separator />
+                      <q-card-section class="q-pa-sm text-center" :class="slot.engine_status === 'ROSSO' ? 'bg-red-1' : (slot.engine_status === 'GIALLO' ? 'bg-orange-1' : 'bg-green-1')">
+                        <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax }}</span>
+                        <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
+                        <q-linear-progress :value="slot.booked_pax / Math.max(1, slot.total_capacity || 1)" :color="getStatusColorName(slot.engine_status)" class="q-mt-xs" rounded />
+                      </q-card-section>
+                    </q-card>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Contenuto SEGRETERIA (POS innestato) ── -->
+              <div v-else-if="dayViewMode === 'SEGRETERIA'">
+                <DeskDashboardPage
+                  :external-date="selectedDate ? selectedDate.replace(/\//g, '-') : null"
+                  :hide-calendar="true"
+                />
               </div>
             </div>
           </div>
@@ -475,6 +498,7 @@ import { api } from 'boot/axios'
 import CalendarComponent from 'components/CalendarComponent.vue'
 import ReservationWizard from 'components/ReservationWizard.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
+import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 
 const store = useResourceStore()
 const $q = useQuasar()
@@ -484,6 +508,7 @@ const selectedDate = ref(new Date().toISOString().split('T')[0].replace(/-/g, '/
 const wizardOpen = ref(false)
 const wizardDefaults = ref(null)
 const ruleDialogOpen = ref(false)
+const dayViewMode = ref('OPERATIVO')  // Cantiere 4: toggle Operativo/Segreteria nel Day Detail
 
 // Calendar view state
 const viewMode = ref('MONTH')
@@ -565,8 +590,8 @@ async function updateMonthOverview(year, month) {
 }
 
 function changeMonth(m, y) { currentMonth.value = m; currentYear.value = y; updateMonthOverview(y, m) }
-function goToMonthView() { viewMode.value = 'MONTH'; updateMonthOverview(currentYear.value, currentMonth.value) }
-function openDayDetail(dateStr) { selectedDate.value = dateStr.replace(/-/g, '/'); viewMode.value = 'DETAIL'; loadSchedule() }
+function goToMonthView() { viewMode.value = 'MONTH'; dayViewMode.value = 'OPERATIVO'; updateMonthOverview(currentYear.value, currentMonth.value) }
+function openDayDetail(dateStr) { selectedDate.value = dateStr.replace(/-/g, '/'); viewMode.value = 'DETAIL'; dayViewMode.value = 'OPERATIVO'; loadSchedule() }
 function onNavigation(view) { if (viewMode.value === 'DETAIL') { currentYear.value = view.year; currentMonth.value = view.month; updateMonthOverview(view.year, view.month) } }
 function calendarEvents(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.booked_rides && day.booked_rides.length > 0 }
 function calendarEventColor(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.booked_rides && day.booked_rides.length > 0 ? 'primary' : 'grey' }

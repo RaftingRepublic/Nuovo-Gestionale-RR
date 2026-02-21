@@ -100,9 +100,14 @@ app.include_router(logistics.router, prefix="/api/v1/logistics", tags=["Logistic
 from app.api.v1.endpoints import desk
 app.include_router(desk.router, prefix="/api/v1/orders", tags=["Desk POS"])
 
+# 10. Public API (Cantiere 3 — Check-in Digitale, NO Auth)
+from app.api.v1.endpoints import public
+app.include_router(public.router, prefix="/api/v1/public", tags=["Public Check-in"])
+
 # --- LOG AVVIO ---
 print("\n" + "="*60)
 print("🚀 BACKEND AVVIATO")
 print(f"   AI Vision: {'✅ Abilitato' if getattr(vision, 'AI_AVAILABLE', False) else '❌ Disabilitato (librerie non installate)'}")
 print(f"   Resources: {'✅ Caricato' if resources else '❌ Non caricato'}")
+print(f"   Public API: ✅ Check-in Digitale attivo")
 print("="*60 + "\n")

@@ -1,7 +1,7 @@
 <template>
-  <q-page class="q-pa-md bg-grey-2">
-    <!-- Header -->
-    <div class="row items-center justify-between q-mb-md">
+  <div class="q-pa-md bg-grey-2 fit">
+    <!-- Header (nascosto quando innestato nel Dettaglio Giorno) -->
+    <div v-if="!hideCalendar" class="row items-center justify-between q-mb-md">
       <div>
         <div class="text-h5 text-weight-bold text-blue-grey-9">
           <q-icon name="point_of_sale" class="q-mr-sm" />
@@ -16,15 +16,16 @@
       <!-- ═══════════════════════════════════════════════════════ -->
       <!-- COLONNA SX: RADAR TURNI                                -->
       <!-- ═══════════════════════════════════════════════════════ -->
-      <div class="col-12 col-md-4">
+      <div :class="hideCalendar ? 'col-12 col-md-3' : 'col-12 col-md-4'">
         <q-card class="radar-card shadow-2">
           <q-card-section class="bg-blue-grey-9 text-white q-py-sm">
             <div class="text-subtitle1 text-weight-bold">
-              <q-icon name="radar" class="q-mr-xs" /> Radar Turni
+              <q-icon name="radar" class="q-mr-xs" /> {{ hideCalendar ? 'Turni del Giorno' : 'Radar Turni' }}
             </div>
           </q-card-section>
 
-          <q-card-section class="q-pa-sm">
+          <!-- Mini-calendario (nascosto quando innestato dal Dettaglio Giorno) -->
+          <q-card-section v-if="!hideCalendar" class="q-pa-sm">
             <q-date
               v-model="selectedDate"
               mask="YYYY-MM-DD"
@@ -36,7 +37,7 @@
             />
           </q-card-section>
 
-          <q-separator />
+          <q-separator v-if="!hideCalendar" />
 
           <!-- Lista turni -->
           <q-card-section class="scroll radar-list q-pa-none">
@@ -97,7 +98,7 @@
       <!-- ═══════════════════════════════════════════════════════ -->
       <!-- COLONNA DX: AREA DI LAVORO                             -->
       <!-- ═══════════════════════════════════════════════════════ -->
-      <div class="col-12 col-md-8">
+      <div :class="hideCalendar ? 'col-12 col-md-9' : 'col-12 col-md-8'">
         <!-- Placeholder se nessun turno selezionato -->
         <q-card v-if="!selectedRide" class="shadow-1 flex flex-center" style="min-height: 400px;">
           <div class="text-center text-grey-5">
@@ -355,22 +356,22 @@
                   </template>
 
                   <q-card-section>
-                    <!-- 4 Bottoni Magici (Mockup Cantiere 3) -->
+                    <!-- 4 Bottoni Magici — Cantiere 3: Check-in Digitale -->
                     <div class="text-subtitle2 text-blue-grey-7 q-mb-sm">
-                      <q-icon name="auto_awesome" class="q-mr-xs" /> Azioni Rapide
+                      <q-icon name="auto_awesome" class="q-mr-xs" /> Azioni Rapide — Check-in
                     </div>
                     <div class="row q-gutter-sm q-mb-md">
-                      <q-btn round outline icon="link" color="primary" size="md">
-                        <q-tooltip>In arrivo: Cantiere 3 — Link Manleva</q-tooltip>
+                      <q-btn round outline icon="link" color="primary" size="md" @click="copyMagicLink(order.id)">
+                        <q-tooltip>Copia Link Manleva</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="qr_code" color="primary" size="md">
-                        <q-tooltip>In arrivo: Cantiere 3 — QR Code</q-tooltip>
+                      <q-btn round outline icon="qr_code" color="primary" size="md" @click="showQrDialog(order.id)">
+                        <q-tooltip>Mostra QR Code</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="chat" color="green" size="md">
-                        <q-tooltip>In arrivo: Cantiere 3 - WhatsApp Link</q-tooltip>
+                      <q-btn round outline icon="chat" color="green" size="md" @click="shareWhatsApp(order.id)">
+                        <q-tooltip>Invia via WhatsApp</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="group" color="purple" size="md">
-                        <q-tooltip>In arrivo: Cantiere 3 — Gestione Partecipanti</q-tooltip>
+                      <q-btn round outline icon="group" color="purple" size="md" @click="openGroupDialog(order)">
+                        <q-tooltip>Vedi Partecipanti</q-tooltip>
                       </q-btn>
                     </div>
 
@@ -534,13 +535,78 @@
         </q-card>
       </div>
     </div>
-  </q-page>
+
+    <!-- ═══ DIALOG: QR CODE ═══ -->
+    <q-dialog v-model="qrDialog.open">
+      <q-card style="min-width: 350px; text-align: center;">
+        <q-card-section class="bg-primary text-white">
+          <div class="text-h6"><q-icon name="qr_code" class="q-mr-sm" />QR Code Manleva</div>
+        </q-card-section>
+        <q-card-section class="q-pa-lg">
+          <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qrDialog.url)" style="width: 100%; max-width: 300px;" />
+          <div class="text-caption text-grey-7 q-mt-md">Inquadra con il telefono per compilare il consenso</div>
+        </q-card-section>
+        <q-card-actions align="center">
+          <q-btn flat label="Chiudi" color="primary" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- ═══ DIALOG: GRUPPO PARTECIPANTI ═══ -->
+    <q-dialog v-model="groupDialog.open">
+      <q-card style="min-width: 400px;">
+        <q-card-section class="bg-purple text-white">
+          <div class="text-h6">
+            <q-icon name="group" class="q-mr-sm" />
+            Lista Partecipanti
+            <q-badge color="white" text-color="purple" class="q-ml-sm">
+              {{ groupDialog.completedCount }}/{{ groupDialog.registrations.length }}
+            </q-badge>
+          </div>
+        </q-card-section>
+        <q-list separator>
+          <q-item v-for="(reg, idx) in groupDialog.registrations" :key="idx">
+            <q-item-section avatar>
+              <q-icon
+                :name="reg.status === 'COMPLETED' ? 'check_circle' : 'hourglass_empty'"
+                :color="reg.status === 'COMPLETED' ? 'green' : 'grey'"
+                size="sm"
+              />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label v-if="reg.status === 'COMPLETED'">
+                {{ reg.nome }} {{ reg.cognome }}
+              </q-item-label>
+              <q-item-label v-else class="text-grey-5 text-italic">
+                Slot Vuoto — in attesa di compilazione
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-badge :color="reg.status === 'COMPLETED' ? 'green' : 'grey-4'" :text-color="reg.status === 'COMPLETED' ? 'white' : 'grey-7'">
+                {{ reg.status === 'COMPLETED' ? '✅ Compilato' : '⏳ Vuoto' }}
+              </q-badge>
+            </q-item-section>
+          </q-item>
+        </q-list>
+        <q-card-actions align="center">
+          <q-btn flat label="Chiudi" color="purple" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useQuasar, date as qdate } from 'quasar'
 import { api } from 'boot/axios'
+
+// ─── PROPS (Cantiere 4: innesto nella PlanningPage) ─────
+const props = defineProps({
+  externalDate: { type: String, default: null },
+  hideCalendar: { type: Boolean, default: false }
+})
 
 const $q = useQuasar()
 
@@ -577,6 +643,38 @@ const newTx = reactive({
   note: '',
 })
 
+// ─── CANTIERE 3: Check-in Digitale ──────────────────────
+const qrDialog = reactive({ open: false, url: '' })
+const groupDialog = reactive({ open: false, registrations: [], completedCount: 0 })
+
+function getPublicUrl(orderId) {
+  return window.location.origin + '/#/consenso?order_id=' + orderId
+}
+
+function copyMagicLink(orderId) {
+  const url = getPublicUrl(orderId)
+  navigator.clipboard.writeText(url)
+  $q.notify({ type: 'positive', message: 'Link copiato negli appunti!', icon: 'content_copy', position: 'top' })
+}
+
+function showQrDialog(orderId) {
+  qrDialog.url = getPublicUrl(orderId)
+  qrDialog.open = true
+}
+
+function shareWhatsApp(orderId) {
+  const url = getPublicUrl(orderId)
+  const text = 'Ciao! Ecco il link per compilare il consenso per la nostra discesa: ' + url
+  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank')
+}
+
+function openGroupDialog(order) {
+  const regs = order.registrations || []
+  groupDialog.registrations = regs
+  groupDialog.completedCount = regs.filter(r => r.status === 'COMPLETED').length
+  groupDialog.open = true
+}
+
 // ─── COMPUTED ────────────────────────────────────────────
 const computedExtras = computed(() => {
   const extras = []
@@ -607,8 +705,9 @@ async function loadDayRides () {
   selectedRide.value = null
   rideOrders.value = []
   try {
-    // selectedDate è già in formato ISO YYYY-MM-DD grazie a mask="YYYY-MM-DD"
-    const res = await api.get('/calendar/daily-rides', { params: { date: selectedDate.value } })
+    // Normalizza: q-date usa YYYY/MM/DD, ma l'API vuole YYYY-MM-DD
+    const apiDate = selectedDate.value.replace(/\//g, '-')
+    const res = await api.get('/calendar/daily-rides', { params: { date: apiDate } })
     dayRides.value = res.data
 
     // Arricchisci con prezzo attività (per la calcolatrice frontend)
@@ -622,8 +721,13 @@ async function loadDayRides () {
     }
   } catch (err) {
     console.error('loadDayRides error:', err)
-    const detail = err?.response?.data?.detail || err.message || 'Errore sconosciuto'
-    $q.notify({ type: 'negative', message: 'Errore caricamento turni: ' + detail })
+    let detail = err?.response?.data?.detail
+    if (Array.isArray(detail)) {
+      detail = detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+    } else if (typeof detail === 'object') {
+      detail = JSON.stringify(detail)
+    }
+    $q.notify({ type: 'negative', message: 'Errore caricamento turni: ' + (detail || err.message || 'Errore sconosciuto') })
   } finally {
     radarLoading.value = false
   }
@@ -835,8 +939,21 @@ function formatDateIT (val) {
   return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
+// ─── CANTIERE 4: Sync con data esterna dalla PlanningPage ──
+watch(() => props.externalDate, (newDate) => {
+  if (newDate) {
+    // PlanningPage usa YYYY-MM-DD, il q-date interno pure
+    selectedDate.value = newDate.replace(/-/g, '/')
+    loadDayRides()
+  }
+})
+
 // ─── LIFECYCLE ───────────────────────────────────────────
 onMounted(() => {
+  // Se il padre ha già passato una data, usala subito
+  if (props.externalDate) {
+    selectedDate.value = props.externalDate.replace(/-/g, '/')
+  }
   loadDayRides()
 })
 </script>

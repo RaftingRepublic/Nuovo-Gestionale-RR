@@ -39,8 +39,8 @@ const routes = [
       // Pianificazione Attività (Calendario Operativo)
       { path: 'pianificazione', component: () => import('pages/PlanningPage.vue') },
 
-      // Segreteria Operativa (Desk POS — Cantiere 2)
-      { path: 'segreteria', component: () => import('pages/DeskDashboardPage.vue') },
+      // Segreteria → ora vive dentro Pianificazione (tab SEGRETERIA)
+      { path: 'segreteria', redirect: '/admin/pianificazione' },
     ]
   },
 
