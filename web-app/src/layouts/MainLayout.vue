@@ -8,16 +8,26 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="leftDrawerOpen" show-if-above bordered>
+    <q-drawer
+      v-model="leftDrawerOpen"
+      side="left"
+      bordered
+      behavior="mobile"
+    >
       <q-list padding>
         <q-item-label header class="text-weight-bold text-grey-8">Operativo</q-item-label>
 
-        <q-item clickable v-ripple to="/admin/pianificazione" active-class="text-primary bg-blue-1">
-          <q-item-section avatar><q-icon name="calendar_month" /></q-item-section>
-          <q-item-section>Pianificazione</q-item-section>
+        <q-item clickable v-ripple to="/admin/operativo" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="event" /></q-item-section>
+          <q-item-section>Calendario Operativo</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/admin/prenotazioni" active-class="text-primary bg-blue-1">
+        <q-item clickable v-ripple to="/admin/segreteria" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="point_of_sale" /></q-item-section>
+          <q-item-section>Segreteria (POS)</q-item-section>
+        </q-item>
+
+        <q-item clickable v-ripple to="/admin/prenotazioni" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
           <q-item-section avatar><q-icon name="book_online" /></q-item-section>
           <q-item-section>Prenotazioni</q-item-section>
         </q-item>
@@ -25,12 +35,12 @@
         <q-separator class="q-my-md" />
         <q-item-label header class="text-weight-bold text-grey-8">Consensi &amp; Registrazioni</q-item-label>
 
-        <q-item clickable v-ripple to="/admin/registrazioni" active-class="text-primary bg-blue-1">
+        <q-item clickable v-ripple to="/admin/registrazioni" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
           <q-item-section avatar><q-icon name="folder_shared" /></q-item-section>
           <q-item-section>Archivio Consensi</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/admin/scanner" active-class="text-primary bg-blue-1">
+        <q-item clickable v-ripple to="/admin/scanner" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
           <q-item-section avatar><q-icon name="document_scanner" /></q-item-section>
           <q-item-section>Nuova Registrazione</q-item-section>
         </q-item>
@@ -38,7 +48,7 @@
         <q-separator class="q-my-md" />
         <q-item-label header class="text-weight-bold text-grey-8">Amministrazione</q-item-label>
 
-        <q-item clickable v-ripple to="/admin/risorse" active-class="text-primary bg-blue-1">
+        <q-item clickable v-ripple to="/admin/risorse" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
           <q-item-section avatar><q-icon name="groups" /></q-item-section>
           <q-item-section>Staff &amp; Risorse</q-item-section>
         </q-item>

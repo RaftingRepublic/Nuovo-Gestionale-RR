@@ -1,200 +1,164 @@
 <template>
   <q-page class="q-pa-md bg-grey-2">
+    <!-- Header Pagina -->
     <div class="row items-center justify-between q-mb-md">
-      <div class="text-h5 text-weight-bold text-blue-grey-9">Pianificazione Attività</div>
+      <div class="text-h5 text-weight-bold text-blue-grey-9">
+        {{ isSegreteria ? 'Segreteria (POS)' : 'Calendario Operativo' }}
+      </div>
       <div class="row q-gutter-sm items-center">
+        <!-- Filtri Visivi Globali -->
+        <q-btn-group outline>
+          <q-btn :color="viewFilter === 'discese' ? 'primary' : 'white'" :text-color="viewFilter === 'discese' ? 'white' : 'grey-8'" label="DISCESE" @click="viewFilter = 'discese'" size="sm" />
+          <q-btn :color="viewFilter === 'staff' ? 'primary' : 'white'" :text-color="viewFilter === 'staff' ? 'white' : 'grey-8'" label="STAFF" @click="viewFilter = 'staff'" size="sm" />
+          <q-btn :color="viewFilter === 'tutto' ? 'primary' : 'white'" :text-color="viewFilter === 'tutto' ? 'white' : 'grey-8'" label="TUTTO" @click="viewFilter = 'tutto'" size="sm" />
+        </q-btn-group>
         <q-btn color="blue-grey" icon="tune" label="Configura Stagione" outline @click="seasonDialog.isOpen = true" />
-        <q-btn color="primary" icon="add" label="Nuova Prenotazione" unelevated @click="wizardOpen = true" />
+        <q-btn color="primary" icon="add" label="Nuova Prenotazione" unelevated @click="openBookingForm(null, null)" />
       </div>
     </div>
 
-    <q-card class="shadow-1 fit-height-card my-rounded">
-      <q-tabs v-model="tab" class="text-grey-7 bg-white border-bottom" active-color="primary" align="left">
-        <q-tab name="CALENDAR" icon="event" label="Calendario Operativo" />
-        <q-tab name="CONFIG" icon="settings" label="Configurazione Regole" />
-      </q-tabs>
-      <q-separator />
-
-      <q-tab-panels v-model="tab" animated class="bg-grey-1 h-full-panels">
-
-        <q-tab-panel name="CALENDAR" class="q-pa-md h-full mobile-no-padding">
-
-          <!-- FULL CALENDAR MODE -->
-          <div v-if="viewMode === 'MONTH'" class="h-full column">
-             <CalendarComponent
-                :year="currentYear"
-                :month="currentMonth"
-                :month-data="monthOverview"
-                v-model:viewMode="calendarDisplayMode"
-                @update:month="changeMonth"
-                @day-click="openDayDetail"
-             />
-          </div>
-
-          <!-- DETAIL VIEW MODE -->
-          <div v-else class="row q-col-gutter-lg h-full">
-            <div class="col-auto border-right bg-white rounded-borders q-pa-sm">
-              <q-btn flat icon="arrow_back" label="Torna al Mese" color="primary" class="full-width q-mb-md" @click="goToMonthView" />
-              <q-date
-                v-model="selectedDate" minimal flat color="primary"
-                @update:model-value="loadSchedule"
-                :events="calendarEvents" :event-color="calendarEventColor"
-                @navigation="onNavigation"
-              />
-              <div class="q-mt-md text-center text-weight-bold text-primary">
-                {{ formatDate(selectedDate) }}
-              </div>
-              <q-separator class="q-my-md" />
-              <div class="q-px-sm">
-                <div class="text-caption text-grey-7 q-mb-xs">Legenda Stati:</div>
-                <div class="row items-center q-mb-xs"><q-badge color="green" class="q-mr-sm" /> Da Caricare</div>
-                <div class="row items-center q-mb-xs"><q-badge color="blue" class="q-mr-sm" /> Confermato</div>
-                <div class="row items-center q-mb-xs"><q-badge color="amber" class="q-mr-sm" /> Quasi Pieno</div>
-                <div class="row items-center"><q-badge color="red" class="q-mr-sm" /> Pieno / Chiuso</div>
-              </div>
-            </div>
-
-            <div class="col scroll">
-              <!-- ── Cantiere 4: Toggle OPERATIVO / SEGRETERIA ── -->
-              <div class="q-mb-md flex flex-center q-gutter-md">
-                <q-btn-toggle
-                  v-model="dayViewMode"
-                  :options="[
-                    { label: 'LATO OPERATIVO', value: 'OPERATIVO' },
-                    { label: 'LATO SEGRETERIA (POS)', value: 'SEGRETERIA' }
-                  ]"
-                  rounded unelevated toggle-color="primary" color="grey-3" text-color="black"
-                />
-                <q-btn
-                  outline
-                  icon="download"
-                  label="Export FIRAFT (CSV)"
-                  color="teal"
-                  size="sm"
-                  @click="exportFiraft"
-                />
-              </div>
-
-              <!-- ── Contenuto OPERATIVO (griglia slot) ── -->
-              <div v-if="dayViewMode === 'OPERATIVO'">
-                <div v-if="store.loading" class="flex flex-center h-full"><q-spinner size="3em" color="primary" /></div>
-                <div v-else-if="store.dailySchedule.length === 0" class="flex flex-center h-full text-grey-5 column">
-                  <q-icon name="event_busy" size="4em" />
-                  <div class="text-h6 q-mt-sm">Nessuna attività programmata per oggi.</div>
-                </div>
-
-                <div v-else class="row q-col-gutter-md">
-                  <div class="col-12 col-sm-6 col-md-4" v-for="(slot, idx) in store.dailySchedule" :key="idx">
-                    <q-card bordered class="slot-card transition-generic cursor-pointer" @click="openRideDialog(slot)" v-ripple>
-                      <q-item>
-                        <q-item-section avatar>
-                          <q-avatar :style="{ backgroundColor: slot.color_hex }" text-color="white" size="48px" font-size="13px">{{ slot.time?.slice(0,5) }}</q-avatar>
-                        </q-item-section>
-                        <q-item-section>
-                          <q-item-label class="text-weight-bold">{{ slot.activity_type }}</q-item-label>
-                          <q-item-label caption>
-                            <span :style="{ color: slot.color_hex, fontWeight: 'bold' }">{{ slot.status_desc }}</span>
-                            <q-icon v-if="slot.is_overridden" name="lock" size="xs" color="grey-6" class="q-ml-xs" />
-                          </q-item-label>
-                        </q-item-section>
-                      </q-item>
-                      <q-separator />
-                      <q-card-section class="q-pa-sm text-center" :class="slot.engine_status === 'ROSSO' ? 'bg-red-1' : (slot.engine_status === 'GIALLO' ? 'bg-orange-1' : 'bg-green-1')">
-                        <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax }}</span>
-                        <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
-                        <q-linear-progress :value="slot.booked_pax / Math.max(1, slot.total_capacity || 1)" :color="getStatusColorName(slot.engine_status)" class="q-mt-xs" rounded />
-                      </q-card-section>
-
-                      <!-- Cantiere 5: Risorse assegnate -->
-                      <q-card-section class="q-pa-xs q-pt-none">
-                        <div class="row q-gutter-xs q-mb-xs" v-if="slot.assigned_staff?.length || slot.assigned_fleet?.length">
-                          <q-chip v-for="s in slot.assigned_staff" :key="'s'+s.id" dense icon="person" color="blue-1" text-color="primary" size="sm">{{ s.name }}</q-chip>
-                          <q-chip v-for="f in slot.assigned_fleet" :key="'f'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'teal-1' : 'orange-1'" :text-color="f.category === 'RAFT' ? 'teal-9' : 'orange-9'" size="sm">{{ f.name }}</q-chip>
-                        </div>
-                        <q-btn flat dense icon="groups" label="Assegna Risorse" color="primary" class="full-width" size="sm" @click.stop="openAllocationDialog(slot)" />
-                      </q-card-section>
-                    </q-card>
-                  </div>
-                </div>
-              </div>
-
-              <!-- ── Contenuto SEGRETERIA (POS innestato) ── -->
-              <div v-else-if="dayViewMode === 'SEGRETERIA'">
-                <DeskDashboardPage
-                  :external-date="selectedDate ? selectedDate.replace(/\//g, '-') : null"
-                  :hide-calendar="true"
-                />
-              </div>
-            </div>
-          </div>
-        </q-tab-panel>
-
-        <q-tab-panel name="CONFIG" class="q-pa-md scroll">
-          <div class="row justify-between items-center q-mb-md">
-            <div class="text-h6">Regole Attive</div>
-            <q-btn color="primary" icon="add" label="Nuova Regola" unelevated @click="ruleDialogOpen = true" />
-          </div>
-          <q-table :rows="store.activityRules" :columns="ruleCols" row-key="id" flat bordered class="bg-white">
-            <template v-slot:body-cell-days="props">
-              <q-td :props="props">
-                <q-badge v-for="d in props.row.days_of_week" :key="d" color="grey-3" text-color="black" class="q-mr-xs">{{ getDayName(d) }}</q-badge>
-              </q-td>
-            </template>
-            <template v-slot:body-cell-times="props">
-              <q-td :props="props">
-                <q-chip v-for="t in props.row.start_times" :key="t" dense color="blue-1" text-color="blue-9" icon="schedule">{{ t }}</q-chip>
-              </q-td>
-            </template>
-            <template v-slot:body-cell-actions="props">
-              <q-td :props="props" align="right">
-                <q-btn flat round dense icon="delete" color="negative" @click="deleteRule(props.row.id)" />
-              </q-td>
-            </template>
-          </q-table>
-        </q-tab-panel>
-      </q-tab-panels>
-    </q-card>
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- VISTA MESE — Calendario mensile con mattoncini cliccabili         -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div v-if="viewMode === 'MONTH'" class="fit-height-card">
+      <CalendarComponent
+        :year="currentYear"
+        :month="currentMonth"
+        :month-data="monthOverview"
+        :view-filter="viewFilter"
+        v-model:viewMode="calendarDisplayMode"
+        @update:month="changeMonth"
+        @day-click="openDayDetail"
+        @ride-click="onRideClickFromMonth"
+      />
+    </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- LIVELLO 1 — DETTAGLIO TURNO (Ride Dialog)                         -->
+    <!-- VISTA GIORNO — Dettaglio turni                                    -->
     <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <q-dialog v-model="showRideDialog" position="right" full-height>
-      <q-card style="width: 520px; max-width: 95vw;" class="column full-height">
-        <!-- Header con bottoni override -->
-        <q-card-section class="bg-primary text-white q-py-sm">
+    <div v-else class="column" style="min-height: calc(100vh - 140px);">
+      <!-- Header navigazione giornaliera -->
+      <div class="row items-center q-mb-md q-gutter-sm">
+        <q-btn flat icon="arrow_back" label="Torna al Mese" color="primary" @click="goToMonthView" />
+        <q-separator vertical class="q-mx-sm" />
+        <q-btn round flat icon="chevron_left" @click="prevDay" color="primary" />
+        <span class="text-h6 text-weight-bold text-uppercase q-mx-md">{{ formatSelectedDate }}</span>
+        <q-btn round flat icon="chevron_right" @click="nextDay" color="primary" />
+        <q-space />
+        <q-btn outline icon="download" label="Export FIRAFT (CSV)" color="teal" size="sm" @click="exportFiraft" />
+      </div>
+
+      <!-- Griglia turni — OPERATIVO -->
+      <div v-if="!isSegreteria" class="col scroll">
+        <div v-if="store.loading" class="flex flex-center" style="min-height: 300px;"><q-spinner size="3em" color="primary" /></div>
+        <div v-else-if="store.dailySchedule.length === 0" class="flex flex-center text-grey-5 column" style="min-height: 300px;">
+          <q-icon name="event_busy" size="4em" />
+          <div class="text-h6 q-mt-sm">Nessuna attività programmata per oggi.</div>
+        </div>
+
+        <div v-else class="row q-col-gutter-md justify-center">
+          <div class="col-12 col-sm-6 col-md-4 col-lg-3" v-for="(slot, idx) in filteredDailySchedule" :key="idx">
+            <q-card bordered class="slot-card transition-generic cursor-pointer" :style="{ opacity: slot.booked_pax === 0 ? 0.85 : 1 }" @click="openRideDialog(slot)" v-ripple>
+              <q-item>
+                <q-item-section avatar>
+                  <q-avatar :style="{ backgroundColor: slot.color_hex }" text-color="white" size="48px" font-size="13px">{{ slot.time?.slice(0,5) }}</q-avatar>
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label class="text-weight-bold">{{ slot.activity_type }}</q-item-label>
+                  <q-item-label caption>
+                    <span :style="{ color: slot.color_hex, fontWeight: 'bold' }">{{ slot.status_desc }}</span>
+                    <q-icon v-if="slot.is_overridden" name="lock" size="xs" color="grey-6" class="q-ml-xs" />
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-separator />
+              <q-card-section class="q-pa-sm text-center" :class="getSlotBgClass(slot)" v-show="viewFilter === 'tutto' || viewFilter === 'discese'">
+                <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax }}</span>
+                <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
+                <q-linear-progress :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity || 16))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity || 16)" class="q-mt-xs" rounded />
+              </q-card-section>
+              <!-- Badge Risorse Assegnate -->
+              <q-card-section class="q-pa-xs q-pt-none" v-show="viewFilter === 'tutto' || viewFilter === 'staff'">
+                <div class="row q-gutter-xs q-mb-xs wrap" v-if="slot.assigned_guides?.length > 0 || slot.assigned_boats?.length > 0 || slot.assigned_vans?.length > 0 || slot.assigned_trailers?.length > 0">
+                  <q-badge color="blue-grey-1" text-color="blue-grey-9" v-if="slot.assigned_guides?.length > 0">
+                    <q-icon name="person" class="q-mr-xs" size="14px" /> {{ slot.assigned_guides.length }} Guide
+                  </q-badge>
+                  <q-badge color="light-blue-1" text-color="light-blue-9" v-if="slot.assigned_boats?.length > 0">
+                    <q-icon name="rowing" class="q-mr-xs" size="14px" /> {{ slot.assigned_boats.length }} Gommoni
+                  </q-badge>
+                  <q-badge color="orange-1" text-color="orange-10" v-if="slot.assigned_vans?.length > 0">
+                    <q-icon name="directions_bus" class="q-mr-xs" size="14px" /> {{ slot.assigned_vans.length }} Furgoni
+                  </q-badge>
+                  <q-badge color="brown-1" text-color="brown-10" v-if="slot.assigned_trailers?.length > 0">
+                    <q-icon name="rv_hookup" class="q-mr-xs" size="14px" /> {{ slot.assigned_trailers.length }} Carrelli
+                  </q-badge>
+                </div>
+                <div class="row q-gutter-xs q-mb-xs" v-if="slot.assigned_staff?.length || slot.assigned_fleet?.length">
+                  <q-chip v-for="s in slot.assigned_staff" :key="'s'+s.id" dense icon="person" color="blue-1" text-color="primary" size="sm">{{ s.name }}</q-chip>
+                  <q-chip v-for="f in slot.assigned_fleet" :key="'f'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'teal-1' : 'orange-1'" :text-color="f.category === 'RAFT' ? 'teal-9' : 'orange-9'" size="sm">{{ f.name }}</q-chip>
+                </div>
+                <q-btn flat dense icon="groups" label="Assegna Risorse" color="primary" class="full-width" size="sm" @click.stop="openResourcePanel(slot)" />
+              </q-card-section>
+            </q-card>
+          </div>
+        </div>
+        <!-- Legenda Stati -->
+        <div class="q-mt-lg q-pa-sm">
+          <div class="row wrap justify-center q-gutter-md items-center text-caption text-grey-7">
+            <div class="row items-center"><q-badge color="green" class="q-mr-xs" /> Da Caricare</div>
+            <div class="row items-center"><q-badge color="blue" class="q-mr-xs" /> Confermato</div>
+            <div class="row items-center"><q-badge color="amber" class="q-mr-xs" /> Quasi Pieno</div>
+            <div class="row items-center"><q-badge color="red" class="q-mr-xs" /> Pieno / Chiuso</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contenuto SEGRETERIA -->
+      <div v-else class="col scroll">
+        <DeskDashboardPage :external-date="selectedDate ? selectedDate.replace(/\//g, '-') : null" :hide-calendar="true" />
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- MODALE CENTRALE — Dettaglio Turno (popup con overlay scuro)       -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <q-dialog v-model="showRideDialog">
+      <q-card class="ride-dialog-card">
+        <!-- Header dinamico con colore basato su stato -->
+        <q-card-section :class="rideHeaderBgClass" class="text-white q-py-sm col-auto">
           <div class="row items-center justify-between">
             <div>
               <div class="text-h6">{{ rideData?.activity_name }}</div>
               <div class="text-caption">
                 {{ rideData?.ride_date }} · {{ rideData?.ride_time }}
-                <q-badge :color="getStatusColorName(rideData?.status)" class="q-ml-sm">
-                  {{ rideData?.booked_pax || 0 }} pax
+                <q-badge color="white" text-color="dark" class="q-ml-sm text-weight-bold">
+                  {{ rideData?.booked_pax || 0 }} / {{ rideData?.max_pax || '—' }} pax
                 </q-badge>
               </div>
+              <!-- Risorse sotto il titolo -->
+              <div class="row q-gutter-xs q-mt-xs" v-if="currentSlotData?.assigned_staff?.length || currentSlotData?.assigned_fleet?.length">
+                <q-chip v-for="s in currentSlotData?.assigned_staff" :key="'ds'+s.id" dense icon="person" color="rgba(255,255,255,0.2)" text-color="white" size="sm">{{ s.name }}</q-chip>
+                <q-chip v-for="f in currentSlotData?.assigned_fleet" :key="'df'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" color="rgba(255,255,255,0.2)" text-color="white" size="sm">{{ f.name }}</q-chip>
+              </div>
             </div>
-            <q-btn flat round dense icon="close" v-close-popup />
+            <div class="column items-end q-gutter-sm">
+              <q-btn flat round dense icon="close" color="white" v-close-popup />
+              <div class="row q-gutter-xs no-wrap">
+                <q-btn unelevated dense color="blue-7" text-color="white" icon="add" label="NUOVA PRENOTAZIONE" size="sm" @click.stop="openBookingForm(null, rideData)" />
+                <q-btn unelevated dense color="red-7" text-color="white" icon="delete" label="CANCELLA ORARIO" size="sm"
+                  v-if="String(rideData?.id || '').startsWith('custom')"
+                  @click.stop="deleteCustomRideLocally(rideData)" />
+              </div>
+              <!-- Semaforo Manuale -->
+              <q-btn-group outline class="semaphore-group">
+                <q-btn dense size="xs" class="bg-white" text-color="green-8" label="VERDE" @click="setOverride('A')" />
+                <q-btn dense size="xs" class="bg-white" text-color="blue-8" label="BLU" @click="setOverride('D')" />
+                <q-btn dense size="xs" class="bg-white" text-color="amber-9" label="GIALLO" @click="setOverride('B')" />
+                <q-btn dense size="xs" class="bg-white" text-color="red-8" label="ROSSO" @click="setOverride('C')" />
+                <q-btn dense size="xs" class="bg-white" text-color="grey-8" label="AUTO" @click="clearOverride()" />
+              </q-btn-group>
+            </div>
           </div>
-          <!-- Override Buttons -->
-          <div class="row q-gutter-xs q-mt-sm">
-            <q-btn dense unelevated size="sm" color="green-8" label="VERDE" @click="setOverride('A')" />
-            <q-btn dense unelevated size="sm" color="blue-8" label="BLU" @click="setOverride('D')" />
-            <q-btn dense unelevated size="sm" color="amber-8" label="GIALLO" @click="setOverride('B')" />
-            <q-btn dense unelevated size="sm" color="red-8" label="ROSSO" @click="setOverride('C')" />
-            <q-btn dense outline size="sm" color="white" label="AUTO" @click="clearOverride()" />
-          </div>
-        </q-card-section>
-
-        <q-separator />
-
-        <!-- Cantiere 5.1: Risorse assegnate nel Drawer -->
-        <q-card-section v-if="rideData" class="q-py-sm">
-          <div class="text-caption text-weight-bold text-grey-7 q-mb-xs">Risorse Assegnate</div>
-          <div class="row q-gutter-xs" v-if="currentSlotData?.assigned_staff?.length || currentSlotData?.assigned_fleet?.length">
-            <q-chip v-for="s in currentSlotData?.assigned_staff" :key="'ds'+s.id" dense icon="person" color="blue-1" text-color="primary" size="sm">{{ s.name }}</q-chip>
-            <q-chip v-for="f in currentSlotData?.assigned_fleet" :key="'df'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'teal-1' : 'orange-1'" :text-color="f.category === 'RAFT' ? 'teal-9' : 'orange-9'" size="sm">{{ f.name }}</q-chip>
-          </div>
-          <div v-else class="text-caption text-grey-4">Nessuna risorsa assegnata</div>
-          <q-btn flat dense icon="edit" label="Assegna Risorse" color="primary" class="q-mt-xs full-width" size="sm" @click="openAllocationDialog(currentSlotData)" />
         </q-card-section>
 
         <q-separator />
@@ -204,269 +168,301 @@
           <q-spinner size="3em" color="primary" />
         </div>
 
-        <!-- Corpo: Lista Ordini -->
-        <q-card-section v-else-if="rideData" class="scroll col q-pa-none">
+        <!-- Corpo: Ordini a Fisarmonica -->
+        <q-card-section v-else-if="rideData" class="col scroll q-pa-none" style="overflow-x: hidden; min-height: 0;">
           <div v-if="!rideData.orders || rideData.orders.length === 0" class="text-center text-grey q-pa-xl">
             <q-icon name="event_seat" size="4em" />
-            <div class="q-mt-sm">Nessun ordine</div>
+            <div class="q-mt-sm text-h6">Nessun ordine per questo turno</div>
           </div>
 
-          <q-list separator v-else>
-            <q-item v-for="order in rideData.orders" :key="order.id" clickable v-ripple @click="openOrderDialog(order)">
-              <q-item-section avatar>
-                <q-avatar :color="orderStatusColor(order.order_status)" text-color="white" icon="receipt" size="40px" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label class="text-weight-bold">
-                  {{ order.customer_name || 'Senza nome' }}
-                </q-item-label>
-                <q-item-label caption>
-                  {{ order.total_pax }} pax · € {{ order.price_total?.toFixed(2) }}
-                  <span v-if="order.discount_applied > 0" class="text-green-8">(-{{ (order.discount_applied * 100).toFixed(0) }}%)</span>
-                </q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <div class="column items-end q-gutter-xs">
-                  <q-badge :color="orderStatusColor(order.order_status)">{{ order.order_status }}</q-badge>
-                  <q-badge v-if="order.order_status === 'IN_ATTESA'" color="orange-2" text-color="orange-10" class="text-caption">
-                    <q-icon name="visibility_off" size="12px" class="q-mr-xs" />Fantasma
-                  </q-badge>
-                  <q-badge v-if="order.is_exclusive_raft" color="purple-2" text-color="purple-10" class="text-caption">
-                    🚣 Esclusiva
-                  </q-badge>
-                </div>
-              </q-item-section>
-              <q-item-section side>
-                <q-icon name="chevron_right" color="grey-5" />
-              </q-item-section>
-            </q-item>
+          <q-list v-else separator class="q-pa-sm">
+            <q-expansion-item
+              v-for="order in rideData.orders"
+              :key="order.id"
+              group="orders"
+              header-class="rounded-borders q-mb-xs"
+              :header-style="{ backgroundColor: order.order_status === 'CONFERMATO' ? '#f0fdf4' : (order.order_status === 'IN_ATTESA' ? '#fffbeb' : '#f8fafc') }"
+              expand-icon-class="text-primary"
+            >
+              <!-- ══ HEADER ORDINE ══ -->
+              <template v-slot:header>
+                <q-item-section avatar>
+                  <q-avatar :color="orderStatusColor(order.order_status)" text-color="white" icon="receipt" size="40px" />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label class="text-weight-bold text-body1">{{ order.customer_name || 'Senza nome' }}</q-item-label>
+                  <q-item-label caption>
+                    <span class="text-weight-medium">{{ getEffectivePax(order) }} pax</span> · € {{ order.price_total?.toFixed(2) }}
+                    <span v-if="order.discount_applied > 0" class="text-green-8"> (-{{ (order.discount_applied * 100).toFixed(0) }}%)</span>
+                  </q-item-label>
+                </q-item-section>
+                <q-item-section side>
+                  <div class="row items-center q-gutter-xs no-wrap">
+                    <q-btn outline dense color="primary" icon="group" label="PARTECIPANTI" size="sm" @click.stop="openFiraftModal(order)" />
+                    <q-btn outline dense color="primary" icon="edit" label="MODIFICA" size="sm" @click.stop="openBookingForm(order)" />
+                    <q-btn outline dense color="negative" icon="delete" size="sm" @click.stop="deleteOrderLocally(rideData, order)" title="Cancella Prenotazione" />
+                    <div class="column items-end q-gutter-xs">
+                    <q-badge :color="orderStatusColor(order.order_status)">{{ order.order_status }}</q-badge>
+                    <q-badge v-if="order.order_status === 'IN_ATTESA'" color="orange-2" text-color="orange-10" class="text-caption">
+                      <q-icon name="visibility_off" size="12px" class="q-mr-xs" />Fantasma
+                    </q-badge>
+                    <q-badge v-if="order.is_exclusive_raft" color="purple-2" text-color="purple-10" class="text-caption">🚣 Esclusiva</q-badge>
+                    </div>
+                  </div>
+                </q-item-section>
+              </template>
+
+              <!-- ══ CORPO ESPANSO — Cruscotto Segreteria ══ -->
+              <q-card flat class="bg-grey-1 q-ma-sm" bordered style="overflow: hidden;">
+                <q-card-section class="q-gutter-md column">
+                  <!-- ─── A) Intestazione + Stato Ordine ─── -->
+                  <div class="row q-col-gutter-md items-center wrap">
+                    <div class="col-12 col-sm-3">
+                      <div class="text-caption text-grey-6">Referente</div>
+                      <div class="text-weight-bold">{{ order.customer_name || '—' }}</div>
+                    </div>
+                    <div class="col-12 col-sm-2">
+                      <div class="text-caption text-grey-6">Email</div>
+                      <div>{{ order.customer_email || '—' }}</div>
+                    </div>
+                    <div class="col-12 col-sm-1">
+                      <div class="text-caption text-grey-6">Pax</div>
+                      <div class="text-weight-bold text-h6">{{ getEffectivePax(order) }}</div>
+                    </div>
+                    <div class="col-12 col-sm-3">
+                      <q-btn outline dense color="primary" icon="edit" label="MODIFICA" @click.stop="openBookingForm(order)" class="q-mb-xs full-width" />
+                    </div>
+                    <div class="col-12 col-sm-3">
+                      <q-select
+                        :model-value="order.order_status"
+                        :options="orderStatusOptions"
+                        label="Stato Ordine"
+                        dense outlined emit-value map-options
+                        @update:model-value="onOrderStatusChange(order, $event)"
+                        class="bg-white"
+                      >
+                        <template v-slot:prepend>
+                          <q-icon name="flag" :color="orderStatusColor(order.order_status)" />
+                        </template>
+                      </q-select>
+                    </div>
+                  </div>
+
+                  <q-separator />
+
+                  <!-- ─── B) Azioni Rapide — Check-in ─── -->
+                  <div>
+                    <div class="text-subtitle2 text-blue-grey-8 q-mb-sm"><q-icon name="flash_on" class="q-mr-xs" />Azioni Rapide — Check-in</div>
+                    <div class="row q-gutter-sm wrap">
+                      <q-btn round outline color="primary" icon="link" size="sm"><q-tooltip>Copia Link Consenso</q-tooltip></q-btn>
+                      <q-btn round outline color="primary" icon="qr_code" size="sm"><q-tooltip>Genera QR Code</q-tooltip></q-btn>
+                      <q-btn round outline color="green" icon="chat" size="sm"><q-tooltip>WhatsApp</q-tooltip></q-btn>
+                      <q-btn round outline color="teal" icon="group" size="sm" :disable="!order.registrations || order.registrations.length === 0" @click="openParticipantsDialog(order)"><q-tooltip>Lista Partecipanti</q-tooltip></q-btn>
+                      <q-btn v-if="order.order_status === 'IN_ATTESA'" unelevated color="secondary" icon="check_circle" label="Conferma Bonifico" size="sm" :loading="confirmingOrderId === order.id" @click="confirmBonifico(order.id)" />
+                    </div>
+                  </div>
+
+                  <q-separator />
+
+                  <!-- ─── C) Drop-outs & Penali ─── -->
+                  <div>
+                    <div class="text-subtitle2 text-blue-grey-8 q-mb-sm"><q-icon name="person_remove" class="q-mr-xs" />Drop-outs &amp; Penali</div>
+                    <div class="text-caption text-grey-5 q-mb-sm">Se il gruppo si presenta con meno persone, abbassa i pax e aggiungi le penali corrispondenti. (€ 20 / pax mancante, modificabile)</div>
+                    <div class="row q-col-gutter-sm items-center wrap">
+                      <div class="col-3">
+                        <q-input
+                          :model-value="order._actual_pax != null ? order._actual_pax : order.total_pax"
+                          @update:model-value="val => onPaxChange(order, Number(val))"
+                          type="number" :label="'Pax effettivi (di ' + order.total_pax + ')'" dense outlined class="bg-white"
+                          hide-bottom-space
+                        />
+                      </div>
+                      <div class="col-4">
+                        <q-input
+                          :model-value="order._penalty_amount != null ? order._penalty_amount : 0"
+                          @update:model-value="val => { order._penalty_amount = Number(val) }"
+                          type="number" label="Penali / Trattenute €" dense outlined prefix="€" class="bg-white"
+                          hide-bottom-space
+                        />
+                      </div>
+                      <div class="col-auto">
+                        <q-btn unelevated color="orange-8" icon="update" label="Aggiorna Ordine" size="sm"
+                          @click="syncRideState(rideData?.id); $q.notify({ type: 'positive', message: 'Drop-outs e Pax ricalcolati ✅' })" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <q-separator />
+
+                  <!-- ─── D) Libro Mastro Transazioni ─── -->
+                  <div>
+                    <div class="text-subtitle2 text-blue-grey-8 q-mb-sm"><q-icon name="account_balance" class="q-mr-xs" />Libro Mastro — Transazioni</div>
+                    <div class="row q-gutter-sm q-mb-md wrap items-center">
+                      <q-chip color="blue-1" text-color="blue-9" icon="euro" size="md" class="text-weight-bold">Totale: € {{ order.price_total?.toFixed(2) || '0.00' }}</q-chip>
+                      <q-chip color="green-1" text-color="green-9" icon="check_circle" size="md" class="text-weight-bold">Pagato: € {{ (order.paid_amount || 0).toFixed(2) }}</q-chip>
+                      <q-chip :color="(order.price_total || 0) - (order.paid_amount || 0) > 0 ? 'red-1' : 'grey-2'" :text-color="(order.price_total || 0) - (order.paid_amount || 0) > 0 ? 'red-9' : 'grey-6'" icon="pending" size="md" class="text-weight-bold">Rimane: € {{ ((order.price_total || 0) - (order.paid_amount || 0)).toFixed(2) }}</q-chip>
+                      <span v-if="(order.price_total || 0) - (order.paid_amount || 0) > 0" class="text-caption text-grey-8 q-ml-sm">
+                        (€ {{ (((order.price_total || 0) - (order.paid_amount || 0)) / (order._actual_pax || order.total_pax || 1)).toFixed(2) }} / pax)
+                      </span>
+                    </div>
+                    <!-- Lista pagamenti (fittizia) -->
+                    <q-list bordered dense class="rounded-borders bg-white q-mb-sm" v-if="order.paid_amount > 0">
+                      <q-item dense>
+                        <q-item-section avatar><q-icon name="payment" color="green" /></q-item-section>
+                        <q-item-section>€ {{ (order.paid_amount || 0).toFixed(2) }} — SUMUP</q-item-section>
+                        <q-item-section side class="text-caption text-grey">{{ rideData?.ride_date }}</q-item-section>
+                      </q-item>
+                    </q-list>
+                    <div v-else class="text-caption text-grey-4 q-mb-sm">Nessun pagamento registrato</div>
+                    <!-- Form rapido pagamento -->
+                    <div class="row q-col-gutter-sm items-end wrap">
+                      <div class="col-3"><q-input model-value="" label="Euro (€)" dense outlined type="number" prefix="€" class="bg-white" /></div>
+                      <div class="col-3">
+                        <q-select model-value="CASH" :options="['CASH', 'SUMUP', 'BONIFICO', 'ALTRO']" label="Metodo" dense outlined class="bg-white" />
+                      </div>
+                      <div class="col-3"><q-input model-value="" label="Note" dense outlined class="bg-white" /></div>
+                      <div class="col-auto"><q-btn unelevated color="green-8" icon="add" label="PAGA" size="sm" /></div>
+                    </div>
+                  </div>
+
+                  <q-separator />
+
+                  <!-- ─── D-bis) Note Operative ─── -->
+                  <div class="q-mt-md q-mb-sm">
+                    <div class="text-subtitle2 text-grey-8 q-mb-xs">
+                      <q-icon name="edit_note" size="sm" class="q-mr-xs" /> Note Operative
+                    </div>
+                    <q-input
+                      v-model="order.notes"
+                      type="textarea"
+                      outlined
+                      dense
+                      autogrow
+                      placeholder="Nessuna nota presente. Clicca per aggiungere un appunto..."
+                      @blur="rideData ? syncRideState(rideData.id) : null"
+                    />
+                  </div>
+
+                  <q-separator />
+
+                  <!-- ─── E) Lista Partecipanti ─── -->
+                  <div>
+                    <div class="row justify-between items-center q-mb-sm">
+                      <div class="text-subtitle2 text-blue-grey-8"><q-icon name="group" class="q-mr-xs" />Lista Partecipanti</div>
+                      <q-btn v-if="isFiraftRequired(rideData)" size="sm" color="positive" text-color="white" label="TESSERA SELEZIONATI" icon="security" @click="openFiraftModal(order)" />
+                    </div>
+                    <q-list bordered dense class="rounded-borders bg-white">
+                      <!-- Referente -->
+                      <q-item dense v-if="order.customer_name">
+                        <q-item-section avatar><q-icon name="star" color="amber" /></q-item-section>
+                        <q-item-section>
+                          <q-item-label class="text-weight-bold">{{ order.customer_name }}</q-item-label>
+                          <q-item-label caption>Referente gruppo</q-item-label>
+                        </q-item-section>
+                        <q-item-section side>
+                          <q-badge v-if="order.registrations?.length > 0" color="green">Compilato</q-badge>
+                          <q-badge v-else color="grey">In attesa</q-badge>
+                        </q-item-section>
+                      </q-item>
+                      <!-- Posti compilati -->
+                      <q-item dense v-for="reg in (order.registrations || [])" :key="reg.id" clickable @click="openParticipantForm(reg)">
+                        <q-item-section avatar><q-icon name="person" color="primary" /></q-item-section>
+                        <q-item-section>
+                          <q-item-label>{{ reg.nome }} {{ reg.cognome }}</q-item-label>
+                          <q-item-label caption>{{ reg.email || '—' }}</q-item-label>
+                        </q-item-section>
+                        <q-item-section side><q-badge color="green-2" text-color="green-9">Compilato</q-badge></q-item-section>
+                      </q-item>
+                      <!-- Posti vuoti -->
+                      <q-item dense v-for="n in emptySlotCount(order)" :key="'empty-'+n">
+                        <q-item-section avatar><q-icon name="person_outline" color="blue-3" /></q-item-section>
+                        <q-item-section>
+                          <q-item-label class="text-grey-5">Slot Vuoto #{{ n + 1 + (order.registrations?.length || 0) }}</q-item-label>
+                          <q-item-label caption class="text-grey-4">—</q-item-label>
+                        </q-item-section>
+                        <q-item-section side><q-badge color="grey-2" text-color="grey-5">Vuoto</q-badge></q-item-section>
+                      </q-item>
+                    </q-list>
+                  </div>
+                </q-card-section>
+              </q-card>
+            </q-expansion-item>
           </q-list>
         </q-card-section>
       </q-card>
     </q-dialog>
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- LIVELLO 2 — DETTAGLI PRENOTAZIONE (Order Dialog)                  -->
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <q-dialog v-model="showOrderDialog">
-      <q-card style="width: 500px; max-width: 95vw;" v-if="selectedOrder">
-        <q-card-section class="bg-blue-grey-9 text-white row items-center justify-between q-py-sm">
-          <div class="text-h6">Dettagli Prenotazione</div>
-          <div class="row q-gutter-xs">
-            <q-btn flat round dense icon="group" color="white" @click="openParticipantsDialog()"
-              :disable="!selectedOrder.registrations || selectedOrder.registrations.length === 0">
-              <q-tooltip>Lista partecipanti</q-tooltip>
-            </q-btn>
-            <q-btn flat round dense icon="close" v-close-popup />
-          </div>
-        </q-card-section>
-
-        <q-separator />
-
-        <q-card-section class="q-gutter-sm">
-          <!-- Stato -->
-          <div class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Stato</div>
-            <div class="col">
-              <q-badge :color="orderStatusColor(selectedOrder.order_status)" class="text-body2 q-pa-xs">
-                {{ selectedOrder.order_status }}
-              </q-badge>
-              <q-badge v-if="selectedOrder.order_status === 'IN_ATTESA'" color="orange-2" text-color="orange-10" class="q-ml-sm">
-                <q-icon name="visibility_off" size="14px" class="q-mr-xs" />Fantasma
-              </q-badge>
-            </div>
-          </div>
-          <!-- Pax -->
-          <div class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Partecipanti</div>
-            <div class="col text-weight-bold">{{ selectedOrder.total_pax }} pax</div>
-          </div>
-          <!-- Prezzo -->
-          <div class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Prezzo Totale</div>
-            <div class="col text-weight-bold">
-              € {{ selectedOrder.price_total?.toFixed(2) }}
-              <span v-if="selectedOrder.discount_applied > 0" class="text-green-8 text-caption">
-                (sconto -{{ (selectedOrder.discount_applied * 100).toFixed(0) }}%)
-              </span>
-            </div>
-          </div>
-          <!-- Referente -->
-          <div class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Referente</div>
-            <div class="col">{{ selectedOrder.customer_name || '—' }}</div>
-          </div>
-          <!-- Email -->
-          <div class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Email</div>
-            <div class="col">{{ selectedOrder.customer_email || '—' }}</div>
-          </div>
-          <!-- Esclusiva -->
-          <div v-if="selectedOrder.is_exclusive_raft" class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Gommone</div>
-            <div class="col"><q-badge color="purple" text-color="white">🚣 Esclusiva</q-badge></div>
-          </div>
-          <!-- Registrazioni -->
-          <div class="row items-center q-mb-sm">
-            <div class="text-caption text-grey-6 col-4">Iscritti</div>
-            <div class="col">
-              <q-btn flat dense color="primary" :label="`${selectedOrder.registrations?.length || 0} partecipanti`"
-                icon="group" @click="openParticipantsDialog()"
-                :disable="!selectedOrder.registrations || selectedOrder.registrations.length === 0" />
-            </div>
-          </div>
-        </q-card-section>
-
-        <q-separator />
-
-        <!-- Azioni L2 -->
-        <q-card-actions align="right" class="bg-grey-1 q-pa-md">
-          <q-btn v-if="selectedOrder.order_status === 'IN_ATTESA'"
-            label="Conferma Bonifico" color="secondary" icon="check_circle" unelevated
-            :loading="confirmingOrderId === selectedOrder.id"
-            @click="confirmBonifico(selectedOrder.id)" />
-          <q-btn flat label="Chiudi" v-close-popup />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- LIVELLO 3 — LISTA PARTECIPANTI (Participants Dialog)              -->
+    <!-- DIALOGO PARTECIPANTI                                              -->
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <q-dialog v-model="showParticipantsDialog">
-      <q-card style="width: 550px; max-width: 95vw;" v-if="selectedOrder">
+      <q-card style="width: 600px; max-width: 95vw;" v-if="selectedOrder">
         <q-card-section class="bg-teal-8 text-white row items-center justify-between q-py-sm">
           <div>
             <div class="text-h6">Lista Partecipanti</div>
-            <div class="text-caption">{{ selectedOrder.registrations?.length || 0 }} / {{ selectedOrder.total_pax }}</div>
+            <div class="text-caption">{{ selectedOrder.registrations?.length || 0 }} / {{ selectedOrder.total_pax }} — {{ selectedOrder.customer_name || 'N/D' }}</div>
           </div>
           <q-btn flat round dense icon="close" v-close-popup />
         </q-card-section>
-
         <q-separator />
-
-        <!-- Lista -->
         <q-card-section class="scroll q-pa-none" style="max-height: 60vh;">
           <q-list separator>
-            <q-item v-for="reg in selectedOrder.registrations" :key="reg.id" clickable v-ripple
-              @click="openParticipantForm(reg)">
-              <!-- Checkbox tesseramento -->
+            <q-item v-for="reg in selectedOrder.registrations" :key="reg.id" clickable v-ripple @click="openParticipantForm(reg)">
               <q-item-section side v-if="reg.firaft_status === 'DA_TESSERARE'">
-                <q-checkbox
-                  :model-value="selectedRegistrations.includes(reg.id)"
-                  @update:model-value="toggleRegistration(reg.id)"
-                  @click.stop
-                  dense color="primary"
-                />
+                <q-checkbox :model-value="selectedRegistrations.includes(reg.id)" @update:model-value="toggleRegistration(reg.id)" @click.stop dense color="primary" />
               </q-item-section>
-              <q-item-section side v-else>
-                <div style="width: 40px"></div>
-              </q-item-section>
-
-              <!-- Nome e Email -->
+              <q-item-section side v-else><div style="width: 40px"></div></q-item-section>
               <q-item-section>
                 <q-item-label class="text-weight-bold">{{ reg.nome }} {{ reg.cognome }}</q-item-label>
                 <q-item-label caption>{{ reg.email || '—' }}</q-item-label>
               </q-item-section>
-
-              <!-- Badge Consenso (placeholder) -->
-              <q-item-section side>
-                <q-icon name="thumb_up" :color="reg.nome ? 'green' : 'grey-4'" size="sm">
-                  <q-tooltip>Consenso informato</q-tooltip>
-                </q-icon>
-              </q-item-section>
-
-              <!-- Badge FiRaft -->
-              <q-item-section side>
-                <q-icon
-                  :name="firaftIcon(reg.firaft_status)"
-                  :color="firaftColor(reg.firaft_status)"
-                  size="sm"
-                >
-                  <q-tooltip>{{ firaftLabel(reg.firaft_status) }}</q-tooltip>
-                </q-icon>
-              </q-item-section>
-
-              <q-item-section side>
-                <q-icon name="chevron_right" color="grey-5" />
-              </q-item-section>
+              <q-item-section side><q-icon name="thumb_up" :color="reg.nome ? 'green' : 'grey-4'" size="sm"><q-tooltip>Consenso informato</q-tooltip></q-icon></q-item-section>
+              <q-item-section side><q-icon :name="firaftIcon(reg.firaft_status)" :color="firaftColor(reg.firaft_status)" size="sm"><q-tooltip>{{ firaftLabel(reg.firaft_status) }}</q-tooltip></q-icon></q-item-section>
+              <q-item-section side><q-icon name="chevron_right" color="grey-5" /></q-item-section>
             </q-item>
           </q-list>
         </q-card-section>
-
         <q-separator />
-
-        <!-- Footer: Bottone Tessera -->
         <q-card-actions class="bg-grey-2 q-pa-md">
           <div class="text-caption text-grey-7 q-mr-auto" v-if="selectedRegistrations.length > 0">
             {{ selectedRegistrations.length }} selezionat{{ selectedRegistrations.length > 1 ? 'i' : 'o' }}
           </div>
-          <q-btn
-            label="Tessera Selezionati" color="primary" icon="card_membership" unelevated
-            :disable="selectedRegistrations.length === 0"
-            :loading="tesseringInProgress"
-            @click="tesseraSelezionati"
-          />
+          <q-btn label="Tessera Selezionati" color="primary" icon="card_membership" unelevated :disable="selectedRegistrations.length === 0" :loading="tesseringInProgress" @click="tesseraSelezionati" />
         </q-card-actions>
       </q-card>
     </q-dialog>
 
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- LIVELLO 4 — MODIFICA PARTECIPANTE (Participant Form Dialog)       -->
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- DIALOGO DETTAGLIO PARTECIPANTE -->
     <q-dialog v-model="showParticipantFormDialog">
       <q-card style="width: 550px; max-width: 95vw;" v-if="selectedParticipant">
         <q-card-section class="bg-indigo-8 text-white row items-center justify-between q-py-sm">
           <div class="text-h6">Dettaglio Partecipante</div>
           <q-btn flat round dense icon="close" v-close-popup />
         </q-card-section>
-
         <q-separator />
-
         <q-card-section class="q-gutter-md scroll" style="max-height: 70vh;">
-          <!-- Anagrafica -->
           <div class="text-subtitle2 text-blue-grey-8 q-mb-xs">Anagrafica</div>
           <div class="row q-col-gutter-sm">
-            <div class="col-6">
-              <q-input v-model="partForm.nome" label="Nome" outlined dense readonly />
-            </div>
-            <div class="col-6">
-              <q-input v-model="partForm.cognome" label="Cognome" outlined dense readonly />
-            </div>
+            <div class="col-6"><q-input v-model="partForm.nome" label="Nome" outlined dense readonly /></div>
+            <div class="col-6"><q-input v-model="partForm.cognome" label="Cognome" outlined dense readonly /></div>
           </div>
           <div class="row q-col-gutter-sm">
-            <div class="col-6">
-              <q-input v-model="partForm.email" label="Email" outlined dense readonly />
-            </div>
-            <div class="col-6">
-              <q-input v-model="partForm.telefono" label="Telefono" outlined dense readonly />
-            </div>
+            <div class="col-6"><q-input v-model="partForm.email" label="Email" outlined dense readonly /></div>
+            <div class="col-6"><q-input v-model="partForm.telefono" label="Telefono" outlined dense readonly /></div>
           </div>
           <div class="row q-col-gutter-sm">
-            <div class="col-4">
-              <q-input v-model="partForm.data_nascita" label="Data Nascita" outlined dense readonly />
-            </div>
-            <div class="col-4">
-              <q-input v-model="partForm.sesso" label="Sesso" outlined dense readonly />
-            </div>
-            <div class="col-4">
-              <q-input :model-value="partForm.is_minor ? 'Sì' : 'No'" label="Minore" outlined dense readonly />
-            </div>
+            <div class="col-4"><q-input v-model="partForm.data_nascita" label="Data Nascita" outlined dense readonly /></div>
+            <div class="col-4"><q-input v-model="partForm.sesso" label="Sesso" outlined dense readonly /></div>
+            <div class="col-4"><q-input :model-value="partForm.is_minor ? 'Sì' : 'No'" label="Minore" outlined dense readonly /></div>
           </div>
           <q-input v-model="partForm.residenza" label="Residenza" outlined dense readonly />
-
           <q-separator class="q-my-sm" />
-
-          <!-- Stato FiRaft -->
           <div class="text-subtitle2 text-blue-grey-8 q-mb-xs">Stato Tesseramento</div>
           <div class="row items-center q-gutter-sm">
             <q-icon :name="firaftIcon(partForm.firaft_status)" :color="firaftColor(partForm.firaft_status)" size="md" />
             <span class="text-weight-bold">{{ firaftLabel(partForm.firaft_status) }}</span>
           </div>
-
           <q-separator class="q-my-sm" />
-
-          <!-- Consensi -->
           <div class="text-subtitle2 text-blue-grey-8 q-mb-xs">Consensi</div>
           <div class="column q-gutter-xs">
             <q-toggle v-model="partForm.consenso_privacy" label="Privacy" disable dense />
@@ -474,89 +470,234 @@
             <q-toggle v-model="partForm.consenso_medico" label="Dichiarazione medica" disable dense />
           </div>
         </q-card-section>
-
         <q-separator />
-
-        <q-card-actions align="right" class="bg-grey-1 q-pa-md">
-          <q-btn flat label="Chiudi" v-close-popup />
-        </q-card-actions>
+        <q-card-actions align="right" class="bg-grey-1 q-pa-md"><q-btn flat label="Chiudi" v-close-popup /></q-card-actions>
       </q-card>
     </q-dialog>
 
-    <!-- Dialog Nuova Regola -->
-    <q-dialog v-model="ruleDialogOpen" persistent>
-      <q-card style="min-width: 500px">
-        <q-card-section class="bg-primary text-white row items-center justify-between">
-          <div class="text-h6">Nuova Regola</div>
-          <q-btn flat round dense icon="close" v-close-popup />
-        </q-card-section>
-        <q-card-section class="q-gutter-md q-mt-sm">
-          <q-input v-model="newRule.name" label="Nome" outlined dense />
-          <q-select v-model="newRule.activity_type" :options="['FAMILY', 'CLASSICA', 'ADVANCED', 'SELECTION', 'HYDRO_L1', 'HYDRO_L2']" label="Tipo" outlined dense />
-          <div class="row q-col-gutter-md">
-            <div class="col-6"><q-input v-model="newRule.valid_from" label="Dal" type="date" outlined dense /></div>
-            <div class="col-6"><q-input v-model="newRule.valid_to" label="Al" type="date" outlined dense /></div>
-          </div>
-          <div>
-            <div class="text-caption">Giorni:</div>
-            <q-btn-group outline spread>
-              <q-btn v-for="(l, i) in weekDays" :key="i" :label="l"
-                :color="newRule.days_of_week.includes(i) ? 'primary' : 'white'"
-                :text-color="newRule.days_of_week.includes(i) ? 'white' : 'grey'"
-                @click="toggleDay(i)" dense size="sm" />
-            </q-btn-group>
-          </div>
-          <div>
-            <div class="text-caption">Orari:</div>
-            <q-select v-model="newRule.start_times" use-input use-chips multiple hide-dropdown-icon new-value-mode="add-unique" label="es. 09:00" outlined dense />
-          </div>
-          <div class="row justify-end q-mt-lg"><q-btn label="Salva" color="primary" unelevated @click="saveRule" /></div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
+
 
     <ReservationWizard v-model="wizardOpen" :defaults="wizardDefaults" @saved="onReservationSaved" />
     <SeasonConfigDialog ref="seasonDialog" />
 
-    <!-- Cantiere 5: Dialog Assegna Risorse -->
-    <q-dialog v-model="allocationDialog">
-      <q-card style="min-width: 450px;">
-        <q-card-section class="bg-primary text-white">
-          <div class="text-h6"><q-icon name="groups" class="q-mr-sm" />Assegna Risorse</div>
-          <div class="text-caption">{{ allocationRide?.activity_type }} — {{ allocationRide?.time?.slice(0,5) }}</div>
+    <!-- Pannello Risorse (laterale destro) -->
+    <q-dialog v-model="resourcePanelOpen" position="right" maximized>
+      <q-card style="width: 400px; max-width: 90vw; display: flex; flex-direction: column;" v-if="activeResourceSlot">
+        <q-card-section class="bg-blue-grey-8 text-white row items-center q-pb-none">
+          <div class="text-h6"><q-icon name="handyman" class="q-mr-sm" /> Assegna Risorse</div>
+          <q-space />
+          <q-btn icon="close" flat round dense v-close-popup />
         </q-card-section>
-        <q-card-section class="q-pt-md">
+
+        <q-card-section class="bg-blue-grey-8 text-white q-pt-xs">
+          <div class="text-subtitle2">{{ activeResourceSlot.time ? String(activeResourceSlot.time).substring(0,5) : '' }} — {{ activeResourceSlot.activity_type || activeResourceSlot.activity_name || '' }}</div>
+          <div class="text-caption">Pax: {{ activeResourceSlot.booked_pax || 0 }} / {{ activeResourceSlot.total_capacity || 16 }}</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-md scroll" style="flex-grow: 1;">
+          <div class="text-subtitle2 text-primary q-mb-sm"><q-icon name="rowing" /> Guide e Istruttori</div>
           <q-select
-            v-model="selectedStaffIds"
-            :options="staffOptions"
-            option-value="id"
-            option-label="name"
-            emit-value
-            map-options
+            v-model="activeResourceSlot.assigned_guides"
             multiple
             use-chips
-            label="👤 Guide / Staff"
             outlined
             dense
-            class="q-mb-md"
+            :options="guideOptions"
+            label="Seleziona Guide"
           />
+
+          <div class="text-subtitle2 text-light-blue-8 q-mt-lg q-mb-sm"><q-icon name="rowing" /> Flotta Acquatica (Gommoni)</div>
           <q-select
-            v-model="selectedFleetIds"
-            :options="fleetOptions"
-            option-value="id"
-            option-label="name"
-            emit-value
-            map-options
+            v-model="activeResourceSlot.assigned_boats"
             multiple
             use-chips
-            label="🚣 Mezzi / Flotta"
             outlined
             dense
+            :options="boatOptions"
+            label="Seleziona Gommoni"
           />
+
+          <div class="text-subtitle2 text-orange-9 q-mt-lg q-mb-sm"><q-icon name="directions_bus" /> Furgoni e Navette</div>
+          <q-select
+            v-model="activeResourceSlot.assigned_vans"
+            multiple
+            use-chips
+            outlined
+            dense
+            :options="vanOptions"
+            label="Seleziona Furgoni"
+          />
+
+          <div class="text-subtitle2 text-brown-8 q-mt-lg q-mb-sm"><q-icon name="rv_hookup" /> Carrelli Rimorchio</div>
+          <q-select
+            v-model="activeResourceSlot.assigned_trailers"
+            multiple
+            use-chips
+            outlined
+            dense
+            :options="trailerOptions"
+            label="Seleziona Carrelli"
+          />
+
+          <div class="q-mt-xl text-caption text-grey-6">
+            Nota: L'assegnazione risorse aggiorna il tabellone localmente in tempo reale per preparare il calcolo semafori backend.
+          </div>
         </q-card-section>
-        <q-card-actions align="right">
+
+        <q-card-actions align="right" class="bg-white">
+          <q-btn flat label="CHIUDI" color="blue-grey" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Dialog Partecipanti del Turno (accesso rapido dalla card) -->
+    <q-dialog v-model="slotParticipantsDialog.open">
+      <q-card style="width: 500px; max-width: 95vw;">
+        <q-card-section class="bg-teal-8 text-white row items-center justify-between q-py-sm">
+          <div>
+            <div class="text-h6">Lista Partecipanti</div>
+            <div class="text-caption" v-if="slotParticipantsDialog.slot">{{ slotParticipantsDialog.slot.activity_type }} — {{ slotParticipantsDialog.slot.time?.slice(0,5) }}</div>
+          </div>
+          <q-btn flat round dense icon="close" v-close-popup />
+        </q-card-section>
+        <q-separator />
+        <q-card-section class="text-center text-grey-5 q-pa-lg">
+          <q-icon name="construction" size="3em" class="q-mb-sm" />
+          <div>Apri il dettaglio turno per visualizzare i partecipanti dei singoli ordini.</div>
+          <q-btn class="q-mt-md" color="primary" label="Apri Dettaglio Turno" unelevated @click="slotParticipantsDialog.open = false; openRideDialog(slotParticipantsDialog.slot)" />
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- SMART MODAL: Aggiungi / Modifica Prenotazione              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <q-dialog v-model="bookingDialog.open">
+      <q-card style="width: 900px; max-width: 90vw;">
+        <q-card-section class="bg-primary text-white row items-center justify-between q-py-sm">
+          <div class="text-h6"><q-icon :name="bookingDialog.isEdit ? 'edit' : 'add_circle'" class="q-mr-sm" />{{ bookingDialog.isEdit ? 'Modifica Prenotazione' : 'Nuova Prenotazione' }}</div>
+          <q-btn flat round dense icon="close" v-close-popup />
+        </q-card-section>
+        <q-separator />
+        <q-card-section class="scroll" style="max-height: 70vh;">
+          <div class="q-gutter-md">
+            <!-- Riga 1: Stato, Pax, Attività -->
+            <div class="row q-col-gutter-md">
+              <div class="col-12 col-sm-4">
+                <q-select v-model="bookingDialog.data.order_status" :options="orderStatusOptions" label="Stato Ordine" dense outlined emit-value map-options />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-input v-model.number="bookingDialog.data.total_pax" type="number" label="N° Partecipanti" dense outlined />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-select v-model="bookingDialog.data.activity" :options="activityOptions" label="Tipo Attività" dense outlined />
+              </div>
+            </div>
+            <!-- Riga 2: Data, Ora -->
+            <div class="row q-col-gutter-md">
+              <div class="col-12 col-sm-4">
+                <q-input v-model="bookingDialog.data.date" type="date" label="Data" dense outlined />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-select
+                  v-model="bookingDialog.data.time"
+                  :options="timeOptions"
+                  label="Ora"
+                  dense outlined
+                  use-input
+                  new-value-mode="add-unique"
+                  fill-input
+                  hide-selected
+                  @filter="(val, update) => update()"
+                />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-select v-model="bookingDialog.data.language" :options="['IT', 'EN', 'DE', 'FR']" label="Lingua" dense outlined />
+              </div>
+            </div>
+            <!-- Riga 3: Prezzi -->
+            <div class="row q-col-gutter-md">
+              <div class="col-12 col-sm-4">
+                <q-input v-model.number="bookingDialog.data.price_total" type="number" label="Prezzo Totale (€)" prefix="€" dense outlined />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-input v-model.number="bookingDialog.data.paid_amount" type="number" label="Prezzo Pagato (€)" prefix="€" dense outlined />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-select v-model="bookingDialog.data.payment_type" :options="['CASH', 'SUMUP', 'BONIFICO', 'STRIPE', 'ALTRO']" label="Tipo Pagamento" dense outlined />
+              </div>
+            </div>
+            <q-separator />
+            <!-- Riga 4: Anagrafica referente -->
+            <div class="text-subtitle2 text-blue-grey-8"><q-icon name="person" class="q-mr-xs" />Dati Referente</div>
+            <div class="row q-col-gutter-md">
+              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_name" label="Nome" dense outlined /></div>
+              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_surname" label="Cognome" dense outlined /></div>
+              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_email" label="Email" dense outlined /></div>
+              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_phone" label="Telefono" dense outlined /></div>
+            </div>
+            <q-separator />
+            <!-- Riga 5: Extra -->
+            <div class="row q-col-gutter-md">
+              <div class="col-12 col-sm-3">
+                <q-input v-model="bookingDialog.data.payment_date" type="date" label="Data Pagamento" dense outlined />
+              </div>
+              <div class="col-12 col-sm-3">
+                <q-toggle v-model="bookingDialog.data.is_gift" label="Regalo" dense />
+              </div>
+              <div class="col-12 col-sm-3">
+                <q-input v-model="bookingDialog.data.coupon_code" label="Codice Sconto" dense outlined />
+              </div>
+              <div class="col-12 col-sm-3">
+                <q-toggle v-model="bookingDialog.data.is_exclusive_raft" label="Gommone Esclusivo" dense />
+              </div>
+            </div>
+            <q-input v-model="bookingDialog.data.notes" label="Note" type="textarea" dense outlined autogrow />
+          </div>
+        </q-card-section>
+        <q-separator />
+        <q-card-actions align="right" class="bg-grey-1 q-pa-md">
           <q-btn flat label="Annulla" v-close-popup />
-          <q-btn unelevated color="primary" icon="save" label="Salva" @click="saveAllocations" :loading="allocationSaving" />
+          <q-btn unelevated color="primary" icon="save" :label="bookingDialog.isEdit ? 'Salva Modifiche' : 'Crea Ordine'" @click="saveBookingForm" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MODALE FIRAFT — Simulatore Tesseramento                   -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <q-dialog v-model="firaftModalOpen">
+      <q-card style="width: 600px; max-width: 95vw;">
+        <q-card-section class="row items-center q-pb-none">
+          <div class="text-h6"><q-icon name="group" class="q-mr-sm" />Lista Partecipanti — {{ activeFiraftOrder?.customer_name || 'Gruppo' }}</div>
+          <q-space />
+          <q-badge color="green" class="q-mr-sm q-pa-sm">{{ firaftParticipants.filter(p => p.selected).length }} / {{ firaftParticipants.length }}</q-badge>
+          <q-btn icon="close" flat round dense v-close-popup />
+        </q-card-section>
+
+        <q-card-section class="q-pt-md" style="max-height: 60vh; overflow-y: auto;">
+          <q-list separator>
+            <q-item v-for="pax in firaftParticipants" :key="pax.id" tag="label" v-ripple>
+              <q-item-section side v-if="isFiraftRequired(rideData)">
+                <q-checkbox v-model="pax.selected" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>{{ pax.name }}</q-item-label>
+                <q-item-label caption>{{ pax.email || '—' }}</q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <div class="row items-center q-gutter-sm">
+                  <q-icon name="thumb_up" size="sm" :color="pax.privacy ? 'green' : 'grey-4'" />
+                  <q-icon v-if="isFiraftRequired(rideData)" name="security" size="sm" :color="pax.status === 'success' ? 'green' : (pax.status === 'error' ? 'red' : 'grey-4')" />
+                </div>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card-section>
+
+        <q-card-actions align="center" class="bg-grey-1 q-pa-md">
+          <q-btn v-if="isFiraftRequired(rideData)" color="primary" label="TESSERA SELEZIONATI" :loading="firaftLoading" @click="processFiraft" />
+          <q-btn flat label="ESCI" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -565,33 +706,74 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useResourceStore } from 'stores/resource-store'
-import { useQuasar } from 'quasar'
+import { useQuasar, date as qdate } from 'quasar'
 import { api } from 'boot/axios'
 import CalendarComponent from 'components/CalendarComponent.vue'
 import ReservationWizard from 'components/ReservationWizard.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 
+const route = useRoute()
 const store = useResourceStore()
 const $q = useQuasar()
 const seasonDialog = ref(null)
-const tab = ref('CALENDAR')
 const selectedDate = ref(new Date().toISOString().split('T')[0].replace(/-/g, '/'))
 const wizardOpen = ref(false)
 const wizardDefaults = ref(null)
-const ruleDialogOpen = ref(false)
-const dayViewMode = ref('OPERATIVO')  // Cantiere 4: toggle Operativo/Segreteria nel Day Detail
 
-// Cantiere 5: Allocation Dialog State
-const allocationDialog = ref(false)
-const allocationRide = ref(null)
-const selectedStaffIds = ref([])
-const selectedFleetIds = ref([])
-const allocationSaving = ref(false)
-const staffOptions = computed(() => store.activeStaff.map(s => ({ id: s.id, name: s.name })))
-const fleetOptions = computed(() => store.fleetList.filter(f => f.is_active !== false).map(f => ({ id: f.id, name: f.name })))
+// Ambiente determinato dalla rotta
+const isSegreteria = computed(() => route.path.includes('segreteria'))
+
+// Opzioni stato ordine per il q-select nel cruscotto
+const orderStatusOptions = [
+  { label: 'Confermato', value: 'CONFERMATO' },
+  { label: 'In Attesa (Fantasma)', value: 'IN_ATTESA' },
+  { label: 'Da Saldare', value: 'DA_SALDARE' },
+  { label: 'Manuale', value: 'MANUALE' },
+  { label: 'Completato', value: 'COMPLETATO' },
+  { label: 'Cancellato', value: 'CANCELLATO' },
+]
+
+// Slot Participants Dialog (accesso rapido da card turno)
+const slotParticipantsDialog = reactive({ open: false, slot: null })
+
+// Smart Modal: Booking (Nuovo / Modifica)
+const bookingDialog = reactive({
+  open: false,
+  isEdit: false,
+  originalRef: null,
+  data: {
+    order_status: 'CONFERMATO',
+    total_pax: 1,
+    activity: 'CLASSICA',
+    date: '',
+    time: '09:00',
+    language: 'IT',
+    price_total: 0,
+    paid_amount: 0,
+    payment_type: 'CASH',
+    customer_name: '',
+    customer_surname: '',
+    customer_email: '',
+    customer_phone: '',
+    payment_date: '',
+    is_gift: false,
+    coupon_code: '',
+    is_exclusive_raft: false,
+    notes: '',
+  }
+})
+
+// Resource Panel State (mock)
+const resourcePanelOpen = ref(false)
+const activeResourceSlot = ref(null)
+const guideOptions = ['Marco', 'Luca', 'Jean-Pierre', 'Giulia', 'Roberto']
+const boatOptions = ['Gommone 1 (8 pax)', 'Gommone 2 (8 pax)', 'Gommone 3 (8 pax)', 'Gommone VIP (6 pax)']
+const vanOptions = ['Sprinter L1 (9 pax)', 'Sprinter L2 (9 pax)', 'Ducato (9 pax)']
+const trailerOptions = ['Gnu (Carrello 6)', 'Puma (Carrello 8)']
 
 // Calendar view state
 const viewMode = ref('MONTH')
@@ -600,25 +782,58 @@ const currentYear = ref(new Date().getFullYear())
 const currentMonth = ref(new Date().getMonth() + 1)
 const monthOverview = ref([])
 
-// ═══ LIVELLO 1: Ride Dialog State ═══
+// Filtri visivi (DISCESE / STAFF / TUTTO)
+const viewFilter = ref('tutto')
+const filteredDailySchedule = computed(() => {
+  if (viewFilter.value === 'discese') {
+    // Nasconde gli slot vuoti, mostra solo quelli con pax o ordini
+    return store.dailySchedule.filter(slot => slot.booked_pax > 0 || (slot.orders && slot.orders.length > 0))
+  }
+  // Staff o Tutto: mostra l'ossatura completa inclusi slot vuoti
+  return store.dailySchedule
+})
+
+// Smart Default: cambia filtro in base alla vista
+watch(viewMode, (newVal) => {
+  if (newVal === 'MONTH') {
+    viewFilter.value = 'discese'
+  } else {
+    viewFilter.value = 'tutto'
+  }
+}, { immediate: true })
+
+// FIRAFT Simulator State
+const firaftModalOpen = ref(false)
+const firaftParticipants = ref([])
+const firaftLoading = ref(false)
+const activeFiraftOrder = ref(null)
+// Ride Dialog State
 const showRideDialog = ref(false)
 const rideData = ref(null)
 const rideLoading = ref(false)
 const currentSlotId = ref(null)
-// Cantiere 5.1: dati del turno corrente per il drawer (con assigned_staff/fleet)
 const currentSlotData = computed(() => store.dailySchedule.find(s => s.id === currentSlotId.value) || null)
 
-// ═══ LIVELLO 2: Order Dialog State ═══
-const showOrderDialog = ref(false)
+// Header dinamico modale
+const rideHeaderBgClass = computed(() => {
+  const status = rideData.value?.status || currentSlotData.value?.engine_status
+  if (status === 'ROSSO' || status === 'C') return 'bg-red-8'
+  if (status === 'GIALLO' || status === 'B') return 'bg-amber-8'
+  if (status === 'VERDE' || status === 'A') return 'bg-green-8'
+  if (status === 'D') return 'bg-blue-8'
+  return 'bg-primary'
+})
+
+// Order State
 const selectedOrder = ref(null)
 const confirmingOrderId = ref(null)
 
-// ═══ LIVELLO 3: Participants Dialog State ═══
+// Participants Dialog State
 const showParticipantsDialog = ref(false)
 const selectedRegistrations = ref([])
 const tesseringInProgress = ref(false)
 
-// ═══ LIVELLO 4: Participant Form State ═══
+// Participant Form State
 const showParticipantFormDialog = ref(false)
 const selectedParticipant = ref(null)
 const partForm = reactive({
@@ -628,17 +843,19 @@ const partForm = reactive({
   consenso_privacy: false, consenso_foto: false, consenso_medico: false,
 })
 
-// Config
-const newRule = reactive({ name: '', activity_type: 'CLASSICA', valid_from: '2026-04-01', valid_to: '2026-09-30', days_of_week: [0,1,2,3,4,5,6], start_times: ['10:00', '14:00'] })
-const weekDays = ['L', 'M', 'M', 'G', 'V', 'S', 'D']
-const ruleCols = [
-  { name: 'name', label: 'Nome', field: 'name', align: 'left' },
-  { name: 'type', label: 'Attività', field: 'activity_type', align: 'left' },
-  { name: 'period', label: 'Periodo', field: row => `${row.valid_from} -> ${row.valid_to}`, align: 'left' },
-  { name: 'days', label: 'Giorni', field: 'days_of_week', align: 'left' },
-  { name: 'times', label: 'Orari', field: row => row.start_times.join(', '), align: 'left' },
-  { name: 'actions', label: '', field: 'actions', align: 'right' }
-]
+// Opzioni tendine per Smart Modal
+const timeOptions = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00']
+const activityOptions = ['Rafting Family', 'Rafting Classic', 'Rafting Advanced', 'Rafting Selection', 'Hydrospeed Base']
+
+
+// ═══════════════════════════════════════════════════════════
+// COMPUTED
+// ═══════════════════════════════════════════════════════════
+const formatSelectedDate = computed(() => {
+  if (!selectedDate.value) return ''
+  const d = new Date(selectedDate.value.replace(/\//g, '-'))
+  return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+})
 
 // ═══════════════════════════════════════════════════════════
 // LIFECYCLE
@@ -679,12 +896,52 @@ async function updateMonthOverview(year, month) {
 }
 
 function changeMonth(m, y) { currentMonth.value = m; currentYear.value = y; updateMonthOverview(y, m) }
-function goToMonthView() { viewMode.value = 'MONTH'; dayViewMode.value = 'OPERATIVO'; updateMonthOverview(currentYear.value, currentMonth.value) }
-function openDayDetail(dateStr) { selectedDate.value = dateStr.replace(/-/g, '/'); viewMode.value = 'DETAIL'; dayViewMode.value = 'OPERATIVO'; loadSchedule() }
-function onNavigation(view) { if (viewMode.value === 'DETAIL') { currentYear.value = view.year; currentMonth.value = view.month; updateMonthOverview(view.year, view.month) } }
-function calendarEvents(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.booked_rides && day.booked_rides.length > 0 }
-function calendarEventColor(date) { const d = date.replace(/\//g, '-'); const day = monthOverview.value.find(o => o.date === d); return day && day.booked_rides && day.booked_rides.length > 0 ? 'primary' : 'grey' }
-function formatDate(val) { if (!val) return ''; const d = new Date(val.replace(/\//g, '-')); return d.toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }
+function goToMonthView() { viewMode.value = 'MONTH'; updateMonthOverview(currentYear.value, currentMonth.value) }
+function openDayDetail(data) {
+  if (!data) return
+  const dateStr = data?.scope?.timestamp?.date || data?.timestamp?.date || data?.date || data
+  if (dateStr && typeof dateStr === 'string') {
+    selectedDate.value = String(dateStr).replace(/-/g, '/')
+    viewMode.value = 'DETAIL'
+    loadSchedule()
+  }
+}
+
+// Shortcut: click su mattoncino nel mese → apri direttamente la modale turno
+async function onRideClickFromMonth({ date, ride }) {
+  // Prima carica il giorno per avere i dati del daily schedule
+  selectedDate.value = date.replace(/-/g, '/')
+  viewMode.value = 'DETAIL'
+  await loadSchedule()
+  // Trova lo slot corrispondente nel daily schedule
+  const slot = store.dailySchedule.find(s =>
+    s.time?.startsWith(ride.time) || s.activity_type === ride.activity_code
+  )
+  if (slot) {
+    openRideDialog(slot)
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// DAY NAVIGATION
+// ═══════════════════════════════════════════════════════════
+function prevDay() {
+  const current = new Date(selectedDate.value.replace(/\//g, '-'))
+  const prev = qdate.subtractFromDate(current, { days: 1 })
+  selectedDate.value = qdate.formatDate(prev, 'YYYY/MM/DD')
+  currentYear.value = prev.getFullYear()
+  currentMonth.value = prev.getMonth() + 1
+  loadSchedule()
+}
+
+function nextDay() {
+  const current = new Date(selectedDate.value.replace(/\//g, '-'))
+  const next = qdate.addToDate(current, { days: 1 })
+  selectedDate.value = qdate.formatDate(next, 'YYYY/MM/DD')
+  currentYear.value = next.getFullYear()
+  currentMonth.value = next.getMonth() + 1
+  loadSchedule()
+}
 
 async function loadSchedule() {
   $q.loading.show({ message: 'Caricamento giornata...' })
@@ -698,39 +955,68 @@ async function loadSchedule() {
 function onReservationSaved() { loadSchedule(); updateMonthOverview(currentYear.value, currentMonth.value) }
 
 // ═══════════════════════════════════════════════════════════
-// LIVELLO 1 — Apertura Ride Dialog (Matrioska)
+// RIDE DIALOG — Modale Centrale
 // ═══════════════════════════════════════════════════════════
 async function openRideDialog(slot) {
   showRideDialog.value = true
   rideLoading.value = true
   rideData.value = null
   currentSlotId.value = slot.id
-  try {
-    const res = await api.get(`/calendar/daily-rides/${slot.id}`)
-    rideData.value = res.data
-  } catch(e) {
-    console.error(e)
-    $q.notify({ type: 'negative', message: 'Errore caricamento dettagli discesa' })
-  } finally {
-    rideLoading.value = false
+
+  // ── FULL MOCK MODE ──
+  // Disabilita la fetch API per evitare sovrascritture dal mock server.
+  // Tutti i dati vengono letti esclusivamente dallo store.dailySchedule locale.
+  const localSlot = store.dailySchedule.find(r => r.id === slot.id) || slot
+
+  rideData.value = {
+    id: localSlot.id,
+    activity_name: localSlot.activity_type || localSlot.title || 'Turno',
+    ride_date: selectedDate.value ? String(selectedDate.value).replace(/\//g, '-') : '',
+    ride_time: localSlot.time || '',
+    status: localSlot.engine_status || localSlot.status || 'VERDE',
+    booked_pax: localSlot.booked_pax || 0,
+    max_pax: localSlot.total_capacity || 16,
+    orders: localSlot.orders || [],
+    assigned_staff: localSlot.assigned_staff || [],
+    assigned_fleet: localSlot.assigned_fleet || [],
+    color_hex: localSlot.color_hex || '#1976D2',
+    notes: localSlot.notes || '',
+    is_overridden: localSlot.is_overridden || false,
+  }
+  rideLoading.value = false
+
+  // NOTA: Quando il backend sarà pronto, riattivare questa fetch:
+  // try {
+  //   const res = await api.get(`/calendar/daily-rides/${slot.id}`)
+  //   rideData.value = res.data
+  // } catch(e) {
+  //   console.error(e)
+  //   $q.notify({ type: 'negative', message: 'Errore caricamento dettagli discesa' })
+  // } finally {
+  //   rideLoading.value = false
+  // }
+}
+
+function reloadRideData() {
+  if (!currentSlotId.value) return
+  // FULL MOCK MODE: ricarica dallo store locale
+  const localSlot = store.dailySchedule.find(r => r.id === currentSlotId.value)
+  if (localSlot) {
+    rideData.value = {
+      ...rideData.value,
+      orders: localSlot.orders || [],
+      booked_pax: localSlot.booked_pax || 0,
+    }
   }
 }
 
-async function reloadRideData() {
-  if (!currentSlotId.value) return
-  try {
-    const res = await api.get(`/calendar/daily-rides/${currentSlotId.value}`)
-    rideData.value = res.data
-  } catch(e) { console.error(e) }
-}
-
-// Override di L1
+// Override / Semaforo
 async function setOverride(status) {
   if (!currentSlotId.value) return
   try {
     await api.patch(`/calendar/daily-rides/${currentSlotId.value}/override`, { forced_status: status, clear_override: false })
     $q.notify({ type: 'positive', message: 'Stato forzato' })
-    await reloadRideData()
+    reloadRideData()
     loadSchedule()
     updateMonthOverview(currentYear.value, currentMonth.value)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore override' }) }
@@ -741,26 +1027,20 @@ async function clearOverride() {
   try {
     await api.patch(`/calendar/daily-rides/${currentSlotId.value}/override`, { forced_status: 'A', clear_override: true })
     $q.notify({ type: 'positive', message: 'Semaforo automatico ripristinato' })
-    await reloadRideData()
+    reloadRideData()
     loadSchedule()
     updateMonthOverview(currentYear.value, currentMonth.value)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore reset' }) }
 }
 
 // ═══════════════════════════════════════════════════════════
-// LIVELLO 2 — Order Dialog
+// ORDINI — Azioni inline
 // ═══════════════════════════════════════════════════════════
-function openOrderDialog(order) {
-  selectedOrder.value = order
-  showOrderDialog.value = true
-}
-
 async function confirmBonifico(orderId) {
   confirmingOrderId.value = orderId
   try {
     await api.patch(`/orders/${orderId}/confirm`)
     $q.notify({ type: 'positive', message: 'Bonifico confermato! 👻→✅', icon: 'check_circle' })
-    showOrderDialog.value = false
     await reloadRideData()
     loadSchedule()
     updateMonthOverview(currentYear.value, currentMonth.value)
@@ -772,10 +1052,35 @@ async function confirmBonifico(orderId) {
   }
 }
 
+// Cambio stato ordine dal q-select
+async function onOrderStatusChange(order, newStatus) {
+  try {
+    await api.patch(`/orders/${order.id}/status`, { status: newStatus })
+    order.order_status = newStatus
+    $q.notify({ type: 'positive', message: `Stato aggiornato: ${newStatus}` })
+    await reloadRideData()
+    loadSchedule()
+  } catch(e) {
+    console.error('onOrderStatusChange error:', e)
+    $q.notify({ type: 'negative', message: e?.response?.data?.detail || 'Errore aggiornamento stato' })
+  }
+}
+
+// Drop-out: calcolo automatico penale (€20/pax mancante), override manuale consentito
+function onPaxChange(order, val) {
+  const originalPax = order.total_pax || 0
+  order._actual_pax = val
+  const diff = originalPax - val
+  order._penalty_amount = diff > 0 ? diff * 20 : 0
+  // Ricalcola pax globali e sincronizza
+  if (rideData.value) syncRideState(rideData.value.id)
+}
+
 // ═══════════════════════════════════════════════════════════
-// LIVELLO 3 — Participants Dialog
+// PARTECIPANTI
 // ═══════════════════════════════════════════════════════════
-function openParticipantsDialog() {
+function openParticipantsDialog(order) {
+  if (order) selectedOrder.value = order
   selectedRegistrations.value = []
   showParticipantsDialog.value = true
 }
@@ -793,9 +1098,7 @@ async function tesseraSelezionati() {
     const res = await api.post('/firaft/register-bulk', { registration_ids: selectedRegistrations.value })
     $q.notify({ type: 'positive', message: `Tesserati ${res.data.updated_count} partecipanti! 🎫`, caption: res.data.details?.join(', ') })
     selectedRegistrations.value = []
-    // Ricarica dati per aggiornare badge FiRaft
     await reloadRideData()
-    // Aggiorna l'ordine selezionato con i dati freschi
     if (selectedOrder.value && rideData.value) {
       const fresh = rideData.value.orders.find(o => o.id === selectedOrder.value.id)
       if (fresh) selectedOrder.value = fresh
@@ -808,7 +1111,7 @@ async function tesseraSelezionati() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// LIVELLO 4 — Participant Form
+// DETTAGLIO PARTECIPANTE
 // ═══════════════════════════════════════════════════════════
 function openParticipantForm(reg) {
   selectedParticipant.value = reg
@@ -828,20 +1131,326 @@ function openParticipantForm(reg) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// HELPERS
+// SMART MODAL: Booking (Nuovo / Modifica)
 // ═══════════════════════════════════════════════════════════
-function getStatusColorName(code) {
-  if (code === 'ROSSO' || code === 'C') return 'red'
-  if (code === 'GIALLO' || code === 'B') return 'amber'
-  if (code === 'VERDE' || code === 'A') return 'green'
-  if (code === 'D') return 'blue'
-  return 'grey'
+function getEffectivePax(order) {
+  return order._actual_pax !== undefined ? order._actual_pax : (order.total_pax || order.pax || 0)
 }
 
+function emptySlotCount(order) {
+  const regs = order.registrations?.length || 0
+  const refSlot = order.customer_name ? 1 : 0
+  const maxPax = Math.max(order.total_pax || order.pax || 0, order._actual_pax || 0)
+  return Math.max(0, maxPax - regs - refSlot)
+}
+
+function openBookingForm(order, contextRide) {
+  // Vaccino anti-Event: se Vue passa un MouseEvent come argomento, azzeralo
+  if (order instanceof Event || (order && typeof order === 'object' && order.type === 'click')) order = null
+  if (contextRide instanceof Event || (contextRide && typeof contextRide === 'object' && contextRide.type === 'click')) contextRide = null
+
+  if (order) {
+    // ── MODALITÀ EDIT ──
+    bookingDialog.isEdit = true
+    bookingDialog.originalRef = order
+    bookingDialog.data.order_status = order.order_status || 'CONFERMATO'
+    bookingDialog.data.total_pax = order.total_pax || order.pax || 1
+    bookingDialog.data.activity = order.activity_type || order.activity || ''
+    // Data: normalizza a YYYY-MM-DD per input[type=date]
+    const editDate = rideData.value?.ride_date || ''
+    bookingDialog.data.date = editDate ? String(editDate).replace(/\//g, '-') : ''
+    // Ora: tronca HH:MM:SS → HH:MM
+    const editTime = rideData.value?.ride_time || ''
+    bookingDialog.data.time = editTime ? String(editTime).substring(0, 5) : ''
+    bookingDialog.data.language = order.language || 'IT'
+    bookingDialog.data.price_total = order.price_total || 0
+    bookingDialog.data.paid_amount = order.paid_amount || 0
+    bookingDialog.data.payment_type = order.payment_type || 'CASH'
+    bookingDialog.data.customer_name = order.customer_name || ''
+    bookingDialog.data.customer_surname = order.customer_surname || ''
+    bookingDialog.data.customer_email = order.customer_email || ''
+    bookingDialog.data.customer_phone = order.customer_phone || ''
+    bookingDialog.data.payment_date = order.payment_date || ''
+    bookingDialog.data.is_gift = order.is_gift || false
+    bookingDialog.data.coupon_code = order.coupon_code || ''
+    bookingDialog.data.is_exclusive_raft = order.is_exclusive_raft || false
+    bookingDialog.data.notes = order.notes || ''
+  } else {
+    // ── NUOVO ORDINE ──
+    bookingDialog.isEdit = false
+    bookingDialog.originalRef = null
+    bookingDialog.data.order_status = 'CONFERMATO'
+    bookingDialog.data.total_pax = 1
+    bookingDialog.data.language = 'IT'
+    bookingDialog.data.price_total = 0
+    bookingDialog.data.paid_amount = 0
+    bookingDialog.data.payment_type = 'CASH'
+    bookingDialog.data.customer_name = ''
+    bookingDialog.data.customer_surname = ''
+    bookingDialog.data.customer_email = ''
+    bookingDialog.data.customer_phone = ''
+    bookingDialog.data.payment_date = ''
+    bookingDialog.data.is_gift = false
+    bookingDialog.data.coupon_code = ''
+    bookingDialog.data.is_exclusive_raft = false
+    bookingDialog.data.notes = ''
+
+    if (contextRide) {
+      // Ereditarietà dal turno corrente
+      // DATA: normalizza a YYYY-MM-DD (input[type=date] richiede trattini)
+      const rDate = contextRide.ride_date || contextRide.date || ''
+      bookingDialog.data.date = rDate ? String(rDate).replace(/\//g, '-') : ''
+      // ORA: tronca secondi per matchare timeOptions (09:00:00 → 09:00)
+      const rTime = contextRide.ride_time || contextRide.time || contextRide.start_time || ''
+      bookingDialog.data.time = rTime ? String(rTime).substring(0, 5) : ''
+      // ATTIVITÀ
+      bookingDialog.data.activity = contextRide.activity_name || contextRide.activity || contextRide.name || contextRide.title || ''
+    } else {
+      // Nessun contesto: usa data selezionata
+      const fallbackDate = selectedDate.value || ''
+      bookingDialog.data.date = fallbackDate ? String(fallbackDate).replace(/\//g, '-') : ''
+      bookingDialog.data.time = ''
+      bookingDialog.data.activity = ''
+    }
+  }
+  bookingDialog.open = true
+}
+
+function saveBookingForm() {
+  const d = bookingDialog.data
+
+  if (bookingDialog.isEdit && bookingDialog.originalRef) {
+    // ── EDIT: copia dati dalla form all'ordine originale ──
+    const o = bookingDialog.originalRef
+    o.order_status = d.order_status
+    o.total_pax = d.total_pax
+    o.price_total = d.price_total
+    o.paid_amount = d.paid_amount
+    o.customer_name = d.customer_name
+    o.customer_surname = d.customer_surname
+    o.customer_email = d.customer_email
+    o.customer_phone = d.customer_phone
+    o.is_exclusive_raft = d.is_exclusive_raft
+    o.notes = d.notes
+    $q.notify({ type: 'positive', message: 'Ordine aggiornato ✅' })
+    syncRideState(rideData.value?.id)
+  } else {
+    // ── CREAZIONE: iniezione reattiva "a caldo" ──
+    const newOrder = {
+      id: Date.now(),
+      order_status: d.order_status || 'CONFERMATO',
+      total_pax: d.total_pax || 1,
+      price_total: d.price_total || 0,
+      paid_amount: d.paid_amount || 0,
+      payment_type: d.payment_type || 'CASH',
+      customer_name: d.customer_name || 'Nuovo',
+      customer_surname: d.customer_surname || '',
+      customer_email: d.customer_email || '',
+      customer_phone: d.customer_phone || '',
+      language: d.language || 'IT',
+      is_exclusive_raft: d.is_exclusive_raft || false,
+      is_gift: d.is_gift || false,
+      coupon_code: d.coupon_code || '',
+      notes: d.notes || '',
+      discount_applied: 0,
+      registrations: [],
+    }
+
+    const oTime = String(d.time || '').substring(0, 5)
+    const oAct = d.activity || ''
+
+    // Cerca ride esistente nello schedule della giornata
+    const targetRide = store.dailySchedule.find(r => {
+      const rTime = String(r.time || '').substring(0, 5)
+      const rAct = r.activity_type || ''
+      return rTime === oTime && rAct === oAct
+    })
+
+    if (targetRide) {
+      // Ride esistente: push SINGOLO condizionale
+      $q.notify({ type: 'positive', message: `Ordine aggiunto al turno ${oTime} — ${oAct} ✅` })
+    } else {
+      // Orario custom / combinazione nuova: crea ride fittizio
+      const newRide = {
+        id: 'custom-' + Date.now(),
+        time: oTime + ':00',
+        activity_type: oAct,
+        activity_id: null,
+        color_hex: '#1976D2',
+        status: 'AUTO',
+        is_overridden: false,
+        notes: '',
+        booked_pax: newOrder.total_pax || 0,
+        total_capacity: 16,
+        arr_bonus_seats: 0,
+        remaining_seats: 16 - (newOrder.total_pax || 0),
+        engine_status: 'VERDE',
+        cap_rafts_pax: 16,
+        cap_guides_pax: 16,
+        avail_guides: '—',
+        avail_rafts: '—',
+        avail_vans: '—',
+        status_desc: 'Disponibile',
+        assigned_staff: [],
+        assigned_fleet: [],
+        orders: [newOrder],
+      }
+      store.dailySchedule.push(newRide)
+      // Ordina cronologicamente per orario
+      store.dailySchedule.sort((a, b) => {
+        const tA = String(a.time || '').substring(0, 5)
+        const tB = String(b.time || '').substring(0, 5)
+        return tA.localeCompare(tB)
+      })
+      $q.notify({ type: 'positive', message: `Nuovo turno ${oTime} — ${oAct} creato ✅`, caption: 'Turno fittizio (non salvato su DB)' })
+    }
+
+    // Push SINGOLO condizionale: priorità modale se aperta, altrimenti store
+    const resolvedRideId = targetRide?.id || store.dailySchedule.find(r => {
+      const rTime = String(r.time || '').substring(0, 5)
+      return rTime === oTime && (r.activity_type || '') === oAct
+    })?.id
+    if (showRideDialog.value && rideData.value && rideData.value.id === resolvedRideId) {
+      if (!rideData.value.orders) rideData.value.orders = []
+      rideData.value.orders.push(newOrder)
+    } else if (targetRide) {
+      if (!targetRide.orders) targetRide.orders = []
+      targetRide.orders.push(newOrder)
+    }
+
+    // Sincro globale pax + semafori
+    syncRideState(rideData.value?.id || resolvedRideId)
+  }
+  bookingDialog.open = false
+}
+// ═══════════════════════════════════════════════════════════
+// CANCELLAZIONE LOCALE (UI-only, senza chiamate API)
+// ═══════════════════════════════════════════════════════════
+function deleteOrderLocally(ride, order) {
+  $q.dialog({
+    title: 'Cancella Prenotazione',
+    message: `Confermi la cancellazione dell'ordine di ${order.customer_name || 'Senza nome'} (${order.total_pax || 1} pax)? L'azione libererà risorse e influirà sui semafori.`,
+    cancel: { flat: true, label: 'Annulla' },
+    ok: { color: 'negative', label: 'Cancella', unelevated: true },
+    persistent: true,
+  }).onOk(() => {
+    const paxToRemove = order._actual_pax || order.total_pax || order.pax || 1
+    const filteredOrders = (ride?.orders || []).filter(o => o.id !== order.id)
+    const newPax = Math.max(0, (ride?.booked_pax || 0) - paxToRemove)
+
+    // 1. Aggiorna rideData.value (modale attualmente aperta)
+    if (rideData.value && rideData.value.id === ride?.id) {
+      rideData.value.orders = filteredOrders
+      rideData.value.booked_pax = newPax
+    }
+
+    // 2. Aggiorna store.dailySchedule (mattoncino sul calendario)
+    const storeSlot = store.dailySchedule.find(s => s.id === ride?.id)
+    if (storeSlot) {
+      storeSlot.orders = filteredOrders
+      storeSlot.booked_pax = newPax
+    }
+
+    // Sincronizzazione globale pax
+    syncRideState(ride?.id)
+
+    $q.notify({ type: 'positive', message: 'Prenotazione cancellata', icon: 'delete' })
+  })
+}
+
+// ═══════════════════════════════════════════════════════════
+// SINCRONIZZAZIONE GLOBALE PAX (Vaso Comunicante + Semafori)
+// ═══════════════════════════════════════════════════════════
+function updateSemaphore(rideObj, paxTotal) {
+  if (!rideObj) return
+  const max = rideObj.total_capacity || rideObj.max_pax || 16
+  rideObj.booked_pax = paxTotal
+  if (paxTotal >= max) {
+    rideObj.engine_status = 'ROSSO'
+    rideObj.status_desc = 'Pieno / Chiuso'
+  } else if (paxTotal >= max - 4 && paxTotal > 0) {
+    rideObj.engine_status = 'GIALLO'
+    rideObj.status_desc = 'Quasi Pieno'
+  } else {
+    rideObj.engine_status = 'VERDE'
+    rideObj.status_desc = 'Disponibile'
+  }
+}
+
+function syncRideState(rideId) {
+  if (!rideId) return
+  const globalRide = store.dailySchedule.find(r => r.id === rideId)
+
+  // Se la modale è aperta su questo turno, la fonte della verità è rideData.value
+  if (showRideDialog.value && rideData.value && rideData.value.id === rideId) {
+    const totalPax = (rideData.value.orders || []).reduce((sum, order) => {
+      const pax = order._actual_pax !== undefined && order._actual_pax !== null
+        ? order._actual_pax
+        : (order.total_pax || order.pax || 1)
+      return sum + Number(pax)
+    }, 0)
+
+    updateSemaphore(rideData.value, totalPax)
+
+    if (globalRide) {
+      // Riversa il clone aggiornato nel tabellone globale
+      globalRide.orders = JSON.parse(JSON.stringify(rideData.value.orders))
+      updateSemaphore(globalRide, totalPax)
+    }
+  } else if (globalRide) {
+    // Fallback: ricalcolo se la modale è chiusa
+    const totalPax = (globalRide.orders || []).reduce((sum, order) => {
+      const pax = order._actual_pax !== undefined && order._actual_pax !== null
+        ? order._actual_pax
+        : (order.total_pax || order.pax || 1)
+      return sum + Number(pax)
+    }, 0)
+    updateSemaphore(globalRide, totalPax)
+  }
+}
+
+function getProgressBarColor(pax, max = 16) {
+  if (pax >= max) return 'negative'
+  if (pax >= max - 4 && pax > 0) return 'warning'
+  return 'primary'
+}
+
+function getSlotBgClass(slot) {
+  const pax = slot.booked_pax || 0
+  const max = slot.total_capacity || 16
+  if (pax >= max) return 'bg-red-1'
+  if (pax >= max - 4 && pax > 0) return 'bg-orange-1'
+  return 'bg-green-1'
+}
+
+function deleteCustomRideLocally(ride) {
+  if (!ride || !String(ride.id).startsWith('custom')) return
+  $q.dialog({
+    title: 'Cancella Turno Extra',
+    message: 'Vuoi eliminare questo turno fuori standard e liberare tutte le risorse associate?',
+    cancel: { flat: true, label: 'Annulla' },
+    ok: { color: 'negative', label: 'Elimina Turno', unelevated: true },
+    persistent: true,
+  }).onOk(() => {
+    // Chiudi modale
+    showRideDialog.value = false
+    rideData.value = null
+    // Rimuovi dallo schedule
+    const idx = store.dailySchedule.findIndex(r => r.id === ride.id)
+    if (idx !== -1) store.dailySchedule.splice(idx, 1)
+    $q.notify({ type: 'positive', message: 'Turno extra eliminato', icon: 'delete' })
+  })
+}
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
 function orderStatusColor(status) {
   if (status === 'CONFERMATO') return 'green'
   if (status === 'CANCELLATO') return 'red'
   if (status === 'COMPLETATO') return 'blue'
+  if (status === 'DA_SALDARE') return 'deep-orange'
+  if (status === 'MANUALE') return 'purple'
   return 'orange'
 }
 
@@ -866,80 +1475,115 @@ function firaftLabel(status) {
   return 'Non richiesto'
 }
 
-// Rules
-function getDayName(i) { return weekDays[i] }
-function toggleDay(i) { const idx = newRule.days_of_week.indexOf(i); if(idx>-1) newRule.days_of_week.splice(idx,1); else newRule.days_of_week.push(i) }
 
-async function saveRule() {
-  try {
-    await store.addActivityRule({...newRule})
-    ruleDialogOpen.value = false
-    $q.notify({ type: 'positive', message: 'Regola salvata' })
-    await updateMonthOverview(currentYear.value, currentMonth.value)
-  } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore salvataggio' }) }
-}
 
-async function deleteRule(id) {
-  if(!confirm('Eliminare questa regola?')) return
-  try {
-    await store.deleteActivityRule(id)
-    $q.notify({ type: 'positive', message: 'Regola eliminata' })
-    await updateMonthOverview(currentYear.value, currentMonth.value)
-  } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore eliminazione' }) }
+// ═══════════════════════════════════════════════════════════
+// PANNELLO RISORSE (mock per referenza)
+// ═══════════════════════════════════════════════════════════
+function openResourcePanel(slot) {
+  if (!slot.assigned_guides) slot.assigned_guides = []
+  if (!slot.assigned_boats) slot.assigned_boats = []
+  if (!slot.assigned_vans) slot.assigned_vans = []
+  if (!slot.assigned_trailers) slot.assigned_trailers = []
+  activeResourceSlot.value = slot
+  resourcePanelOpen.value = true
 }
 
 // ═══════════════════════════════════════════════════════════
-// CANTIERE 5: Allocazione Risorse
+// BUSINESS RULE: Anatre vs Grape (Tesseramento FIRAFT)
 // ═══════════════════════════════════════════════════════════
-function openAllocationDialog(slot) {
-  allocationRide.value = slot
-  selectedStaffIds.value = (slot.assigned_staff || []).map(s => s.id)
-  selectedFleetIds.value = (slot.assigned_fleet || []).map(f => f.id)
-  allocationDialog.value = true
+function isFiraftRequired(ride) {
+  if (!ride) return false
+  const manager = String(ride.manager || ride.gestore || '').toLowerCase()
+  if (manager.includes('anatre')) return true
+  if (manager.includes('grape')) return false
+  // Fallback Mock: 'Rafting Family' gestito da Anatre, il resto da Grape
+  const name = String(ride.activity_name || ride.activity_type || ride.title || '').toLowerCase()
+  if (name.includes('family') || name.includes('anatre')) return true
+  return false
 }
 
-async function saveAllocations() {
-  if (!allocationRide.value) return
-  allocationSaving.value = true
-  try {
-    const ride = allocationRide.value
-    const d = selectedDate.value.replace(/\//g, '-')
-    await store.updateRideAllocations(ride.id, {
-      staff_ids: selectedStaffIds.value,
-      fleet_ids: selectedFleetIds.value,
-      // Campi per lazy-creation se il turno non esiste ancora in DB
-      date: d,
-      time: ride.time || null,
-      activity_id: ride.activity_id || null,
-    })
-    allocationDialog.value = false
-    $q.notify({ type: 'positive', message: 'Risorse assegnate con successo!' })
-    // Ricarica i turni per aggiornare i chip
-    await store.fetchDailySchedule(d)
-  } catch(e) {
-    console.error('saveAllocations error:', e)
-    $q.notify({ type: 'negative', message: 'Errore assegnazione risorse' })
-  } finally {
-    allocationSaving.value = false
-  }
-}
-
-// ═══ CANTIERE 6: Export FIRAFT CSV ═══
+// Export FIRAFT CSV
 function exportFiraft () {
   const d = selectedDate.value.replace(/\//g, '-')
   window.open(`/api/v1/calendar/daily-rides/export-firaft?date=${d}`, '_blank')
 }
+
+// ═══════════════════════════════════════════════════════════
+// SIMULATORE FIRAFT — Bulk Tesseramento
+// ═══════════════════════════════════════════════════════════
+function openFiraftModal(order) {
+  if (!order) return
+  activeFiraftOrder.value = order
+  firaftParticipants.value = []
+
+  const paxCount = order._actual_pax !== undefined && order._actual_pax !== null
+    ? order._actual_pax
+    : (order.total_pax || order.pax || 1)
+
+  for (let i = 0; i < paxCount; i++) {
+    firaftParticipants.value.push({
+      id: order.id + '-' + i,
+      name: i === 0
+        ? (order.customer_name || order.referent?.name || 'Referente Gruppo')
+        : `Ospite ${i + 1} (${order.customer_name || 'Gruppo'})`,
+      email: i === 0 ? (order.customer_email || order.referent?.email || '') : '',
+      selected: true,
+      privacy: true,
+      status: 'pending',
+    })
+  }
+
+  firaftModalOpen.value = true
+}
+
+function processFiraft() {
+  firaftLoading.value = true
+  const selected = firaftParticipants.value.filter(p => p.selected && p.status !== 'success')
+  if (selected.length === 0) {
+    firaftLoading.value = false
+    $q.notify({ type: 'info', message: 'Nessun partecipante da tessere.' })
+    return
+  }
+  setTimeout(() => {
+    firaftLoading.value = false
+    selected.forEach((pax, index) => {
+      setTimeout(() => {
+        pax.status = 'success'
+      }, index * 300)
+    })
+  }, 1000)
+}
 </script>
 
 <style scoped>
-.my-rounded { border-radius: 12px; }
-.fit-height-card { height: calc(100vh - 100px); min-height: 500px; }
-.h-full-panels { height: calc(100% - 50px); }
-.border-right { border-right: 1px solid #ddd; }
+.fit-height-card { min-height: calc(100vh - 140px); }
 .slot-card { transition: transform 0.2s; }
 .slot-card:hover { transform: translateY(-3px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
 .transition-generic { transition: all 0.3s ease; }
-.h-full { height: 100%; }
-.mobile-no-padding { padding: 16px; }
-@media (max-width: 600px) { .mobile-no-padding { padding: 8px; } }
+.semaphore-group .q-btn { min-width: 52px; font-size: 10px; }
+
+/* ═══ Modale Turno: forzatura layout verticale ═══ */
+.ride-dialog-card {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 1000px;
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ride-dialog-card > * {
+  flex-shrink: 0;
+  width: 100% !important;
+}
+.ride-dialog-card > .col {
+  flex-shrink: 1;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+@media (max-width: 600px) {
+  .q-pa-md { padding: 8px; }
+}
 </style>

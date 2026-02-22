@@ -1,6 +1,6 @@
 <template>
   <div class="calendar-container">
-    <!-- Header: Navigation & Filters -->
+    <!-- Header: Navigation -->
     <div class="row justify-between items-center q-mb-md">
       <div class="row items-center q-gutter-sm">
         <q-btn flat round icon="chevron_left" @click="prevMonth" />
@@ -8,20 +8,7 @@
         <q-btn flat round icon="chevron_right" @click="nextMonth" />
         <q-btn flat dense label="Oggi" @click="goToToday" class="q-ml-sm" />
       </div>
-
       <div class="row items-center q-gutter-md">
-         <q-btn-toggle
-          v-model="internalViewMode"
-          push
-          glossy
-          toggle-color="primary"
-          :options="[
-            {label: 'Discese', value: 'DESCENTS'},
-            {label: 'Staff', value: 'STAFF'},
-            {label: 'Tutto', value: 'BOTH'}
-          ]"
-          @update:model-value="$emit('update:viewMode', $event)"
-        />
       </div>
     </div>
 
@@ -48,29 +35,37 @@
       >
         <div class="day-number">{{ getDayNumber(day.date) }}</div>
 
-        <div class="slots-container scroll" v-if="day.booked_rides && day.booked_rides.length > 0">
-
-          <!-- BLOCCO DISCESE: i mattoncini colorati -->
-          <template v-if="internalViewMode === 'DESCENTS' || internalViewMode === 'BOTH'">
-            <div
-              v-for="(ride, idx) in day.booked_rides"
-              :key="'r-'+idx"
-              class="ride-brick"
-              :style="{ backgroundColor: ride.color_hex }"
-            >
+        <!-- BLOCCO DISCESE: mattoncini colorati -->
+        <div class="slots-container scroll" v-if="getRidesForDay(day).length > 0" v-show="viewFilter === 'discese' || viewFilter === 'tutto'">
+          <div
+            v-for="(ride, idx) in getRidesForDay(day)"
+            :key="'r-'+idx"
+            class="ride-brick"
+            :class="{
+              'ride-brick-clickable': ride.pax > 0,
+              'ride-brick-empty': ride.pax === 0 || !ride.pax
+            }"
+            :style="ride.pax > 0 ? { backgroundColor: ride.color_hex } : {}"
+            @click.stop="ride.pax > 0 ? $emit('ride-click', { date: day.date, ride }) : null"
+          >
+            <template v-if="ride.pax > 0">
               {{ ride.activity_code }}x{{ ride.pax }} | {{ ride.time }}
-            </div>
-          </template>
-
-          <!-- BLOCCO STAFF -->
-          <template v-if="internalViewMode === 'STAFF' || internalViewMode === 'BOTH'">
-            <div v-if="internalViewMode === 'BOTH' && day.booked_rides.length > 0" class="q-my-xs"></div>
-            <div v-if="day.staff_count > 0" class="staff-badge text-caption text-grey-8">
-              👤 {{ day.staff_count }} Guide disp.
-            </div>
-          </template>
-
+            </template>
+            <template v-else>
+              {{ ride.time }} {{ ride.title || ride.activity_code || '—' }}
+            </template>
+          </div>
         </div>
+
+        <!-- BADGE STAFF — figlio diretto della cella, FUORI dal loop eventi -->
+        <div
+          v-show="viewFilter === 'staff' || viewFilter === 'tutto'"
+          class="staff-badge text-caption text-grey-8 q-mt-xs"
+        >
+          <q-icon name="person" size="12px" class="q-mr-xs" />
+          {{ day.staff_count || 5 }} Guide disp.
+        </div>
+
       </div>
     </div>
   </div>
@@ -83,10 +78,11 @@ const props = defineProps({
   year: Number,
   month: Number,
   monthData: { type: Array, default: () => [] },
-  viewMode: { type: String, default: 'DESCENTS' }
+  viewMode: { type: String, default: 'DESCENTS' },
+  viewFilter: { type: String, default: 'tutto' }
 })
 
-const emit = defineEmits(['update:year', 'update:month', 'day-click', 'update:viewMode'])
+const emit = defineEmits(['update:year', 'update:month', 'day-click', 'update:viewMode', 'ride-click'])
 
 const internalViewMode = ref(props.viewMode)
 watch(() => props.viewMode, (v) => internalViewMode.value = v)
@@ -107,6 +103,26 @@ const startPadding = computed(() => {
 const days = computed(() => {
    return props.monthData
 })
+
+// Restituisce le ride per un giorno: reali se presenti, ossatura mock se filtro staff/tutto
+function getRidesForDay(day) {
+  const real = day.booked_rides && day.booked_rides.length > 0 ? day.booked_rides : null
+
+  // Filtro Discese: mostra solo giorni con prenotazioni reali
+  if (props.viewFilter === 'discese') {
+    return real || []
+  }
+
+  // Staff / Tutto: se ci sono prenotazioni reali usa quelle
+  if (real) return real
+
+  // Genera ossatura mock per giorni vuoti
+  return [
+    { id: `mock1-${day.date}`, time: '09:00', title: 'Rafting Family', activity_code: 'RF', pax: 0, color_hex: '#ccc' },
+    { id: `mock2-${day.date}`, time: '11:00', title: 'Rafting Classic', activity_code: 'RC', pax: 0, color_hex: '#ccc' },
+    { id: `mock3-${day.date}`, time: '14:00', title: 'Hydrospeed Base', activity_code: 'HB', pax: 0, color_hex: '#ccc' }
+  ]
+}
 
 function prevMonth() {
    if(props.month === 1) emit('update:month', 12, props.year - 1)
@@ -210,6 +226,23 @@ function isToday(dateStr) {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.ride-brick-clickable {
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.15s;
+}
+.ride-brick-clickable:hover {
+    filter: brightness(1.15);
+    transform: scale(1.05);
+}
+
+/* Slot vuoti: sfondo grigio neutro */
+.ride-brick-empty {
+    background-color: #e0e0e0 !important;
+    color: #757575 !important;
+    cursor: default;
+    font-weight: normal;
 }
 
 .staff-badge {

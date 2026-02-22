@@ -21,8 +21,8 @@ const routes = [
     component: () => import('layouts/MainLayout.vue'),
     // TODO: Riabilitare in produzione → meta: { requiresAuth: true },
     children: [
-      // Home / Dashboard → redirect to Planning
-      { path: '', redirect: '/admin/pianificazione' },
+      // Home / Dashboard → redirect to Operativo (default)
+      { path: '', redirect: '/admin/operativo' },
 
       // Flusso Registrazione (Scanner)
       { path: 'scanner/:id?', component: () => import('pages/ScannerPage.vue') },
@@ -36,11 +36,15 @@ const routes = [
       // Gestione Risorse (Staff, Flotta, Slot)
       { path: 'risorse', component: () => import('pages/ResourcesPage.vue') },
 
-      // Pianificazione Attività (Calendario Operativo)
-      { path: 'pianificazione', component: () => import('pages/PlanningPage.vue') },
+      // FASE 1: Due ambienti separati che caricano lo stesso componente
+      // Calendario Operativo
+      { path: 'operativo', component: () => import('pages/PlanningPage.vue') },
 
-      // Segreteria → ora vive dentro Pianificazione (tab SEGRETERIA)
-      { path: 'segreteria', redirect: '/admin/pianificazione' },
+      // Segreteria (POS)
+      { path: 'segreteria', component: () => import('pages/PlanningPage.vue') },
+
+      // Redirect legacy per backward-compatibility
+      { path: 'pianificazione', redirect: '/admin/operativo' },
     ]
   },
 
