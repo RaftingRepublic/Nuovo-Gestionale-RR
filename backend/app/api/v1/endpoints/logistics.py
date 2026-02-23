@@ -139,6 +139,8 @@ def update_staff(staff_id: str, payload: StaffUpdate, db: Session = Depends(get_
         staff.is_guide = payload.is_guide
     if payload.is_driver is not None:
         staff.is_driver = payload.is_driver
+    if payload.roles is not None:
+        staff.roles = payload.roles
     if payload.contract_periods is not None:
         staff.contract_periods = payload.contract_periods
 

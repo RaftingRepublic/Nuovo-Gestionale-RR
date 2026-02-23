@@ -179,6 +179,7 @@ class StaffDB(Base):
     contract_type = Column(String(20), default="FISSO", comment="FISSO o EXTRA")
     is_guide = Column(Boolean, default=False)
     is_driver = Column(Boolean, default=False, comment="Patente navetta")
+    roles = Column(JSON, default=list, comment='Multi-ruolo: ["RAF4","SK","NC"]')
     contract_periods = Column(JSON, default=list, comment='[{"start":"2026-05-01","end":"2026-09-30"}]')
     is_active = Column(Boolean, default=True)
     

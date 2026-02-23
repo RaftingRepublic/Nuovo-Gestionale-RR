@@ -74,6 +74,7 @@ class StaffResponse(BaseModel):
     contract_type: str
     is_guide: bool
     is_driver: bool
+    roles: List[str] = []
     contract_periods: List[dict] = []
     is_active: bool
     model_config = {"from_attributes": True}
@@ -83,4 +84,5 @@ class StaffUpdate(BaseModel):
     contract_type: Optional[str] = None
     is_guide: Optional[bool] = None
     is_driver: Optional[bool] = None
+    roles: Optional[List[str]] = None
     contract_periods: Optional[List[dict]] = None

@@ -47,7 +47,10 @@
                 </q-item-section>
                 <q-item-section>
                   <q-item-label class="text-weight-bold">{{ m.name }}</q-item-label>
-                  <q-item-label caption class="ellipsis">{{ getRoleLabel(m) }}</q-item-label>
+                  <q-item-label caption class="ellipsis">
+                  <q-chip v-for="r in (m.roles || [])" :key="r" :color="roleColor(r)" text-color="white" size="xs" dense class="q-mr-xs">{{ r }}</q-chip>
+                  <span v-if="!m.roles || m.roles.length === 0" class="text-grey-5">Nessun ruolo</span>
+                </q-item-label>
                 </q-item-section>
                 <q-item-section side>
                   <q-btn flat round dense icon="delete" color="grey-4" size="sm" @click.stop="deleteItem('STAFF', m.id)" />
@@ -62,7 +65,10 @@
                 </q-item-section>
                 <q-item-section>
                   <q-item-label class="text-weight-bold">{{ m.name }} <q-badge color="amber" text-color="black" class="q-ml-xs">Extra</q-badge></q-item-label>
-                  <q-item-label caption class="ellipsis">{{ getRoleLabel(m) }}</q-item-label>
+                  <q-item-label caption class="ellipsis">
+                    <q-chip v-for="r in (m.roles || [])" :key="r" :color="roleColor(r)" text-color="white" size="xs" dense class="q-mr-xs">{{ r }}</q-chip>
+                    <span v-if="!m.roles || m.roles.length === 0" class="text-grey-5">Nessun ruolo</span>
+                  </q-item-label>
                 </q-item-section>
                 <q-item-section side>
                   <q-btn flat round dense icon="delete" color="grey-4" size="sm" @click.stop="deleteItem('STAFF', m.id)" />
@@ -102,8 +108,7 @@
             <div class="col">
               <div class="text-h5 text-weight-bold no-margin">{{ selectedRes.name }}</div>
               <div v-if="activeCategory === 'STAFF'" class="row q-gutter-xs q-mt-xs">
-                <q-badge v-if="selectedRes.is_guide" color="teal" class="q-py-xs">Guida</q-badge>
-                <q-badge v-if="selectedRes.is_driver" color="orange" class="q-py-xs">Autista</q-badge>
+                <q-chip v-for="r in (selectedRes.roles || [])" :key="r" :color="roleColor(r)" text-color="white" size="sm" dense>{{ roleLabelMap[r] || r }}</q-chip>
                 <q-badge :color="selectedRes.contract_type === 'EXTRA' ? 'amber' : 'blue-grey'" class="q-py-xs">{{ selectedRes.contract_type }}</q-badge>
               </div>
               <div v-else class="text-subtitle2 text-grey-7 q-mt-xs">
@@ -233,8 +238,18 @@
           <q-form v-if="dialog.type === 'STAFF'" @submit="submitStaff" class="q-gutter-md">
             <q-input v-model="formStaff.name" label="Nome" outlined dense :rules="[val => !!val || 'Req']" />
             <q-select v-model="formStaff.contract_type" :options="['FISSO', 'EXTRA']" label="Tipo Contratto" outlined dense />
-            <div class="text-weight-bold">Ruoli</div>
-            <div class="row"><q-checkbox v-model="formStaff.is_guide" label="Guida" class="col-6" /><q-checkbox v-model="formStaff.is_driver" label="Autista" class="col-6" /></div>
+            <q-select
+              v-model="formStaff.roles"
+              :options="roleOptions"
+              label="Ruoli"
+              outlined dense
+              multiple
+              use-chips
+              emit-value
+              map-options
+              option-label="label"
+              option-value="value"
+            />
             <div class="row justify-end q-mt-lg"><q-btn label="Salva" type="submit" color="primary" /></div>
           </q-form>
           <q-form v-if="dialog.type === 'FLEET'" @submit="submitFleet" class="q-gutter-md">
@@ -270,14 +285,39 @@ const calendarDates = ref(null)
 const excName = ref('')
 
 // Form
-const formStaff = reactive({ name: '', contract_type: 'FISSO', is_guide: false, is_driver: false })
+const formStaff = reactive({ name: '', contract_type: 'FISSO', roles: [] })
 const formFleet = reactive({ category: 'RAFT', name: '', total_quantity: 1, capacity_per_unit: 8 })
 
 onMounted(() => { store.fetchStaff(); store.fetchFleet() })
 
-// Helpers
-function getAvatarColor(m) { return m.is_guide ? 'teal' : (m.is_driver ? 'orange' : 'blue-grey') }
-function getRoleLabel(m) { return (m.is_guide?'Guida ':'')+(m.is_driver?'Autista ':'') || 'Staff' }
+// Role system
+const roleOptions = [
+  { label: 'Guida Rafting R4', value: 'RAF4' },
+  { label: 'Guida Rafting R3', value: 'RAF3' },
+  { label: 'Safety Kayak', value: 'SK' },
+  { label: 'Navetta / Autista', value: 'NC' },
+  { label: 'Segreteria', value: 'SEG' },
+  { label: 'Fotografo', value: 'FOT' },
+  { label: 'Capobase', value: 'CB' },
+]
+const roleLabelMap = { RAF4: 'Guida R4', RAF3: 'Guida R3', SK: 'Safety Kayak', NC: 'Autista', SEG: 'Segreteria', FOT: 'Fotografo', CB: 'Capobase' }
+function roleColor(r) {
+  if (r === 'RAF4' || r === 'RAF3') return 'teal'
+  if (r === 'SK') return 'cyan-8'
+  if (r === 'NC') return 'orange'
+  if (r === 'SEG') return 'indigo'
+  if (r === 'FOT') return 'purple'
+  if (r === 'CB') return 'red-8'
+  return 'grey'
+}
+function getAvatarColor(m) {
+  const roles = m.roles || []
+  if (roles.includes('RAF4') || roles.includes('RAF3') || m.is_guide) return 'teal'
+  if (roles.includes('NC') || m.is_driver) return 'orange'
+  if (roles.includes('CB')) return 'red-8'
+  if (roles.includes('SEG')) return 'indigo'
+  return 'blue-grey'
+}
 function getFleetIcon(cat) { return cat==='RAFT'?'sailing':'airport_shuttle' }
 
 // ═══ PERIODI CONTRATTO ═══
@@ -307,10 +347,17 @@ async function removeContractPeriod(idx) {
 }
 
 // Actions
-function openDialog(type) { dialog.type = type; dialog.open = true; formStaff.name=''; formFleet.name='' }
+function openDialog(type) { dialog.type = type; dialog.open = true; formStaff.name=''; formStaff.roles=[]; formFleet.name='' }
 
 async function submitStaff() {
-  await store.addStaff({...formStaff})
+  const payload = {
+    name: formStaff.name,
+    contract_type: formStaff.contract_type,
+    roles: formStaff.roles,
+    is_guide: formStaff.roles.includes('RAF4') || formStaff.roles.includes('RAF3'),
+    is_driver: formStaff.roles.includes('NC'),
+  }
+  await store.addStaff(payload)
   dialog.open = false
   $q.notify({ type: 'positive', message: 'Staff aggiunto' })
 }
