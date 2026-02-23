@@ -819,7 +819,7 @@ const filteredDailySchedule = computed(() => {
 // Smart Default: cambia filtro in base alla vista
 watch(viewMode, (newVal) => {
   if (newVal === 'MONTH') {
-    viewFilter.value = 'discese'
+    viewFilter.value = 'tutto'
   } else {
     viewFilter.value = 'tutto'
   }
@@ -920,9 +920,12 @@ onMounted(async () => {
 async function updateMonthOverview(year, month) {
   $q.loading.show({ message: 'Aggiornamento calendario...' })
   try {
-    monthOverview.value = await store.fetchMonthOverviewSupabase(year, month)
+    const data = await store.fetchMonthOverviewSupabase(year, month)
+    monthOverview.value = Array.isArray(data) ? data : []
+    console.log('[PlanningPage] monthOverview aggiornato:', monthOverview.value.length, 'giorni')
   } catch(e) {
     console.error(e)
+    monthOverview.value = []
     $q.notify({ type: 'negative', message: 'Errore caricamento calendario' })
   } finally {
     $q.loading.hide()
@@ -1355,7 +1358,8 @@ async function saveBookingForm() {
       // Ricarica dati freschi dal DB
       await store.fetchDailyScheduleSupabase(dateStr)
       const [yyyy, mm] = dateStr.split('-')
-      monthOverview.value = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+      const monthData1 = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+      monthOverview.value = Array.isArray(monthData1) ? monthData1 : []
 
       // Se la modale turno è aperta, aggiorna anche i dati del turno visualizzato
       if (showRideDialog.value && rideData.value) {
@@ -1401,7 +1405,8 @@ function deleteOrderLocally(ride, order) {
       const dateStr = selectedDate.value.replace(/\//g, '-')
       await store.fetchDailyScheduleSupabase(dateStr)
       const [yyyy, mm] = dateStr.split('-')
-      monthOverview.value = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+      const monthData2 = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+      monthOverview.value = Array.isArray(monthData2) ? monthData2 : []
 
       // 4. Aggiorna la modale se aperta
       if (showRideDialog.value && rideData.value && rideData.value.id === ride?.id) {

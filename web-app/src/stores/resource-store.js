@@ -158,7 +158,7 @@ export const useResourceStore = defineStore('resource', {
             time: ride.time,
             activity_type: act.name || 'Sconosciuta',
             activity_id: ride.activity_id,
-            color_hex: act.color_hex || act.color || '#607d8b',
+            color_hex: act.color || '#607d8b',
             status: ride.status || 'Disponibile',
             is_overridden: ride.is_overridden || false,
             notes: ride.notes || '',
@@ -231,8 +231,8 @@ export const useResourceStore = defineStore('resource', {
                 activity_name: act ? act.name : slot.defaultTitle,
                 activity_id: validActId,
                 title: act ? act.name : slot.defaultTitle,
-                color: act ? (act.color_hex || act.color || '#e0e0e0') : '#e0e0e0',
-                color_hex: act ? (act.color_hex || act.color || '#e0e0e0') : '#e0e0e0',
+                color: act ? (act.color || '#e0e0e0') : '#e0e0e0',
+                color_hex: act ? (act.color || '#e0e0e0') : '#e0e0e0',
                 status: 'Disponibile',
                 is_overridden: false,
                 notes: '',
@@ -284,64 +284,117 @@ export const useResourceStore = defineStore('resource', {
         const lastDay = new Date(year, month, 0).getDate()
         const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-        const { data: rides, error } = await supabase
+        const { data, error } = await supabase
           .from('rides')
-          .select('id, date, time, activity_id, activities(name, color_hex, color, code), orders(pax, actual_pax)')
+          .select('id, date, time, activity_id, activities(name, color), orders(pax, actual_pax)')
           .gte('date', startDate)
           .lte('date', endDate)
           .order('time')
         if (error) throw error
 
-        // Raggruppa per data
-        const byDate = {}
-        for (const ride of (rides || [])) {
-          if (!byDate[ride.date]) byDate[ride.date] = []
-          const act = ride.activities || {}
-          const orders = ride.orders || []
-          const totalPax = orders.reduce((sum, o) => sum + (o.actual_pax || o.pax || 0), 0)
-          byDate[ride.date].push({
-            activity_code: act.code || act.name?.substring(0, 2)?.toUpperCase() || '??',
-            color_hex: act.color_hex || act.color || '#607d8b',
-            time: ride.time?.substring(0, 5) || '??:??',
-            pax: totalPax,
-            title: act.name || '',
-            isGhost: false
-          })
-        }
+        // FASE 3.17 — Merge reali + ghost (7 slot, allineato al daily)
+        const sourceRides = Array.isArray(data) ? data : []
 
-        // Ghost Skeleton: per giorni senza ride, aggiungi ossatura
-        const ghostMonthSlots = [
-          { time: '09:00', title: 'Rafting Family', activity_code: 'FA' },
-          { time: '11:00', title: 'Rafting Classic', activity_code: 'CL' },
-          { time: '14:00', title: 'Hydrospeed Base', activity_code: 'HB' },
+        const daysInMonth = new Date(year, month, 0).getDate()
+        const yStr = String(year)
+        const mStr = String(month).padStart(2, '0')
+        const days = []
+
+        // Palinsesto identico al tabellone giornaliero (7 slot)
+        const baseSlots = [
+          { time: '09:00', activity_code: 'FA', defaultTitle: 'Rafting Family' },
+          { time: '10:00', activity_code: 'SL', defaultTitle: 'Rafting Selection' },
+          { time: '11:00', activity_code: 'CL', defaultTitle: 'Rafting Classic' },
+          { time: '13:30', activity_code: 'CL', defaultTitle: 'Rafting Classic' },
+          { time: '14:00', activity_code: 'SL', defaultTitle: 'Rafting Selection' },
+          { time: '15:00', activity_code: 'HB', defaultTitle: 'Hydrospeed Base' },
+          { time: '16:00', activity_code: 'FA', defaultTitle: 'Rafting Family' }
         ]
 
-        // Genera griglia completa del mese
-        const days = []
-        for (let d = 1; d <= lastDay; d++) {
-          const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-          const realRides = byDate[dateStr] || []
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dStr = `${yStr}-${mStr}-${String(i).padStart(2, '0')}`
+          // Normalizza la data di Supabase rimuovendo il timestamp per il match sicuro
+          const dayRides = sourceRides.filter(r => r.date && String(r.date).split('T')[0] === dStr)
+
+          // 1. Mappa i turni REALI dal DB
+          let realMapped = []
+          if (dayRides.length > 0) {
+            realMapped = dayRides.map(r => {
+              const paxCount = r.orders
+                ? r.orders.reduce((sum, o) => sum + (o.actual_pax !== undefined && o.actual_pax !== null ? Number(o.actual_pax) : (Number(o.pax) || 0)), 0)
+                : 0
+              return {
+                id: r.id,
+                time: r.time ? String(r.time).substring(0, 5) : '',
+                activity_code: (r.activities && r.activities.name) ? String(r.activities.name).substring(0, 2).toUpperCase() : 'XX',
+                title: (r.activities && r.activities.name) ? r.activities.name : 'Turno',
+                color_hex: (r.activities && r.activities.color) ? r.activities.color : '#2196f3',
+                pax: paxCount,
+                isGhost: false
+              }
+            })
+          }
+
+          // 2. I 7 Slot Base per l'ossatura logistica — genera ghost SOLO se l'orario è buco
+          const currentActivities = Array.isArray(this.activities) ? this.activities : []
+          const ghosts = []
+          for (const slot of baseSlots) {
+            if (!realMapped.some(r => r.time === slot.time)) {
+              const act = currentActivities.find(a => a && a.name && String(a.name).toLowerCase() === String(slot.defaultTitle).toLowerCase())
+              ghosts.push({
+                id: 'ghost-m-' + dStr + '-' + slot.time.replace(':', ''),
+                time: slot.time,
+                activity_code: act && act.name ? String(act.name).substring(0, 2).toUpperCase() : slot.defaultTitle.substring(0, 2).toUpperCase(),
+                title: act ? act.name : slot.defaultTitle,
+                color_hex: '#e0e0e0',
+                pax: 0,
+                isGhost: true
+              })
+            }
+          }
+
+          // 3. Fonde e ordina cronologicamente
+          const combined = [...realMapped, ...ghosts].sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')))
+
           days.push({
-            date: dateStr,
-            booked_rides: realRides.length > 0 ? realRides : ghostMonthSlots.map(g => ({
-              activity_code: g.activity_code,
-              color_hex: '#e0e0e0',
-              time: g.time,
-              pax: 0,
-              title: g.title,
-              isGhost: true,
-            })),
-            staff_count: 0,
+            date: dStr,
+            booked_rides: combined,
+            staff_count: 5
           })
         }
+
+        const totalReal = days.reduce((s, d) => s + d.booked_rides.filter(r => !r.isGhost).length, 0)
+        console.log('[MonthOverview] Giorni:', days.length, '| Rides DB:', sourceRides.length, '| Reali mappati:', totalReal)
         return days
       } catch (e) {
         console.error('[Supabase Error] fetchMonthOverviewSupabase:', e)
+        // Fallback: genera griglia vuota con 7 ghost slots
+        const baseSlotsFallback = [
+          { time: '09:00', activity_code: 'FA', title: 'Rafting Family' },
+          { time: '10:00', activity_code: 'SL', title: 'Rafting Selection' },
+          { time: '11:00', activity_code: 'CL', title: 'Rafting Classic' },
+          { time: '13:30', activity_code: 'CL', title: 'Rafting Classic' },
+          { time: '14:00', activity_code: 'SL', title: 'Rafting Selection' },
+          { time: '15:00', activity_code: 'HB', title: 'Hydrospeed Base' },
+          { time: '16:00', activity_code: 'FA', title: 'Rafting Family' }
+        ]
         const lastDay = new Date(year, month, 0).getDate()
         const days = []
         for (let d = 1; d <= lastDay; d++) {
           const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-          days.push({ date: dateStr, booked_rides: [], staff_count: 0 })
+          days.push({
+            date: dateStr,
+            booked_rides: baseSlotsFallback.map(g => ({
+              id: 'ghost-m-' + dateStr + '-' + g.time.replace(':', ''),
+              time: g.time,
+              activity_code: g.activity_code,
+              title: g.title,
+              color_hex: '#e0e0e0',
+              pax: 0,
+              isGhost: true
+            })),
+            staff_count: 5
+          })
         }
         return days
       }

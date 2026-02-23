@@ -104,24 +104,19 @@ const days = computed(() => {
    return props.monthData
 })
 
-// Restituisce le ride per un giorno: reali se presenti, ossatura mock se filtro staff/tutto
+// FASE 3.17 — Filtro rigoroso per vista mensile (dati ghost/reali arrivano dallo store)
 function getRidesForDay(day) {
-  const real = day.booked_rides && day.booked_rides.length > 0 ? day.booked_rides : null
+  if (!day || !day.booked_rides || !Array.isArray(day.booked_rides)) return []
+  const allRides = day.booked_rides
 
-  // Filtro Discese: mostra solo giorni con prenotazioni reali
   if (props.viewFilter === 'discese') {
-    return real || []
+    // Ritorna SOLO turni non-ghost
+    return allRides.filter(r => r.isGhost === false)
   }
-
-  // Staff / Tutto: se ci sono prenotazioni reali usa quelle
-  if (real) return real
-
-  // Genera ossatura mock per giorni vuoti
-  return [
-    { id: `mock1-${day.date}`, time: '09:00', title: 'Rafting Family', activity_code: 'RF', pax: 0, color_hex: '#ccc' },
-    { id: `mock2-${day.date}`, time: '11:00', title: 'Rafting Classic', activity_code: 'RC', pax: 0, color_hex: '#ccc' },
-    { id: `mock3-${day.date}`, time: '14:00', title: 'Hydrospeed Base', activity_code: 'HB', pax: 0, color_hex: '#ccc' }
-  ]
+  if (props.viewFilter === 'staff') {
+    return []
+  }
+  return allRides
 }
 
 function prevMonth() {
