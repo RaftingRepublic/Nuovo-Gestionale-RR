@@ -509,44 +509,13 @@
       @saved="onBookingSaved"
     />
 
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- MODALE FIRAFT — Simulatore Tesseramento                   -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <q-dialog v-model="firaftModalOpen">
-      <q-card style="width: 600px; max-width: 95vw;">
-        <q-card-section class="row items-center q-pb-none">
-          <div class="text-h6"><q-icon name="group" class="q-mr-sm" />Lista Partecipanti — {{ activeFiraftOrder?.customer_name || 'Gruppo' }}</div>
-          <q-space />
-          <q-badge color="green" class="q-mr-sm q-pa-sm">{{ firaftParticipants.filter(p => p.selected).length }} / {{ firaftParticipants.length }}</q-badge>
-          <q-btn icon="close" flat round dense v-close-popup />
-        </q-card-section>
-
-        <q-card-section class="q-pt-md" style="max-height: 60vh; overflow-y: auto;">
-          <q-list separator>
-            <q-item v-for="pax in firaftParticipants" :key="pax.id" tag="label" v-ripple>
-              <q-item-section side v-if="isFiraftRequired(rideData)">
-                <q-checkbox v-model="pax.selected" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label>{{ pax.name }}</q-item-label>
-                <q-item-label caption>{{ pax.email || '—' }}</q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <div class="row items-center q-gutter-sm">
-                  <q-icon name="thumb_up" size="sm" :color="pax.privacy ? 'green' : 'grey-4'" />
-                  <q-icon v-if="isFiraftRequired(rideData)" name="security" size="sm" :color="pax.status === 'success' ? 'green' : (pax.status === 'error' ? 'red' : 'grey-4')" />
-                </div>
-              </q-item-section>
-            </q-item>
-          </q-list>
-        </q-card-section>
-
-        <q-card-actions align="center" class="bg-grey-1 q-pa-md">
-          <q-btn v-if="isFiraftRequired(rideData)" color="primary" label="TESSERA SELEZIONATI" :loading="firaftLoading" @click="processFiraft" />
-          <q-btn flat label="ESCI" v-close-popup />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- FIRAFT Dialog (componente isolato) -->
+    <FiraftDialog
+      v-model="firaftModalOpen"
+      :order="activeFiraftOrder"
+      :ride-context="rideData"
+      @registered="onFiraftRegistered"
+    />
 
     <!-- ═══ MODALE QR CODE (Magic Link) ═══ -->
     <q-dialog v-model="qrDialogForLink.open">
@@ -576,6 +545,7 @@ import CalendarComponent from 'components/CalendarComponent.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import ResourcePanel from 'components/ResourcePanel.vue'
 import BookingDialog from 'components/BookingDialog.vue'
+import FiraftDialog from 'components/FiraftDialog.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 
 const route = useRoute()
@@ -639,8 +609,6 @@ watch(viewMode, (newVal) => {
 
 // FIRAFT Simulator State
 const firaftModalOpen = ref(false)
-const firaftParticipants = ref([])
-const firaftLoading = ref(false)
 const activeFiraftOrder = ref(null)
 // Ride Dialog State
 const showRideDialog = ref(false)
@@ -1315,100 +1283,21 @@ function exportFiraft () {
 }
 
 // ═══════════════════════════════════════════════════════════
-// SIMULATORE FIRAFT — Bulk Tesseramento
+// SIMULATORE FIRAFT (delegato a FiraftDialog.vue)
 // ═══════════════════════════════════════════════════════════
-async function openFiraftModal(order) {
+function openFiraftModal(order) {
   if (!order) return
   activeFiraftOrder.value = order
-  firaftParticipants.value = []
-
-  const paxCount = order._actual_pax !== undefined && order._actual_pax !== null
-    ? order._actual_pax
-    : (order.total_pax || order.pax || 1)
-
-  // Carica partecipanti reali dal DB
-  let dbPax = []
-  if (order.id && typeof order.id === 'string' && order.id.length > 10) {
-    dbPax = await store.fetchParticipantsForOrder(order.id)
-  }
-
-  // Mappa i partecipanti dal DB
-  for (const p of dbPax) {
-    firaftParticipants.value.push({
-      id: p.id,
-      name: p.name || '',
-      email: p.email || '',
-      selected: p.firaft_status !== 'success',
-      privacy: p.is_privacy_signed || false,
-      status: p.firaft_status || 'pending',
-    })
-  }
-
-  // Riempi i vuoti fino a paxCount con placeholder temporanei
-  const remaining = paxCount - dbPax.length
-  for (let i = 0; i < remaining; i++) {
-    const idx = dbPax.length + i
-    firaftParticipants.value.push({
-      id: 'temp-' + idx,
-      name: idx === 0
-        ? (order.customer_name || order.referent?.name || 'Referente Gruppo')
-        : `Ospite ${idx + 1} (${order.customer_name || 'Gruppo'})`,
-      email: idx === 0 ? (order.customer_email || order.referent?.email || '') : '',
-      selected: true,
-      privacy: false,
-      status: 'pending',
-    })
-  }
-
   firaftModalOpen.value = true
 }
 
-async function processFiraft() {
-  firaftLoading.value = true
-  const selected = firaftParticipants.value.filter(p => p.selected && p.status !== 'success')
-  if (selected.length === 0) {
-    firaftLoading.value = false
-    $q.notify({ type: 'info', message: 'Nessun partecipante da tessere.' })
-    return
-  }
-
-  try {
-    for (const pax of selected) {
-      const payload = {
-        order_id: activeFiraftOrder.value.id,
-        name: pax.name || 'Ospite',
-        email: pax.email || null,
-        is_privacy_signed: pax.privacy || false,
-        firaft_status: 'success',
-      }
-
-      // Se ha un ID reale (non temp), includi per fare update
-      if (pax.id && !String(pax.id).startsWith('temp')) {
-        payload.id = pax.id
-      }
-
-      const { data, error } = await supabase
-        .from('participants')
-        .upsert(payload)
-        .select()
-        .single()
-
-      if (error) {
-        console.error('[Supabase Error] processFiraft upsert:', error)
-        pax.status = 'error'
-      } else {
-        pax.id = data.id
-        pax.status = 'success'
-        pax.selected = false
-      }
-    }
-
-    $q.notify({ type: 'positive', message: `Tesseramenti registrati nel Cloud! (${selected.filter(p => p.status === 'success').length}/${selected.length})`, position: 'top' })
-  } catch (err) {
-    console.error('[Supabase Error] processFiraft:', err)
-    $q.notify({ type: 'negative', message: 'Errore tesseramento: ' + err.message })
-  } finally {
-    firaftLoading.value = false
+async function onFiraftRegistered() {
+  // Ricarica daily schedule dopo tesseramento
+  const dateStr = selectedDate.value.replace(/\//g, '-')
+  await store.fetchDailyScheduleSupabase(dateStr)
+  if (showRideDialog.value && rideData.value) {
+    const freshSlot = store.dailySchedule.find(s => s.id === rideData.value.id)
+    if (freshSlot) Object.assign(rideData.value, freshSlot)
   }
 }
 </script>
