@@ -500,99 +500,14 @@
       </q-card>
     </q-dialog>
 
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- SMART MODAL: Aggiungi / Modifica Prenotazione              -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <q-dialog v-model="bookingDialog.open">
-      <q-card style="width: 900px; max-width: 90vw;">
-        <q-card-section class="bg-primary text-white row items-center justify-between q-py-sm">
-          <div class="text-h6"><q-icon :name="bookingDialog.isEdit ? 'edit' : 'add_circle'" class="q-mr-sm" />{{ bookingDialog.isEdit ? 'Modifica Prenotazione' : 'Nuova Prenotazione' }}</div>
-          <q-btn flat round dense icon="close" v-close-popup />
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="scroll" style="max-height: 70vh;">
-          <div class="q-gutter-md">
-            <!-- Riga 1: Stato, Pax, Attività -->
-            <div class="row q-col-gutter-md">
-              <div class="col-12 col-sm-4">
-                <q-select v-model="bookingDialog.data.order_status" :options="orderStatusOptions" label="Stato Ordine" dense outlined emit-value map-options />
-              </div>
-              <div class="col-12 col-sm-4">
-                <q-input v-model.number="bookingDialog.data.total_pax" type="number" label="N° Partecipanti" dense outlined />
-              </div>
-              <div class="col-12 col-sm-4">
-                <q-select v-model="bookingDialog.data.activity" :options="store.activities" option-label="name" option-value="id" emit-value map-options label="Tipo Attività" dense outlined />
-              </div>
-            </div>
-            <!-- Riga 2: Data, Ora -->
-            <div class="row q-col-gutter-md">
-              <div class="col-12 col-sm-4">
-                <q-input v-model="bookingDialog.data.date" type="date" label="Data" dense outlined />
-              </div>
-              <div class="col-12 col-sm-4">
-                <q-select
-                  v-model="bookingDialog.data.time"
-                  :options="timeOptions"
-                  label="Ora"
-                  dense outlined
-                  use-input
-                  new-value-mode="add-unique"
-                  fill-input
-                  hide-selected
-                  @filter="(val, update) => update()"
-                />
-              </div>
-              <div class="col-12 col-sm-4">
-                <q-select v-model="bookingDialog.data.language" :options="['IT', 'EN', 'DE', 'FR']" label="Lingua" dense outlined />
-              </div>
-            </div>
-            <!-- Riga 3: Prezzi -->
-            <div class="row q-col-gutter-md">
-              <div class="col-12 col-sm-4">
-                <q-input v-model.number="bookingDialog.data.price_total" type="number" label="Prezzo Totale (€)" prefix="€" dense outlined />
-              </div>
-              <div class="col-12 col-sm-4">
-                <q-input v-model.number="bookingDialog.data.paid_amount" type="number" label="Prezzo Pagato (€)" prefix="€" dense outlined />
-              </div>
-              <div class="col-12 col-sm-4">
-                <q-select v-model="bookingDialog.data.payment_type" :options="['CASH', 'SUMUP', 'BONIFICO', 'STRIPE', 'ALTRO']" label="Tipo Pagamento" dense outlined />
-              </div>
-            </div>
-            <q-separator />
-            <!-- Riga 4: Anagrafica referente -->
-            <div class="text-subtitle2 text-blue-grey-8"><q-icon name="person" class="q-mr-xs" />Dati Referente</div>
-            <div class="row q-col-gutter-md">
-              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_name" label="Nome" dense outlined /></div>
-              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_surname" label="Cognome" dense outlined /></div>
-              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_email" label="Email" dense outlined /></div>
-              <div class="col-12 col-sm-3"><q-input v-model="bookingDialog.data.customer_phone" label="Telefono" dense outlined /></div>
-            </div>
-            <q-separator />
-            <!-- Riga 5: Extra -->
-            <div class="row q-col-gutter-md">
-              <div class="col-12 col-sm-3">
-                <q-input v-model="bookingDialog.data.payment_date" type="date" label="Data Pagamento" dense outlined />
-              </div>
-              <div class="col-12 col-sm-3">
-                <q-toggle v-model="bookingDialog.data.is_gift" label="Regalo" dense />
-              </div>
-              <div class="col-12 col-sm-3">
-                <q-input v-model="bookingDialog.data.coupon_code" label="Codice Sconto" dense outlined />
-              </div>
-              <div class="col-12 col-sm-3">
-                <q-toggle v-model="bookingDialog.data.is_exclusive_raft" label="Gommone Esclusivo" dense />
-              </div>
-            </div>
-            <q-input v-model="bookingDialog.data.notes" label="Note" type="textarea" dense outlined autogrow />
-          </div>
-        </q-card-section>
-        <q-separator />
-        <q-card-actions align="right" class="bg-grey-1 q-pa-md">
-          <q-btn flat label="Annulla" v-close-popup />
-          <q-btn unelevated color="primary" icon="save" :label="bookingDialog.isEdit ? 'Salva Modifiche' : 'Crea Ordine'" @click="saveBookingForm" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- Smart Modal: Prenotazione (componente isolato) -->
+    <BookingDialog
+      v-model="bookingDialogOpen"
+      :ride-context="bookingRideContext"
+      :edit-order="bookingEditOrder"
+      :selected-date="selectedDate"
+      @saved="onBookingSaved"
+    />
 
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- MODALE FIRAFT — Simulatore Tesseramento                   -->
@@ -660,6 +575,7 @@ import { api } from 'boot/axios'
 import CalendarComponent from 'components/CalendarComponent.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import ResourcePanel from 'components/ResourcePanel.vue'
+import BookingDialog from 'components/BookingDialog.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 
 const route = useRoute()
@@ -684,32 +600,10 @@ const orderStatusOptions = [
 // Slot Participants Dialog (accesso rapido da card turno)
 const slotParticipantsDialog = reactive({ open: false, slot: null })
 
-// Smart Modal: Booking (Nuovo / Modifica)
-const bookingDialog = reactive({
-  open: false,
-  isEdit: false,
-  originalRef: null,
-  data: {
-    order_status: 'CONFERMATO',
-    total_pax: 1,
-    activity: 'CLASSICA',
-    date: '',
-    time: '09:00',
-    language: 'IT',
-    price_total: 0,
-    paid_amount: 0,
-    payment_type: 'CASH',
-    customer_name: '',
-    customer_surname: '',
-    customer_email: '',
-    customer_phone: '',
-    payment_date: '',
-    is_gift: false,
-    coupon_code: '',
-    is_exclusive_raft: false,
-    notes: '',
-  }
-})
+// Smart Modal: Booking (delegato a BookingDialog.vue)
+const bookingDialogOpen = ref(false)
+const bookingRideContext = ref(null)
+const bookingEditOrder = ref(null)
 
 // Resource Panel State (from Supabase)
 const resourcePanelOpen = ref(false)
@@ -785,7 +679,7 @@ const partForm = reactive({
 })
 
 // Opzioni tendine per Smart Modal
-const timeOptions = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00']
+
 
 
 // ═══════════════════════════════════════════════════════════
@@ -1189,158 +1083,24 @@ function openBookingForm(order, contextRide) {
   if (order instanceof Event || (order && typeof order === 'object' && order.type === 'click')) order = null
   if (contextRide instanceof Event || (contextRide && typeof contextRide === 'object' && contextRide.type === 'click')) contextRide = null
 
-  if (order) {
-    // ── MODALITÀ EDIT ──
-    bookingDialog.isEdit = true
-    bookingDialog.originalRef = order
-    bookingDialog.data.order_status = order.order_status || 'CONFERMATO'
-    bookingDialog.data.total_pax = order.total_pax || order.pax || 1
-    bookingDialog.data.activity = order.activity_id || ''
-    // Data: normalizza a YYYY-MM-DD per input[type=date]
-    const editDate = rideData.value?.ride_date || ''
-    bookingDialog.data.date = editDate ? String(editDate).replace(/\//g, '-') : ''
-    // Ora: tronca HH:MM:SS → HH:MM
-    const editTime = rideData.value?.ride_time || ''
-    bookingDialog.data.time = editTime ? String(editTime).substring(0, 5) : ''
-    bookingDialog.data.language = order.language || 'IT'
-    bookingDialog.data.price_total = order.price_total || 0
-    bookingDialog.data.paid_amount = order.paid_amount || 0
-    bookingDialog.data.payment_type = order.payment_type || 'CASH'
-    bookingDialog.data.customer_name = order.customer_name || ''
-    bookingDialog.data.customer_surname = order.customer_surname || ''
-    bookingDialog.data.customer_email = order.customer_email || ''
-    bookingDialog.data.customer_phone = order.customer_phone || ''
-    bookingDialog.data.payment_date = order.payment_date || ''
-    bookingDialog.data.is_gift = order.is_gift || false
-    bookingDialog.data.coupon_code = order.coupon_code || ''
-    bookingDialog.data.is_exclusive_raft = order.is_exclusive_raft || false
-    bookingDialog.data.notes = order.notes || ''
-  } else {
-    // ── NUOVO ORDINE ──
-    bookingDialog.isEdit = false
-    bookingDialog.originalRef = null
-    bookingDialog.data.order_status = 'CONFERMATO'
-    bookingDialog.data.total_pax = 1
-    bookingDialog.data.language = 'IT'
-    bookingDialog.data.price_total = 0
-    bookingDialog.data.paid_amount = 0
-    bookingDialog.data.payment_type = 'CASH'
-    bookingDialog.data.customer_name = ''
-    bookingDialog.data.customer_surname = ''
-    bookingDialog.data.customer_email = ''
-    bookingDialog.data.customer_phone = ''
-    bookingDialog.data.payment_date = ''
-    bookingDialog.data.is_gift = false
-    bookingDialog.data.coupon_code = ''
-    bookingDialog.data.is_exclusive_raft = false
-    bookingDialog.data.notes = ''
-
-    if (contextRide) {
-      // Ereditarietà dal turno corrente
-      // DATA: normalizza a YYYY-MM-DD (input[type=date] richiede trattini)
-      const rDate = contextRide.ride_date || contextRide.date || ''
-      bookingDialog.data.date = rDate ? String(rDate).replace(/\//g, '-') : ''
-      // ORA: tronca secondi per matchare timeOptions (09:00:00 → 09:00)
-      const rTime = contextRide.ride_time || contextRide.time || contextRide.start_time || ''
-      bookingDialog.data.time = rTime ? String(rTime).substring(0, 5) : ''
-      // ATTIVITÀ: usa l'UUID direttamente, fallback a ricerca per nome
-      const ctxActId = contextRide.activity_id || ''
-      if (ctxActId) {
-        bookingDialog.data.activity = ctxActId
-      } else {
-        const actName = contextRide.activity_name || contextRide.activity_type || contextRide.name || contextRide.title || ''
-        const matched = store.activities.find(a => a.name.toLowerCase() === actName.toLowerCase())
-        bookingDialog.data.activity = matched ? matched.id : ''
-      }
-    } else {
-      // Nessun contesto: usa data selezionata
-      const fallbackDate = selectedDate.value || ''
-      bookingDialog.data.date = fallbackDate ? String(fallbackDate).replace(/\//g, '-') : ''
-      bookingDialog.data.time = ''
-      bookingDialog.data.activity = ''
-    }
-  }
-  bookingDialog.open = true
+  bookingEditOrder.value = order || null
+  bookingRideContext.value = contextRide || rideData.value || null
+  bookingDialogOpen.value = true
 }
 
-async function saveBookingForm() {
-  const d = bookingDialog.data
-
-  if (bookingDialog.isEdit && bookingDialog.originalRef) {
-    // ── EDIT: aggiorna ordine su Supabase ──
-    const o = bookingDialog.originalRef
-    try {
-      if (o.id && typeof o.id === 'string' && o.id.length > 10) {
-        // UUID reale → update su Supabase
-        const { error } = await supabase.from('orders').update({
-          customer_name: d.customer_name || o.customer_name,
-          customer_email: d.customer_email || '',
-          customer_phone: d.customer_phone || '',
-          pax: d.total_pax || 1,
-          total_price: d.price_total || 0,
-          status: d.order_status || 'CONFERMATO',
-          notes: d.notes || '',
-        }).eq('id', o.id)
-        if (error) throw error
-      }
-      // Aggiorna anche localmente per reattività immediata
-      o.order_status = d.order_status
-      o.total_pax = d.total_pax
-      o.price_total = d.price_total
-      o.paid_amount = d.paid_amount
-      o.customer_name = d.customer_name
-      o.customer_surname = d.customer_surname
-      o.customer_email = d.customer_email
-      o.customer_phone = d.customer_phone
-      o.is_exclusive_raft = d.is_exclusive_raft
-      o.notes = d.notes
-      $q.notify({ type: 'positive', message: 'Ordine aggiornato ✅' })
-      syncRideState(rideData.value?.id)
-    } catch (err) {
-      console.error('Update order error:', err)
-      $q.notify({ type: 'negative', message: 'Errore aggiornamento: ' + err.message })
-    }
-  } else {
-    // ── CREAZIONE: salva su Supabase ──
-    try {
-      const activityId = d.activity || ''
-      const dateStr = (d.date || selectedDate.value).replace(/\//g, '-')
-      const timeStr = (String(d.time || '09:00').substring(0, 5)) + ':00'
-
-      const realActivity = store.activities.find(a => a.id === activityId) || { name: activityId }
-
-      await store.saveOrderToSupabase({
-        activityId,
-        dateStr,
-        timeStr,
-        customerName: d.customer_name || 'Nuovo Cliente',
-        customerEmail: d.customer_email || '',
-        customerPhone: d.customer_phone || '',
-        pax: d.total_pax || 1,
-        totalPrice: d.price_total || 0,
-        status: d.order_status || 'CONFERMATO',
-        notes: d.notes || '',
-      })
-
-      $q.notify({ type: 'positive', message: `✅ Prenotazione ${realActivity.name} salvata nel Cloud!`, position: 'top' })
-
-      // Ricarica dati freschi dal DB
-      await store.fetchDailyScheduleSupabase(dateStr)
-      const [yyyy, mm] = dateStr.split('-')
-      const monthData1 = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
-      monthOverview.value = Array.isArray(monthData1) ? monthData1 : []
-
-      // Se la modale turno è aperta, aggiorna anche i dati del turno visualizzato
-      if (showRideDialog.value && rideData.value) {
-        const freshSlot = store.dailySchedule.find(s => s.id === rideData.value.id)
-        if (freshSlot) Object.assign(rideData.value, freshSlot)
-      }
-    } catch (err) {
-      console.error('Save order error:', err)
-      $q.notify({ type: 'negative', message: 'Errore DB: ' + err.message, position: 'top' })
-    }
+async function onBookingSaved() {
+  // Ricarica daily schedule e month overview dopo salvataggio
+  const dateStr = selectedDate.value.replace(/\//g, '-')
+  await store.fetchDailyScheduleSupabase(dateStr)
+  const [yyyy, mm] = dateStr.split('-')
+  const monthData = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+  monthOverview.value = Array.isArray(monthData) ? monthData : []
+  // Se la modale turno è aperta, aggiorna i dati del turno visualizzato
+  if (showRideDialog.value && rideData.value) {
+    const freshSlot = store.dailySchedule.find(s => s.id === rideData.value.id)
+    if (freshSlot) Object.assign(rideData.value, freshSlot)
+    syncRideState(rideData.value?.id)
   }
-  bookingDialog.open = false
 }
 // ═══════════════════════════════════════════════════════════
 // CANCELLAZIONE REALE SU SUPABASE (con cleanup ride vuota)
