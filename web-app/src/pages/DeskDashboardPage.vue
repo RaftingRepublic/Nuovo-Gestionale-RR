@@ -361,17 +361,17 @@
                       <q-icon name="auto_awesome" class="q-mr-xs" /> Azioni Rapide — Check-in
                     </div>
                     <div class="row q-gutter-sm q-mb-md">
-                      <q-btn round outline icon="link" color="primary" size="md" @click="copyMagicLink(order.id)">
+                      <q-btn round outline icon="link" color="primary" size="md" @click.stop="copyMagicLink(order.id)">
                         <q-tooltip>Copia Link Manleva</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="qr_code" color="primary" size="md" @click="showQrDialog(order.id)">
+                      <q-btn round outline icon="qr_code" color="primary" size="md" @click.stop="showQrDialog(order.id)">
                         <q-tooltip>Mostra QR Code</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="chat" color="green" size="md" @click="shareWhatsApp(order.id)">
+                      <q-btn round outline icon="chat" color="green" size="md" @click.stop="shareWhatsApp(order.id)">
                         <q-tooltip>Invia via WhatsApp</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="group" color="purple" size="md" @click="openGroupDialog(order)">
-                        <q-tooltip>Vedi Partecipanti</q-tooltip>
+                      <q-btn round outline icon="group" color="teal" size="md" @click.stop="openQuickGroup(order)">
+                        <q-tooltip>Lista Partecipanti</q-tooltip>
                       </q-btn>
                     </div>
 
@@ -560,59 +560,50 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
-
-    <!-- ═══ DIALOG: GRUPPO PARTECIPANTI ═══ -->
-    <q-dialog v-model="groupDialog.open">
+    <!-- ═══ DIALOG: LISTA PARTECIPANTI RAPIDA ═══ -->
+    <q-dialog v-model="quickGroupDialog.open">
       <q-card style="min-width: 400px;">
-        <q-card-section class="bg-purple text-white">
+        <q-card-section class="bg-teal text-white">
           <div class="text-h6">
             <q-icon name="group" class="q-mr-sm" />
-            Lista Partecipanti
-            <q-badge color="white" text-color="purple" class="q-ml-sm">
-              {{ groupDialog.completedCount }}/{{ groupDialog.registrations.length }}
+            Partecipanti
+            <q-badge color="white" text-color="teal" class="q-ml-sm" v-if="quickGroupDialog.participants.length > 0">
+              {{ quickGroupDialog.participants.filter(p => p.status === 'COMPLETED').length }}/{{ quickGroupDialog.participants.length }}
             </q-badge>
           </div>
         </q-card-section>
-        <q-list separator>
-          <q-item v-for="(reg, idx) in groupDialog.registrations" :key="idx">
+        <q-card-section v-if="quickGroupDialog.loading" class="flex flex-center q-pa-xl">
+          <q-spinner size="2em" color="teal" />
+        </q-card-section>
+        <q-list v-else-if="quickGroupDialog.participants.length > 0" separator>
+          <q-item v-for="p in quickGroupDialog.participants" :key="p.id">
             <q-item-section avatar>
               <q-icon
-                :name="reg.is_lead ? 'star' : (reg.status === 'COMPLETED' ? 'check_circle' : 'hourglass_empty')"
-                :color="reg.is_lead ? 'amber' : (reg.status === 'COMPLETED' ? 'green' : 'grey-4')"
+                :name="p.is_lead ? 'star' : (p.status === 'COMPLETED' ? 'check_circle' : 'hourglass_empty')"
+                :color="p.is_lead ? 'amber' : (p.status === 'COMPLETED' ? 'green' : 'grey-4')"
                 size="sm"
               />
             </q-item-section>
             <q-item-section>
-              <q-item-label
-                :class="{
-                  'text-weight-bold': reg.status === 'COMPLETED',
-                  'text-grey-5 text-italic': reg.status !== 'COMPLETED' && !reg.is_lead
-                }"
-              >
-                {{ getPaxDisplayName(reg, groupDialog.order) }}
+              <q-item-label :class="{ 'text-weight-bold': p.status === 'COMPLETED', 'text-grey-5 text-italic': p.status !== 'COMPLETED' && !p.is_lead }">
+                {{ p.name || 'Slot Vuoto' }}
               </q-item-label>
             </q-item-section>
-            <q-item-section side class="row no-wrap items-center q-gutter-xs">
+            <q-item-section side>
               <q-badge
-                :color="reg.status === 'COMPLETED' ? 'green' : 'grey-4'"
-                :text-color="reg.status === 'COMPLETED' ? 'white' : 'grey-7'"
-                :label="reg.status === 'COMPLETED' ? 'Compilato' : 'Vuoto'"
+                :color="p.status === 'COMPLETED' ? 'green' : 'grey-4'"
+                :label="p.status === 'COMPLETED' ? 'Compilato' : 'Vuoto'"
                 dense
-              />
-              <q-btn
-                v-if="reg.status === 'COMPLETED'"
-                flat round dense
-                icon="picture_as_pdf"
-                color="red"
-                size="sm"
-                title="Scarica Liberatoria PDF"
-                @click="downloadPdf(reg.id)"
               />
             </q-item-section>
           </q-item>
         </q-list>
+        <q-card-section v-else class="text-center text-grey q-pa-lg">
+          <q-icon name="person_off" size="3em" />
+          <div class="q-mt-sm">Nessun partecipante registrato</div>
+        </q-card-section>
         <q-card-actions align="center">
-          <q-btn flat label="Chiudi" color="purple" v-close-popup />
+          <q-btn flat label="Chiudi" color="teal" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -624,6 +615,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useQuasar, date as qdate } from 'quasar'
 import { api } from 'boot/axios'
+import { supabase } from 'src/supabase'
 
 // ─── PROPS (Cantiere 4: innesto nella PlanningPage) ─────
 const props = defineProps({
@@ -668,7 +660,26 @@ const newTx = reactive({
 
 // ─── CANTIERE 3: Check-in Digitale ──────────────────────
 const qrDialog = reactive({ open: false, url: '' })
-const groupDialog = reactive({ open: false, registrations: [], completedCount: 0, order: null })
+const quickGroupDialog = reactive({ open: false, order: null, participants: [], loading: false })
+
+async function openQuickGroup(order) {
+  quickGroupDialog.order = order
+  quickGroupDialog.participants = []
+  quickGroupDialog.loading = true
+  quickGroupDialog.open = true
+  try {
+    const { data, error } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('order_id', order.id)
+      .order('created_at', { ascending: true })
+    if (!error && data) quickGroupDialog.participants = data
+  } catch (e) {
+    console.error('[QuickGroup] Errore fetch partecipanti:', e)
+  } finally {
+    quickGroupDialog.loading = false
+  }
+}
 
 function getPublicUrl(orderId) {
   return window.location.origin + '/#/consenso?order_id=' + orderId
@@ -691,13 +702,7 @@ function shareWhatsApp(orderId) {
   window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank')
 }
 
-function openGroupDialog(order) {
-  const regs = order.registrations || []
-  groupDialog.registrations = regs
-  groupDialog.completedCount = regs.filter(r => r.status === 'COMPLETED').length
-  groupDialog.order = order
-  groupDialog.open = true
-}
+
 
 // ─── COMPUTED ────────────────────────────────────────────
 const computedExtras = computed(() => {
@@ -859,10 +864,22 @@ async function updateOrder (orderId) {
   ef.saving = true
 
   try {
-    await api.patch(`/orders/${orderId}`, {
+    // 1. Aggiorna su Supabase (source of truth)
+    const { error: updErr } = await supabase.from('orders').update({
+      pax: ef.pax,
+      actual_pax: ef.pax - (ef.adjustments || 0),
+      notes: ef.notes || null
+    }).eq('id', orderId)
+    if (updErr) {
+      console.error('[Supabase] Update order error:', updErr)
+      throw new Error('Errore aggiornamento Supabase: ' + updErr.message)
+    }
+
+    // 2. Tenta anche aggiornamento su API Python (best-effort, non blocca)
+    api.patch(`/orders/${orderId}`, {
       pax: ef.pax,
       adjustments: ef.adjustments,
-    })
+    }).catch(e => console.warn('[API Python] Update fallback error (non bloccante):', e))
 
     $q.notify({ type: 'positive', message: 'Ordine aggiornato!', icon: 'check' })
 
@@ -874,7 +891,7 @@ async function updateOrder (orderId) {
       if (sameRide) selectedRide.value = sameRide
     }
   } catch (e) {
-    const msg = e?.response?.data?.detail || 'Errore aggiornamento'
+    const msg = e?.message || e?.response?.data?.detail || 'Errore aggiornamento'
     $q.notify({ type: 'negative', message: msg })
   } finally {
     ef.saving = false

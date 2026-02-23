@@ -51,7 +51,7 @@
       <!-- Griglia turni — OPERATIVO -->
       <div v-if="!isSegreteria" class="col scroll">
         <div v-if="store.loading" class="flex flex-center" style="min-height: 300px;"><q-spinner size="3em" color="primary" /></div>
-        <div v-else-if="store.dailySchedule.length === 0" class="flex flex-center text-grey-5 column" style="min-height: 300px;">
+        <div v-else-if="!filteredDailySchedule || filteredDailySchedule.length === 0" class="flex flex-center text-grey-5 column" style="min-height: 300px;">
           <q-icon name="event_busy" size="4em" />
           <div class="text-h6 q-mt-sm">Nessuna attività programmata per oggi.</div>
         </div>
@@ -254,10 +254,9 @@
                   <div>
                     <div class="text-subtitle2 text-blue-grey-8 q-mb-sm"><q-icon name="flash_on" class="q-mr-xs" />Azioni Rapide — Check-in</div>
                     <div class="row q-gutter-sm wrap">
-                      <q-btn round outline color="primary" icon="link" size="sm"><q-tooltip>Copia Link Consenso</q-tooltip></q-btn>
-                      <q-btn round outline color="primary" icon="qr_code" size="sm"><q-tooltip>Genera QR Code</q-tooltip></q-btn>
-                      <q-btn round outline color="green" icon="chat" size="sm"><q-tooltip>WhatsApp</q-tooltip></q-btn>
-                      <q-btn round outline color="teal" icon="group" size="sm" :disable="!order.registrations || order.registrations.length === 0" @click="openParticipantsDialog(order)"><q-tooltip>Lista Partecipanti</q-tooltip></q-btn>
+                      <q-btn round outline color="primary" icon="link" size="sm" @click.stop="copyMagicLink(order)"><q-tooltip>Copia Link Consenso</q-tooltip></q-btn>
+                      <q-btn round outline color="primary" icon="qr_code" size="sm" @click.stop="openQrModal(order)"><q-tooltip>Genera QR Code</q-tooltip></q-btn>
+                      <q-btn round outline color="green" icon="chat" size="sm" @click.stop="shareWhatsApp(order)"><q-tooltip>WhatsApp</q-tooltip></q-btn>
                       <q-btn v-if="order.order_status === 'IN_ATTESA'" unelevated color="secondary" icon="check_circle" label="Conferma Bonifico" size="sm" :loading="confirmingOrderId === order.id" @click="confirmBonifico(order.id)" />
                     </div>
                   </div>
@@ -502,7 +501,9 @@
             use-chips
             outlined
             dense
-            :options="guideOptions"
+            :options="guideOptionsDB"
+            option-label="name"
+            option-value="id"
             label="Seleziona Guide"
           />
 
@@ -513,7 +514,9 @@
             use-chips
             outlined
             dense
-            :options="boatOptions"
+            :options="boatOptionsDB"
+            option-label="name"
+            option-value="id"
             label="Seleziona Gommoni"
           />
 
@@ -524,7 +527,9 @@
             use-chips
             outlined
             dense
-            :options="vanOptions"
+            :options="vanOptionsDB"
+            option-label="name"
+            option-value="id"
             label="Seleziona Furgoni"
           />
 
@@ -535,17 +540,20 @@
             use-chips
             outlined
             dense
-            :options="trailerOptions"
+            :options="trailerOptionsDB"
+            option-label="name"
+            option-value="id"
             label="Seleziona Carrelli"
           />
 
           <div class="q-mt-xl text-caption text-grey-6">
-            Nota: L'assegnazione risorse aggiorna il tabellone localmente in tempo reale per preparare il calcolo semafori backend.
+            Le risorse assegnate vengono salvate nella tabella ride_allocations su Supabase.
           </div>
         </q-card-section>
 
         <q-card-actions align="right" class="bg-white">
           <q-btn flat label="CHIUDI" color="blue-grey" v-close-popup />
+          <q-btn unelevated label="SALVA RISORSE" color="primary" icon="cloud_upload" @click="saveResourceAllocations" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -590,7 +598,7 @@
                 <q-input v-model.number="bookingDialog.data.total_pax" type="number" label="N° Partecipanti" dense outlined />
               </div>
               <div class="col-12 col-sm-4">
-                <q-select v-model="bookingDialog.data.activity" :options="activityOptions" label="Tipo Attività" dense outlined />
+                <q-select v-model="bookingDialog.data.activity" :options="store.activities" option-label="name" option-value="id" emit-value map-options label="Tipo Attività" dense outlined />
               </div>
             </div>
             <!-- Riga 2: Data, Ora -->
@@ -702,11 +710,26 @@
       </q-card>
     </q-dialog>
 
+    <!-- ═══ MODALE QR CODE (Magic Link) ═══ -->
+    <q-dialog v-model="qrDialogForLink.open">
+      <q-card style="width: 350px; text-align: center;" class="q-pa-md">
+        <q-card-section class="row items-center q-pb-none">
+          <div class="text-h6"><q-icon name="qr_code" class="q-mr-sm" />Scansiona per Check-in</div>
+          <q-space />
+          <q-btn icon="close" flat round dense v-close-popup />
+        </q-card-section>
+        <q-card-section class="flex flex-center q-pt-md">
+          <img v-if="qrDialogForLink.url" :src="qrDialogForLink.url" style="width: 300px; height: 300px; margin: 0 auto;" alt="QR Code" />
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
   </q-page>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { supabase } from 'src/supabase'
 import { useRoute } from 'vue-router'
 import { useResourceStore } from 'stores/resource-store'
 import { useQuasar, date as qdate } from 'quasar'
@@ -767,13 +790,13 @@ const bookingDialog = reactive({
   }
 })
 
-// Resource Panel State (mock)
+// Resource Panel State (from Supabase)
 const resourcePanelOpen = ref(false)
 const activeResourceSlot = ref(null)
-const guideOptions = ['Marco', 'Luca', 'Jean-Pierre', 'Giulia', 'Roberto']
-const boatOptions = ['Gommone 1 (8 pax)', 'Gommone 2 (8 pax)', 'Gommone 3 (8 pax)', 'Gommone VIP (6 pax)']
-const vanOptions = ['Sprinter L1 (9 pax)', 'Sprinter L2 (9 pax)', 'Ducato (9 pax)']
-const trailerOptions = ['Gnu (Carrello 6)', 'Puma (Carrello 8)']
+const guideOptionsDB = computed(() => store.resources.filter(r => r.type === 'guide'))
+const boatOptionsDB = computed(() => store.resources.filter(r => r.type === 'raft'))
+const vanOptionsDB = computed(() => store.resources.filter(r => r.type === 'van'))
+const trailerOptionsDB = computed(() => store.resources.filter(r => r.type === 'trailer'))
 
 // Calendar view state
 const viewMode = ref('MONTH')
@@ -845,7 +868,6 @@ const partForm = reactive({
 
 // Opzioni tendine per Smart Modal
 const timeOptions = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00']
-const activityOptions = ['Rafting Family', 'Rafting Classic', 'Rafting Advanced', 'Rafting Selection', 'Hydrospeed Base']
 
 
 // ═══════════════════════════════════════════════════════════
@@ -863,6 +885,10 @@ const formatSelectedDate = computed(() => {
 onMounted(async () => {
   $q.loading.show({ message: 'Inizializzazione...' })
   try {
+    // Carica cataloghi Supabase PRIMA di tutto (servono per i ghost slots)
+    await store.fetchCatalogs()
+    console.log('🟢 [SUPABASE] Attività:', store.activities.length, '| Risorse:', store.resources.length)
+
     await Promise.all([
       store.fetchActivityRules(),
       store.fetchStaff(),
@@ -872,9 +898,17 @@ onMounted(async () => {
     currentYear.value = parseInt(y)
     currentMonth.value = parseInt(m)
     await updateMonthOverview(currentYear.value, currentMonth.value)
+
+    $q.notify({ type: 'positive', message: '🔄 Sincronizzazione completata', position: 'top', timeout: 2000 })
   } catch(e) {
     console.error('Error in PlanningPage mounted', e)
-    $q.notify({ type: 'negative', message: 'Errore inizializzazione pagina' })
+    $q.notify({
+      type: 'negative',
+      message: `Errore inizializzazione: ${e.message || 'sconosciuto'}`,
+      position: 'top',
+      timeout: 0,
+      actions: [{ icon: 'close', color: 'white' }]
+    })
   } finally {
     $q.loading.hide()
   }
@@ -886,7 +920,7 @@ onMounted(async () => {
 async function updateMonthOverview(year, month) {
   $q.loading.show({ message: 'Aggiornamento calendario...' })
   try {
-    monthOverview.value = await store.fetchMonthOverview(year, month)
+    monthOverview.value = await store.fetchMonthOverviewSupabase(year, month)
   } catch(e) {
     console.error(e)
     $q.notify({ type: 'negative', message: 'Errore caricamento calendario' })
@@ -947,7 +981,7 @@ async function loadSchedule() {
   $q.loading.show({ message: 'Caricamento giornata...' })
   try {
     const d = selectedDate.value.replace(/\//g, '-')
-    await store.fetchDailySchedule(d)
+    await store.fetchDailyScheduleSupabase(d)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore caricamento' }) }
   finally { $q.loading.hide() }
 }
@@ -1077,8 +1111,42 @@ function onPaxChange(order, val) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// MAGIC LINK — Check-in Digitale (Cantiere 3)
+// ═══════════════════════════════════════════════════════════
+const qrDialogForLink = reactive({ open: false, url: '' })
+
+function getMagicLink(order) {
+  if (!order || !order.id) return ''
+  const baseUrl = window.location.origin + window.location.pathname
+  return `${baseUrl}#/consenso?order_id=${order.id}`
+}
+
+function copyMagicLink(order) {
+  if (!order || !order.id) return
+  navigator.clipboard.writeText(getMagicLink(order))
+    .then(() => {
+      $q.notify({ type: 'positive', message: 'Link copiato negli appunti!', icon: 'content_copy', position: 'top' })
+    })
+    .catch(err => console.error('Errore clipboard:', err))
+}
+
+function openQrModal(order) {
+  if (!order || !order.id) return
+  qrDialogForLink.url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(getMagicLink(order))}`
+  qrDialogForLink.open = true
+}
+
+function shareWhatsApp(order) {
+  if (!order || !order.id) return
+  const name = order.customer_name || 'Referente'
+  const text = encodeURIComponent(`Ciao ${name}! Ecco il link per compilare velocemente le liberatorie prima della discesa: ${getMagicLink(order)}`)
+  window.open(`https://wa.me/?text=${text}`, '_blank')
+}
+
+// ═══════════════════════════════════════════════════════════
 // PARTECIPANTI
 // ═══════════════════════════════════════════════════════════
+// eslint-disable-next-line no-unused-vars
 function openParticipantsDialog(order) {
   if (order) selectedOrder.value = order
   selectedRegistrations.value = []
@@ -1155,7 +1223,7 @@ function openBookingForm(order, contextRide) {
     bookingDialog.originalRef = order
     bookingDialog.data.order_status = order.order_status || 'CONFERMATO'
     bookingDialog.data.total_pax = order.total_pax || order.pax || 1
-    bookingDialog.data.activity = order.activity_type || order.activity || ''
+    bookingDialog.data.activity = order.activity_id || ''
     // Data: normalizza a YYYY-MM-DD per input[type=date]
     const editDate = rideData.value?.ride_date || ''
     bookingDialog.data.date = editDate ? String(editDate).replace(/\//g, '-') : ''
@@ -1203,8 +1271,15 @@ function openBookingForm(order, contextRide) {
       // ORA: tronca secondi per matchare timeOptions (09:00:00 → 09:00)
       const rTime = contextRide.ride_time || contextRide.time || contextRide.start_time || ''
       bookingDialog.data.time = rTime ? String(rTime).substring(0, 5) : ''
-      // ATTIVITÀ
-      bookingDialog.data.activity = contextRide.activity_name || contextRide.activity || contextRide.name || contextRide.title || ''
+      // ATTIVITÀ: usa l'UUID direttamente, fallback a ricerca per nome
+      const ctxActId = contextRide.activity_id || ''
+      if (ctxActId) {
+        bookingDialog.data.activity = ctxActId
+      } else {
+        const actName = contextRide.activity_name || contextRide.activity_type || contextRide.name || contextRide.title || ''
+        const matched = store.activities.find(a => a.name.toLowerCase() === actName.toLowerCase())
+        bookingDialog.data.activity = matched ? matched.id : ''
+      }
     } else {
       // Nessun contesto: usa data selezionata
       const fallbackDate = selectedDate.value || ''
@@ -1216,145 +1291,134 @@ function openBookingForm(order, contextRide) {
   bookingDialog.open = true
 }
 
-function saveBookingForm() {
+async function saveBookingForm() {
   const d = bookingDialog.data
 
   if (bookingDialog.isEdit && bookingDialog.originalRef) {
-    // ── EDIT: copia dati dalla form all'ordine originale ──
+    // ── EDIT: aggiorna ordine su Supabase ──
     const o = bookingDialog.originalRef
-    o.order_status = d.order_status
-    o.total_pax = d.total_pax
-    o.price_total = d.price_total
-    o.paid_amount = d.paid_amount
-    o.customer_name = d.customer_name
-    o.customer_surname = d.customer_surname
-    o.customer_email = d.customer_email
-    o.customer_phone = d.customer_phone
-    o.is_exclusive_raft = d.is_exclusive_raft
-    o.notes = d.notes
-    $q.notify({ type: 'positive', message: 'Ordine aggiornato ✅' })
-    syncRideState(rideData.value?.id)
-  } else {
-    // ── CREAZIONE: iniezione reattiva "a caldo" ──
-    const newOrder = {
-      id: Date.now(),
-      order_status: d.order_status || 'CONFERMATO',
-      total_pax: d.total_pax || 1,
-      price_total: d.price_total || 0,
-      paid_amount: d.paid_amount || 0,
-      payment_type: d.payment_type || 'CASH',
-      customer_name: d.customer_name || 'Nuovo',
-      customer_surname: d.customer_surname || '',
-      customer_email: d.customer_email || '',
-      customer_phone: d.customer_phone || '',
-      language: d.language || 'IT',
-      is_exclusive_raft: d.is_exclusive_raft || false,
-      is_gift: d.is_gift || false,
-      coupon_code: d.coupon_code || '',
-      notes: d.notes || '',
-      discount_applied: 0,
-      registrations: [],
-    }
-
-    const oTime = String(d.time || '').substring(0, 5)
-    const oAct = d.activity || ''
-
-    // Cerca ride esistente nello schedule della giornata
-    const targetRide = store.dailySchedule.find(r => {
-      const rTime = String(r.time || '').substring(0, 5)
-      const rAct = r.activity_type || ''
-      return rTime === oTime && rAct === oAct
-    })
-
-    if (targetRide) {
-      // Ride esistente: push SINGOLO condizionale
-      $q.notify({ type: 'positive', message: `Ordine aggiunto al turno ${oTime} — ${oAct} ✅` })
-    } else {
-      // Orario custom / combinazione nuova: crea ride fittizio
-      const newRide = {
-        id: 'custom-' + Date.now(),
-        time: oTime + ':00',
-        activity_type: oAct,
-        activity_id: null,
-        color_hex: '#1976D2',
-        status: 'AUTO',
-        is_overridden: false,
-        notes: '',
-        booked_pax: newOrder.total_pax || 0,
-        total_capacity: 16,
-        arr_bonus_seats: 0,
-        remaining_seats: 16 - (newOrder.total_pax || 0),
-        engine_status: 'VERDE',
-        cap_rafts_pax: 16,
-        cap_guides_pax: 16,
-        avail_guides: '—',
-        avail_rafts: '—',
-        avail_vans: '—',
-        status_desc: 'Disponibile',
-        assigned_staff: [],
-        assigned_fleet: [],
-        orders: [newOrder],
+    try {
+      if (o.id && typeof o.id === 'string' && o.id.length > 10) {
+        // UUID reale → update su Supabase
+        const { error } = await supabase.from('orders').update({
+          customer_name: d.customer_name || o.customer_name,
+          customer_email: d.customer_email || '',
+          customer_phone: d.customer_phone || '',
+          pax: d.total_pax || 1,
+          total_price: d.price_total || 0,
+          status: d.order_status || 'CONFERMATO',
+          notes: d.notes || '',
+        }).eq('id', o.id)
+        if (error) throw error
       }
-      store.dailySchedule.push(newRide)
-      // Ordina cronologicamente per orario
-      store.dailySchedule.sort((a, b) => {
-        const tA = String(a.time || '').substring(0, 5)
-        const tB = String(b.time || '').substring(0, 5)
-        return tA.localeCompare(tB)
+      // Aggiorna anche localmente per reattività immediata
+      o.order_status = d.order_status
+      o.total_pax = d.total_pax
+      o.price_total = d.price_total
+      o.paid_amount = d.paid_amount
+      o.customer_name = d.customer_name
+      o.customer_surname = d.customer_surname
+      o.customer_email = d.customer_email
+      o.customer_phone = d.customer_phone
+      o.is_exclusive_raft = d.is_exclusive_raft
+      o.notes = d.notes
+      $q.notify({ type: 'positive', message: 'Ordine aggiornato ✅' })
+      syncRideState(rideData.value?.id)
+    } catch (err) {
+      console.error('Update order error:', err)
+      $q.notify({ type: 'negative', message: 'Errore aggiornamento: ' + err.message })
+    }
+  } else {
+    // ── CREAZIONE: salva su Supabase ──
+    try {
+      const activityId = d.activity || ''
+      const dateStr = (d.date || selectedDate.value).replace(/\//g, '-')
+      const timeStr = (String(d.time || '09:00').substring(0, 5)) + ':00'
+
+      const realActivity = store.activities.find(a => a.id === activityId) || { name: activityId }
+
+      await store.saveOrderToSupabase({
+        activityId,
+        dateStr,
+        timeStr,
+        customerName: d.customer_name || 'Nuovo Cliente',
+        customerEmail: d.customer_email || '',
+        customerPhone: d.customer_phone || '',
+        pax: d.total_pax || 1,
+        totalPrice: d.price_total || 0,
+        status: d.order_status || 'CONFERMATO',
+        notes: d.notes || '',
       })
-      $q.notify({ type: 'positive', message: `Nuovo turno ${oTime} — ${oAct} creato ✅`, caption: 'Turno fittizio (non salvato su DB)' })
-    }
 
-    // Push SINGOLO condizionale: priorità modale se aperta, altrimenti store
-    const resolvedRideId = targetRide?.id || store.dailySchedule.find(r => {
-      const rTime = String(r.time || '').substring(0, 5)
-      return rTime === oTime && (r.activity_type || '') === oAct
-    })?.id
-    if (showRideDialog.value && rideData.value && rideData.value.id === resolvedRideId) {
-      if (!rideData.value.orders) rideData.value.orders = []
-      rideData.value.orders.push(newOrder)
-    } else if (targetRide) {
-      if (!targetRide.orders) targetRide.orders = []
-      targetRide.orders.push(newOrder)
-    }
+      $q.notify({ type: 'positive', message: `✅ Prenotazione ${realActivity.name} salvata nel Cloud!`, position: 'top' })
 
-    // Sincro globale pax + semafori
-    syncRideState(rideData.value?.id || resolvedRideId)
+      // Ricarica dati freschi dal DB
+      await store.fetchDailyScheduleSupabase(dateStr)
+      const [yyyy, mm] = dateStr.split('-')
+      monthOverview.value = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+
+      // Se la modale turno è aperta, aggiorna anche i dati del turno visualizzato
+      if (showRideDialog.value && rideData.value) {
+        const freshSlot = store.dailySchedule.find(s => s.id === rideData.value.id)
+        if (freshSlot) Object.assign(rideData.value, freshSlot)
+      }
+    } catch (err) {
+      console.error('Save order error:', err)
+      $q.notify({ type: 'negative', message: 'Errore DB: ' + err.message, position: 'top' })
+    }
   }
   bookingDialog.open = false
 }
 // ═══════════════════════════════════════════════════════════
-// CANCELLAZIONE LOCALE (UI-only, senza chiamate API)
+// CANCELLAZIONE REALE SU SUPABASE (con cleanup ride vuota)
 // ═══════════════════════════════════════════════════════════
 function deleteOrderLocally(ride, order) {
   $q.dialog({
     title: 'Cancella Prenotazione',
-    message: `Confermi la cancellazione dell'ordine di ${order.customer_name || 'Senza nome'} (${order.total_pax || 1} pax)? L'azione libererà risorse e influirà sui semafori.`,
+    message: `Confermi la cancellazione dell'ordine di ${order.customer_name || 'Senza nome'} (${order.total_pax || 1} pax)? L'azione è irreversibile.`,
     cancel: { flat: true, label: 'Annulla' },
     ok: { color: 'negative', label: 'Cancella', unelevated: true },
     persistent: true,
-  }).onOk(() => {
-    const paxToRemove = order._actual_pax || order.total_pax || order.pax || 1
-    const filteredOrders = (ride?.orders || []).filter(o => o.id !== order.id)
-    const newPax = Math.max(0, (ride?.booked_pax || 0) - paxToRemove)
+  }).onOk(async () => {
+    try {
+      // 1. Elimina l'ordine dal DB
+      if (order.id && typeof order.id === 'string' && order.id.length > 10) {
+        const { error } = await supabase.from('orders').delete().eq('id', order.id)
+        if (error) throw error
+      }
 
-    // 1. Aggiorna rideData.value (modale attualmente aperta)
-    if (rideData.value && rideData.value.id === ride?.id) {
-      rideData.value.orders = filteredOrders
-      rideData.value.booked_pax = newPax
+      // 2. Se era l'ultimo ordine del ride, elimina anche il ride
+      const remainingOrders = (ride?.orders || []).filter(o => o.id !== order.id)
+      if (remainingOrders.length === 0 && ride?.id && typeof ride.id === 'string' && ride.id.length > 10) {
+        // Prima elimina eventuali allocazioni
+        await supabase.from('ride_allocations').delete().eq('ride_id', ride.id)
+        // Poi elimina il ride
+        const { error: rideErr } = await supabase.from('rides').delete().eq('id', ride.id)
+        if (rideErr) console.warn('Errore cleanup ride:', rideErr)
+      }
+
+      // 3. Ricarica dati dal DB
+      const dateStr = selectedDate.value.replace(/\//g, '-')
+      await store.fetchDailyScheduleSupabase(dateStr)
+      const [yyyy, mm] = dateStr.split('-')
+      monthOverview.value = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+
+      // 4. Aggiorna la modale se aperta
+      if (showRideDialog.value && rideData.value && rideData.value.id === ride?.id) {
+        const freshSlot = store.dailySchedule.find(s => s.id === ride.id)
+        if (freshSlot) {
+          Object.assign(rideData.value, freshSlot)
+        } else {
+          // Il ride è stato eliminato, chiudi la modale
+          showRideDialog.value = false
+        }
+      }
+
+      $q.notify({ type: 'positive', message: 'Prenotazione eliminata dal cloud ✅', icon: 'delete' })
+    } catch (err) {
+      console.error('Delete order error:', err)
+      $q.notify({ type: 'negative', message: 'Errore eliminazione: ' + err.message })
     }
-
-    // 2. Aggiorna store.dailySchedule (mattoncino sul calendario)
-    const storeSlot = store.dailySchedule.find(s => s.id === ride?.id)
-    if (storeSlot) {
-      storeSlot.orders = filteredOrders
-      storeSlot.booked_pax = newPax
-    }
-
-    // Sincronizzazione globale pax
-    syncRideState(ride?.id)
-
-    $q.notify({ type: 'positive', message: 'Prenotazione cancellata', icon: 'delete' })
   })
 }
 
@@ -1478,15 +1542,50 @@ function firaftLabel(status) {
 
 
 // ═══════════════════════════════════════════════════════════
-// PANNELLO RISORSE (mock per referenza)
+// PANNELLO RISORSE (con salvataggio Supabase)
 // ═══════════════════════════════════════════════════════════
 function openResourcePanel(slot) {
-  if (!slot.assigned_guides) slot.assigned_guides = []
-  if (!slot.assigned_boats) slot.assigned_boats = []
-  if (!slot.assigned_vans) slot.assigned_vans = []
-  if (!slot.assigned_trailers) slot.assigned_trailers = []
+  // Pre-carica le risorse assegnate dal DB nei v-model del pannello
+  slot.assigned_guides = slot.guides || []
+  slot.assigned_boats = slot.rafts || []
+  slot.assigned_vans = slot.vans || []
+  slot.assigned_trailers = slot.trailers || []
   activeResourceSlot.value = slot
   resourcePanelOpen.value = true
+}
+
+async function saveResourceAllocations() {
+  const slot = activeResourceSlot.value
+  if (!slot || !slot.id) return
+
+  try {
+    // Raccogli tutti gli ID risorse selezionati
+    const extractIds = (arr) => (arr || []).map(item => typeof item === 'string' ? item : item?.id).filter(Boolean)
+    const allIds = [
+      ...extractIds(slot.assigned_guides),
+      ...extractIds(slot.assigned_boats),
+      ...extractIds(slot.assigned_vans),
+      ...extractIds(slot.assigned_trailers),
+    ]
+
+    await store.saveRideAllocationsSupabase(slot, allIds)
+
+    // Ricarica i dati
+    const dateStr = selectedDate.value.replace(/\//g, '-')
+    await store.fetchDailyScheduleSupabase(dateStr)
+
+    // Aggiorna la modale turno se aperta
+    if (showRideDialog.value && rideData.value && rideData.value.id === slot.id) {
+      const freshSlot = store.dailySchedule.find(s => s.id === slot.id)
+      if (freshSlot) Object.assign(rideData.value, freshSlot)
+    }
+
+    resourcePanelOpen.value = false
+    $q.notify({ type: 'positive', message: 'Logistica aggiornata nel cloud! ☁️', position: 'top' })
+  } catch (err) {
+    console.error('Save allocations error:', err)
+    $q.notify({ type: 'negative', message: 'Errore salvataggio risorse: ' + err.message })
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1512,7 +1611,7 @@ function exportFiraft () {
 // ═══════════════════════════════════════════════════════════
 // SIMULATORE FIRAFT — Bulk Tesseramento
 // ═══════════════════════════════════════════════════════════
-function openFiraftModal(order) {
+async function openFiraftModal(order) {
   if (!order) return
   activeFiraftOrder.value = order
   firaftParticipants.value = []
@@ -1521,15 +1620,36 @@ function openFiraftModal(order) {
     ? order._actual_pax
     : (order.total_pax || order.pax || 1)
 
-  for (let i = 0; i < paxCount; i++) {
+  // Carica partecipanti reali dal DB
+  let dbPax = []
+  if (order.id && typeof order.id === 'string' && order.id.length > 10) {
+    dbPax = await store.fetchParticipantsForOrder(order.id)
+  }
+
+  // Mappa i partecipanti dal DB
+  for (const p of dbPax) {
     firaftParticipants.value.push({
-      id: order.id + '-' + i,
-      name: i === 0
+      id: p.id,
+      name: p.name || '',
+      email: p.email || '',
+      selected: p.firaft_status !== 'success',
+      privacy: p.is_privacy_signed || false,
+      status: p.firaft_status || 'pending',
+    })
+  }
+
+  // Riempi i vuoti fino a paxCount con placeholder temporanei
+  const remaining = paxCount - dbPax.length
+  for (let i = 0; i < remaining; i++) {
+    const idx = dbPax.length + i
+    firaftParticipants.value.push({
+      id: 'temp-' + idx,
+      name: idx === 0
         ? (order.customer_name || order.referent?.name || 'Referente Gruppo')
-        : `Ospite ${i + 1} (${order.customer_name || 'Gruppo'})`,
-      email: i === 0 ? (order.customer_email || order.referent?.email || '') : '',
+        : `Ospite ${idx + 1} (${order.customer_name || 'Gruppo'})`,
+      email: idx === 0 ? (order.customer_email || order.referent?.email || '') : '',
       selected: true,
-      privacy: true,
+      privacy: false,
       status: 'pending',
     })
   }
@@ -1537,7 +1657,7 @@ function openFiraftModal(order) {
   firaftModalOpen.value = true
 }
 
-function processFiraft() {
+async function processFiraft() {
   firaftLoading.value = true
   const selected = firaftParticipants.value.filter(p => p.selected && p.status !== 'success')
   if (selected.length === 0) {
@@ -1545,14 +1665,45 @@ function processFiraft() {
     $q.notify({ type: 'info', message: 'Nessun partecipante da tessere.' })
     return
   }
-  setTimeout(() => {
-    firaftLoading.value = false
-    selected.forEach((pax, index) => {
-      setTimeout(() => {
+
+  try {
+    for (const pax of selected) {
+      const payload = {
+        order_id: activeFiraftOrder.value.id,
+        name: pax.name || 'Ospite',
+        email: pax.email || null,
+        is_privacy_signed: pax.privacy || false,
+        firaft_status: 'success',
+      }
+
+      // Se ha un ID reale (non temp), includi per fare update
+      if (pax.id && !String(pax.id).startsWith('temp')) {
+        payload.id = pax.id
+      }
+
+      const { data, error } = await supabase
+        .from('participants')
+        .upsert(payload)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[Supabase Error] processFiraft upsert:', error)
+        pax.status = 'error'
+      } else {
+        pax.id = data.id
         pax.status = 'success'
-      }, index * 300)
-    })
-  }, 1000)
+        pax.selected = false
+      }
+    }
+
+    $q.notify({ type: 'positive', message: `Tesseramenti registrati nel Cloud! (${selected.filter(p => p.status === 'success').length}/${selected.length})`, position: 'top' })
+  } catch (err) {
+    console.error('[Supabase Error] processFiraft:', err)
+    $q.notify({ type: 'negative', message: 'Errore tesseramento: ' + err.message })
+  } finally {
+    firaftLoading.value = false
+  }
 }
 </script>
 

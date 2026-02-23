@@ -117,6 +117,7 @@ import { useRoute } from 'vue-router'
 import { useRegistrationStore } from 'stores/registration-store'
 import { useQuasar } from 'quasar'
 import { api } from 'src/boot/axios'
+import { supabase } from 'src/supabase'
 import { translations } from 'src/constants/translations'
 import PersonForm from '../PersonForm.vue'
 import SignaturePad from '../SignaturePad.vue'
@@ -234,6 +235,54 @@ async function handleSubmit () {
   }
 
   try {
+    // ── FASE A: Salva PRIMA in Supabase (Fail-Safe) ──
+    const orderId = currentOrderId.value
+    let currentSlotId = null
+
+    if (orderId) {
+      const fullName = `${store.guardian.ocrData.nome || ''} ${store.guardian.ocrData.cognome || ''}`.trim()
+
+      // 1. Cerca uno slot vuoto
+      const { data: slots, error: slotErr } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('order_id', orderId)
+        .eq('status', 'EMPTY')
+        .order('created_at', { ascending: true })
+        .limit(1)
+      if (slotErr) throw new Error('DB Error (select slot): ' + slotErr.message)
+
+      if (slots && slots.length > 0) {
+        // 2A. Update slot esistente
+        currentSlotId = slots[0].id
+        const { error: updErr } = await supabase.from('participants').update({
+          name: fullName || 'Partecipante',
+          email: finalContact.email || null,
+          is_privacy_signed: true,
+          status: 'COMPLETED'
+        }).eq('id', currentSlotId)
+        if (updErr) throw new Error('DB Error (update slot): ' + updErr.message)
+        console.log(`[SlotConsumption] Aggiornato slot ${currentSlotId}`)
+      } else {
+        // 2B. FAIL-SAFE: Cerca ride_id dall'ordine per soddisfare FK
+        const { data: ord } = await supabase.from('orders').select('ride_id').eq('id', orderId).single()
+        const { data: newSlot, error: insErr } = await supabase.from('participants').insert({
+          order_id: orderId,
+          daily_ride_id: ord ? ord.ride_id : null,
+          name: fullName || 'Partecipante',
+          email: finalContact.email || null,
+          is_privacy_signed: true,
+          status: 'COMPLETED',
+          firaft_status: 'NON_RICHIESTO',
+          is_lead: false
+        }).select().single()
+        if (insErr) throw new Error('DB Insert Error: ' + insErr.message)
+        if (newSlot) currentSlotId = newSlot.id
+        console.log(`[SlotConsumption] FAIL-SAFE: Creato nuovo slot ${currentSlotId}`)
+      }
+    }
+
+    // ── FASE B: Invio payload al backend Python per registrazione + PDF ──
     // 4a. Gestione Adulto/Tutore
     if (store.tutorParticipates || !store.hasMinors) {
       const payload = {
@@ -258,17 +307,18 @@ async function handleSubmit () {
         language: store.language,
         tutorParticipates: store.tutorParticipates,
         hasMinors: store.hasMinors,
-        // Cantiere 6.3: collega al desk order per Slot Consumption
-        order_id: currentOrderId.value
+        order_id: orderId
       }
 
       console.log('PAYLOAD INVIATO (Adulto/Tutore):', payload)
-      const response = await api.post('/registration/submit', payload)
 
-      // Verifica esplicita: solo 2xx è successo
-      if (!response || response.status < 200 || response.status >= 300) {
-        throw new Error(`Risposta inattesa dal server: HTTP ${response?.status}`)
-      }
+      // Generazione PDF asincrona — non blocca il successo
+      api.post('/registration/submit', payload).then(async (res) => {
+        const pdfPath = res.data?.pdf_filename || ''
+        if (pdfPath && currentSlotId) {
+          await supabase.from('participants').update({ pdf_path: pdfPath }).eq('id', currentSlotId)
+        }
+      }).catch(err => console.error('[PDF Async] Errore (ignorato per UX):', err))
     }
 
     // 4b. Gestione Minori
@@ -308,62 +358,74 @@ async function handleSubmit () {
           language: store.language,
           tutorParticipates: store.tutorParticipates,
           hasMinors: store.hasMinors,
-          // Cantiere 6.3: collega al desk order per Slot Consumption
-          order_id: currentOrderId.value
+          order_id: orderId
         }
 
         console.log(`PAYLOAD INVIATO (Minore #${i + 1}):`, payload)
-        const response = await api.post('/registration/submit', payload)
 
-        if (!response || response.status < 200 || response.status >= 300) {
-          throw new Error(`Risposta inattesa dal server per minore #${i + 1}: HTTP ${response?.status}`)
+        // Minore: salva slot in Supabase se c'è orderId
+        if (orderId) {
+          const minorName = `${minor.ocrData.nome || ''} ${minor.ocrData.cognome || ''}`.trim()
+          const { data: minorSlots, error: mSlotErr } = await supabase
+            .from('participants')
+            .select('*')
+            .eq('order_id', orderId)
+            .eq('status', 'EMPTY')
+            .order('created_at', { ascending: true })
+            .limit(1)
+          if (mSlotErr) throw new Error(`DB Error (select slot minore #${i + 1}): ` + mSlotErr.message)
+
+          if (minorSlots && minorSlots.length > 0) {
+            const { error: mUpdErr } = await supabase.from('participants').update({
+              name: minorName || `Minore #${i + 1}`,
+              is_privacy_signed: true,
+              status: 'COMPLETED'
+            }).eq('id', minorSlots[0].id)
+            if (mUpdErr) throw new Error(`DB Error (update slot minore #${i + 1}): ` + mUpdErr.message)
+          } else {
+            // FAIL-SAFE minore: cerca ride_id per FK
+            const { data: mOrd } = await supabase.from('orders').select('ride_id').eq('id', orderId).single()
+            const { error: mInsErr } = await supabase.from('participants').insert({
+              order_id: orderId,
+              daily_ride_id: mOrd ? mOrd.ride_id : null,
+              name: minorName || `Minore #${i + 1}`,
+              is_privacy_signed: true,
+              status: 'COMPLETED',
+              firaft_status: 'NON_RICHIESTO',
+              is_lead: false
+            })
+            if (mInsErr) throw new Error(`DB Insert Error (minore #${i + 1}): ` + mInsErr.message)
+          }
         }
+
+        // PDF asincrono per minore
+        api.post('/registration/submit', payload)
+          .catch(err => console.error(`[PDF Async Minore #${i + 1}] Errore:`, err))
       }
     }
 
-    // ── 5. SUCCESSO CONFERMATO DAL SERVER ──
-    // Arriviamo qui SOLO se tutte le api.post() hanno restituito 2xx
+    // ── 5. SUCCESSO CONFERMATO ──
     submitSucceeded = true
 
   } catch (e) {
-    // ── ERRORE: Connessione fallita o risposta non-2xx ──
+    // ── ERRORE HARD: blocca tutto, NON mostrare "Fatto!" ──
     console.error('Errore invio registrazione:', e)
 
-    const detail = e.response?.data?.detail
-    const statusCode = e.response?.status
+    const errMsg = e.message || e.response?.data?.detail || 'Errore sconosciuto durante il salvataggio.'
 
-    let errorMessage = 'Errore di connessione al server o salvataggio fallito.'
-    if (typeof detail === 'string') {
-      errorMessage = detail
-    } else if (Array.isArray(detail)) {
-      // Pydantic 422 validation errors
-      errorMessage = detail.map(d => d.msg || JSON.stringify(d)).join('; ')
-    } else if (statusCode === 404) {
-      errorMessage = 'Endpoint non ancora implementato (404). Il payload è stato loggato in console.'
-    } else if (statusCode === 422) {
-      errorMessage = 'Dati non validi. Verifica i campi obbligatori.'
-    } else if (statusCode >= 500) {
-      errorMessage = 'Errore interno del server. Riprova più tardi.'
-    } else if (!e.response) {
-      errorMessage = 'Impossibile contattare il server. Verifica la connessione.'
-    }
-
-    $q.notify({
-      type: 'negative',
-      icon: 'error',
-      message: errorMessage,
-      position: 'top',
-      timeout: 6000
+    $q.dialog({
+      title: 'Errore Salvataggio',
+      message: errMsg,
+      color: 'negative',
+      persistent: true
     })
+    // submitSucceeded resta false — il popup "Fatto!" NON apparirà
   } finally {
-    // Nascondi sempre loading e spinner, sia su successo che errore
     $q.loading.hide()
     submitting.value = false
   }
 
-  // ── POST-FINALLY: Azioni di successo SOLO se il server ha confermato ──
-  // Questo blocco è FUORI dal try/catch/finally, quindi eseguito solo
-  // se submitSucceeded è stato impostato a true (tutte le POST 2xx)
+  // ── POST-FINALLY: Azioni di successo SOLO se confermato ──
   if (submitSucceeded) {
     $q.dialog({
       title: 'Fatto!',
@@ -371,9 +433,6 @@ async function handleSubmit () {
       color: 'positive',
       persistent: true
     }).onOk(() => {
-      // RESET KIOSK: Ricarica brutalmente la pagina per svuotare la RAM,
-      // lo store Pinia e riportare il tablet allo Step 1,
-      // pronto e pulito per il cliente successivo.
       window.location.reload()
     })
   }

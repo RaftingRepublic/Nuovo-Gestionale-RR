@@ -212,6 +212,22 @@ async def submit_registration(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/generate-pdf")
+async def generate_pdf_stateless(payload: RegistrationPayload):
+    """
+    Cantiere 3.12: Genera SOLO il PDF senza toccare il DB.
+    Il Kiosk gestisce lo stato partecipanti direttamente in Supabase.
+    """
+    try:
+        from app.services.registration.pdf_service import PdfService
+        pdf_svc = PdfService()
+        pdf_path = pdf_svc.generate_consent_pdf(payload.model_dump(by_alias=True))
+        return {"status": "success", "pdf_path": pdf_path}
+    except Exception as e:
+        print(f"[PDF ERROR]: {e}")
+        return {"status": "error", "detail": str(e)}
+
+
 @router.get("/details/{registration_id}")
 async def get_registration_details(registration_id: str):
     """Restituisce il JSON completo per la modifica."""

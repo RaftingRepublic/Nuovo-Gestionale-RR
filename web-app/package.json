@@ -16,8 +16,10 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.4",
+    "@supabase/supabase-js": "^2.97.0",
     "axios": "^1.2.1",
     "browser-image-compression": "^2.0.2",
+    "codice-fiscale-js": "^2.3.23",
     "pinia": "^3.0.1",
     "quasar": "^2.16.0",
     "signature_pad": "^5.1.3",

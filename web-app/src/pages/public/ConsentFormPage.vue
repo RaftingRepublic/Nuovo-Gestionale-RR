@@ -289,7 +289,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRegistrationStore } from 'stores/registration-store'
 import { useQuasar } from 'quasar'
-import { api } from 'src/boot/axios'
+import { supabase } from 'src/supabase'
 import { translations } from 'src/constants/translations'
 import { LEGAL_TEXTS } from 'src/constants/legal'
 import CameraCapture from 'components/CameraCapture.vue'
@@ -338,14 +338,27 @@ const allLegalCompleted = computed(() => {
 // Lifecycle
 onMounted(async () => {
   store.resetStore()
-  // Cantiere 3: se c'è order_id, carica info discesa
+  // Cantiere 3: se c'è order_id, carica info discesa direttamente da Supabase
   if (orderId.value) {
     try {
-      const res = await api.get(`/public/orders/${orderId.value}/info`)
-      orderInfo.value = res.data
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, rides(date, time, activities(name))')
+        .eq('id', orderId.value)
+        .single()
+      if (data && !error) {
+        orderInfo.value = {
+          activity_name: data.rides?.activities?.name || 'Discesa',
+          date: data.rides?.date || '',
+          time: data.rides?.time ? data.rides.time.substring(0, 5) : ''
+        }
+      } else {
+        console.error('Ordine non trovato in Supabase:', error)
+        $q.notify({ type: 'negative', message: 'Link non valido o ordine non trovato.', position: 'top' })
+      }
     } catch (e) {
-      console.error('Errore caricamento info ordine:', e)
-      $q.notify({ type: 'negative', message: 'Link non valido o ordine non trovato.', position: 'top' })
+      console.error('Errore caricamento info ordine da Supabase:', e)
+      $q.notify({ type: 'negative', message: 'Errore nel caricamento dell\'ordine.', position: 'top' })
     }
   }
 })
@@ -433,22 +446,34 @@ function finalizeLegalStep() {
 
 // ── Gestione Successo Invio (chiamata da StepReview) ──
 async function onSubmitSuccess () {
-  // Cantiere 3: se c'è order_id, invia fill-slot all'API pubblica
+  // Cantiere 3.12: aggiorna participant slot in Supabase direttamente
   if (orderId.value) {
     try {
-      const payload = {
-        first_name: store.guardian.ocrData.nome || '',
-        last_name: store.guardian.ocrData.cognome || '',
-        email: store.contact.email || '',
-        phone: `${store.contact.prefix} ${store.contact.telefono}`.trim(),
-        is_minor: store.hasMinors,
-        accepted_terms: true,
+      const fullName = `${store.guardian.ocrData.nome || ''} ${store.guardian.ocrData.cognome || ''}`.trim()
+
+      // Trova il primo slot EMPTY per questo ordine
+      const { data: slots } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('order_id', orderId.value)
+        .eq('status', 'EMPTY')
+        .order('created_at', { ascending: true })
+        .limit(1)
+
+      if (slots && slots.length > 0) {
+        await supabase.from('participants').update({
+          name: fullName || 'Partecipante',
+          email: store.contact.email || '',
+          is_privacy_signed: true,
+          status: 'COMPLETED'
+        }).eq('id', slots[0].id)
+        console.log(`[SlotConsumption] Aggiornato partecipante ${slots[0].id} per ordine ${orderId.value}`)
       }
-      await api.post(`/public/orders/${orderId.value}/fill-slot`, payload)
+
       $q.notify({ type: 'positive', message: 'Consenso registrato con successo!', icon: 'check_circle', position: 'top' })
     } catch (e) {
-      const msg = e.response?.data?.detail || 'Errore durante il salvataggio del consenso.'
-      $q.notify({ type: 'negative', message: msg, position: 'top', timeout: 6000 })
+      console.error('[SlotConsumption] Errore aggiornamento partecipante:', e)
+      $q.notify({ type: 'negative', message: 'Errore durante il salvataggio del consenso.', position: 'top', timeout: 6000 })
       return // Non avanzare allo step 6
     }
   }
