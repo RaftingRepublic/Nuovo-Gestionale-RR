@@ -19,7 +19,7 @@ const routes = [
   {
     path: '/admin',
     component: () => import('layouts/MainLayout.vue'),
-    // TODO: Riabilitare in produzione → meta: { requiresAuth: true },
+    meta: { requiresAuth: true },
     children: [
       // Home / Dashboard → redirect to Operativo (default)
       { path: '', redirect: '/admin/operativo' },

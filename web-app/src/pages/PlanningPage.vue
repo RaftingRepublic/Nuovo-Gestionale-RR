@@ -1111,19 +1111,25 @@ async function clearOverride() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ORDINI — Azioni inline
+// ORDINI — Azioni inline (Supabase diretto)
 // ═══════════════════════════════════════════════════════════
 async function confirmBonifico(orderId) {
   confirmingOrderId.value = orderId
   try {
-    await api.patch(`/orders/${orderId}/confirm`)
+    const { error } = await supabase.from('orders').update({ status: 'CONFERMATO' }).eq('id', orderId)
+    if (error) throw error
+
+    // Aggiorna reattivamente lo stato locale dell'ordine
+    if (rideData.value && rideData.value.orders) {
+      const localOrder = rideData.value.orders.find(o => o.id === orderId)
+      if (localOrder) localOrder.order_status = 'CONFERMATO'
+    }
+
     $q.notify({ type: 'positive', message: 'Bonifico confermato! 👻→✅', icon: 'check_circle' })
-    await reloadRideData()
-    loadSchedule()
     updateMonthOverview(currentYear.value, currentMonth.value)
   } catch(e) {
-    const msg = e?.response?.data?.detail || 'Errore nella conferma'
-    $q.notify({ type: 'negative', message: msg })
+    console.error('[confirmBonifico] Errore Supabase:', e)
+    $q.notify({ type: 'negative', message: 'Errore nella conferma: ' + (e.message || e) })
   } finally {
     confirmingOrderId.value = null
   }
@@ -1132,14 +1138,15 @@ async function confirmBonifico(orderId) {
 // Cambio stato ordine dal q-select
 async function onOrderStatusChange(order, newStatus) {
   try {
-    await api.patch(`/orders/${order.id}/status`, { status: newStatus })
+    const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', order.id)
+    if (error) throw error
+
+    // Aggiorna reattivamente lo stato locale
     order.order_status = newStatus
-    $q.notify({ type: 'positive', message: `Stato aggiornato: ${newStatus}` })
-    await reloadRideData()
-    loadSchedule()
+    $q.notify({ type: 'positive', message: `Stato aggiornato: ${newStatus} ☁️` })
   } catch(e) {
-    console.error('onOrderStatusChange error:', e)
-    $q.notify({ type: 'negative', message: e?.response?.data?.detail || 'Errore aggiornamento stato' })
+    console.error('[onOrderStatusChange] Errore Supabase:', e)
+    $q.notify({ type: 'negative', message: 'Errore aggiornamento stato: ' + (e.message || e) })
   }
 }
 
