@@ -102,6 +102,8 @@ const isOpen = computed({
 const localSlot = reactive({
   id: null,
   time: '',
+  date: '',
+  activity_id: null,
   activity_type: '',
   activity_name: '',
   booked_pax: 0,
@@ -123,6 +125,8 @@ watch(isOpen, (val) => {
   if (val && props.ride) {
     localSlot.id = props.ride.id
     localSlot.time = props.ride.time || ''
+    localSlot.date = props.ride.date || ''
+    localSlot.activity_id = props.ride.activity_id || null
     localSlot.activity_type = props.ride.activity_type || ''
     localSlot.activity_name = props.ride.activity_name || ''
     localSlot.booked_pax = props.ride.booked_pax || 0
@@ -146,7 +150,12 @@ async function saveAllocations() {
       ...extractIds(localSlot.assigned_trailers),
     ]
 
-    await store.saveRideAllocations({ id: localSlot.id }, allIds)
+    await store.saveRideAllocations({
+      id: localSlot.id,
+      date: localSlot.date,
+      time: localSlot.time,
+      activity_id: localSlot.activity_id,
+    }, allIds)
 
     isOpen.value = false
     $q.notify({ type: 'positive', message: 'Logistica aggiornata nel cloud! ☁️', position: 'top' })
