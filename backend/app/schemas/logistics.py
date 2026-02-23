@@ -79,6 +79,13 @@ class StaffResponse(BaseModel):
     is_active: bool
     model_config = {"from_attributes": True}
 
+class StaffCreate(BaseModel):
+    name: str
+    contract_type: str = "FISSO"
+    is_guide: bool = False
+    is_driver: bool = False
+    roles: List[str] = []
+
 class StaffUpdate(BaseModel):
     name: Optional[str] = None
     contract_type: Optional[str] = None

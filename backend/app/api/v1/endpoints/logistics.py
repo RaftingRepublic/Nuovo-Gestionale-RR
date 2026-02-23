@@ -19,7 +19,7 @@ from app.schemas.logistics import (
     SystemSettingResponse, SystemSettingUpdate,
     FleetResponse, FleetCreate,
     ResourceExceptionCreate, ResourceExceptionResponse, ResourceExceptionUpdate,
-    StaffResponse, StaffUpdate,
+    StaffResponse, StaffCreate, StaffUpdate,
 )
 
 router = APIRouter()
@@ -122,6 +122,33 @@ def delete_resource_exception(exception_id: str, db: Session = Depends(get_db)):
 def list_staff(db: Session = Depends(get_db)):
     """Ritorna tutti gli staff attivi."""
     return db.query(StaffDB).filter(StaffDB.is_active == True).all()  # noqa: E712
+
+
+@router.post("/staff", response_model=StaffResponse, status_code=201)
+def create_staff(payload: StaffCreate, db: Session = Depends(get_db)):
+    """Crea un nuovo membro dello staff."""
+    new_staff = StaffDB(
+        name=payload.name,
+        contract_type=payload.contract_type,
+        is_guide=payload.is_guide,
+        is_driver=payload.is_driver,
+        roles=payload.roles,
+    )
+    db.add(new_staff)
+    db.commit()
+    db.refresh(new_staff)
+    return new_staff
+
+
+@router.delete("/staff/{staff_id}", status_code=204)
+def delete_staff(staff_id: str, db: Session = Depends(get_db)):
+    """Elimina (soft-delete) un membro dello staff."""
+    staff = db.query(StaffDB).filter(StaffDB.id == staff_id).first()
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff non trovato")
+    staff.is_active = False
+    db.commit()
+    return None
 
 
 @router.patch("/staff/{staff_id}", response_model=StaffResponse)
