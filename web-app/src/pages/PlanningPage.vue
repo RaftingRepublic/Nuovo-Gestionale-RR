@@ -476,7 +476,6 @@
 
 
 
-    <ReservationWizard v-model="wizardOpen" :defaults="wizardDefaults" @saved="onReservationSaved" />
     <SeasonConfigDialog ref="seasonDialog" />
 
     <!-- Pannello Risorse (laterale destro) -->
@@ -735,7 +734,6 @@ import { useResourceStore } from 'stores/resource-store'
 import { useQuasar, date as qdate } from 'quasar'
 import { api } from 'boot/axios'
 import CalendarComponent from 'components/CalendarComponent.vue'
-import ReservationWizard from 'components/ReservationWizard.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 
@@ -744,8 +742,6 @@ const store = useResourceStore()
 const $q = useQuasar()
 const seasonDialog = ref(null)
 const selectedDate = ref(new Date().toISOString().split('T')[0].replace(/-/g, '/'))
-const wizardOpen = ref(false)
-const wizardDefaults = ref(null)
 
 // Ambiente determinato dalla rotta
 const isSegreteria = computed(() => route.path.includes('segreteria'))
@@ -989,6 +985,7 @@ async function loadSchedule() {
   finally { $q.loading.hide() }
 }
 
+// eslint-disable-next-line no-unused-vars
 function onReservationSaved() { loadSchedule(); updateMonthOverview(currentYear.value, currentMonth.value) }
 
 // ═══════════════════════════════════════════════════════════
