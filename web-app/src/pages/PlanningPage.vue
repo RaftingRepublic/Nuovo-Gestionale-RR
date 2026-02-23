@@ -478,84 +478,8 @@
 
     <SeasonConfigDialog ref="seasonDialog" />
 
-    <!-- Pannello Risorse (laterale destro) -->
-    <q-dialog v-model="resourcePanelOpen" position="right" maximized>
-      <q-card style="width: 400px; max-width: 90vw; display: flex; flex-direction: column;" v-if="activeResourceSlot">
-        <q-card-section class="bg-blue-grey-8 text-white row items-center q-pb-none">
-          <div class="text-h6"><q-icon name="handyman" class="q-mr-sm" /> Assegna Risorse</div>
-          <q-space />
-          <q-btn icon="close" flat round dense v-close-popup />
-        </q-card-section>
-
-        <q-card-section class="bg-blue-grey-8 text-white q-pt-xs">
-          <div class="text-subtitle2">{{ activeResourceSlot.time ? String(activeResourceSlot.time).substring(0,5) : '' }} — {{ activeResourceSlot.activity_type || activeResourceSlot.activity_name || '' }}</div>
-          <div class="text-caption">Pax: {{ activeResourceSlot.booked_pax || 0 }} / {{ activeResourceSlot.total_capacity || 16 }}</div>
-        </q-card-section>
-
-        <q-card-section class="q-pt-md scroll" style="flex-grow: 1;">
-          <div class="text-subtitle2 text-primary q-mb-sm"><q-icon name="rowing" /> Guide e Istruttori</div>
-          <q-select
-            v-model="activeResourceSlot.assigned_guides"
-            multiple
-            use-chips
-            outlined
-            dense
-            :options="guideOptionsDB"
-            option-label="name"
-            option-value="id"
-            label="Seleziona Guide"
-          />
-
-          <div class="text-subtitle2 text-light-blue-8 q-mt-lg q-mb-sm"><q-icon name="rowing" /> Flotta Acquatica (Gommoni)</div>
-          <q-select
-            v-model="activeResourceSlot.assigned_boats"
-            multiple
-            use-chips
-            outlined
-            dense
-            :options="boatOptionsDB"
-            option-label="name"
-            option-value="id"
-            label="Seleziona Gommoni"
-          />
-
-          <div class="text-subtitle2 text-orange-9 q-mt-lg q-mb-sm"><q-icon name="directions_bus" /> Furgoni e Navette</div>
-          <q-select
-            v-model="activeResourceSlot.assigned_vans"
-            multiple
-            use-chips
-            outlined
-            dense
-            :options="vanOptionsDB"
-            option-label="name"
-            option-value="id"
-            label="Seleziona Furgoni"
-          />
-
-          <div class="text-subtitle2 text-brown-8 q-mt-lg q-mb-sm"><q-icon name="rv_hookup" /> Carrelli Rimorchio</div>
-          <q-select
-            v-model="activeResourceSlot.assigned_trailers"
-            multiple
-            use-chips
-            outlined
-            dense
-            :options="trailerOptionsDB"
-            option-label="name"
-            option-value="id"
-            label="Seleziona Carrelli"
-          />
-
-          <div class="q-mt-xl text-caption text-grey-6">
-            Le risorse assegnate vengono salvate nella tabella ride_allocations su Supabase.
-          </div>
-        </q-card-section>
-
-        <q-card-actions align="right" class="bg-white">
-          <q-btn flat label="CHIUDI" color="blue-grey" v-close-popup />
-          <q-btn unelevated label="SALVA RISORSE" color="primary" icon="cloud_upload" @click="saveResourceAllocations" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- Pannello Risorse (componente isolato) -->
+    <ResourcePanel v-model="resourcePanelOpen" :ride="activeResourceSlot" @saved="onResourcePanelSaved" />
 
     <!-- Dialog Partecipanti del Turno (accesso rapido dalla card) -->
     <q-dialog v-model="slotParticipantsDialog.open">
@@ -735,6 +659,7 @@ import { useQuasar, date as qdate } from 'quasar'
 import { api } from 'boot/axios'
 import CalendarComponent from 'components/CalendarComponent.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
+import ResourcePanel from 'components/ResourcePanel.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 
 const route = useRoute()
@@ -789,10 +714,7 @@ const bookingDialog = reactive({
 // Resource Panel State (from Supabase)
 const resourcePanelOpen = ref(false)
 const activeResourceSlot = ref(null)
-const guideOptionsDB = computed(() => store.resources.filter(r => r.type === 'guide'))
-const boatOptionsDB = computed(() => store.resources.filter(r => r.type === 'raft'))
-const vanOptionsDB = computed(() => store.resources.filter(r => r.type === 'van'))
-const trailerOptionsDB = computed(() => store.resources.filter(r => r.type === 'trailer'))
+
 
 // Calendar view state
 const viewMode = ref('MONTH')
@@ -1594,50 +1516,22 @@ function firaftLabel(status) {
 
 
 // ═══════════════════════════════════════════════════════════
-// PANNELLO RISORSE (con salvataggio Supabase)
+// PANNELLO RISORSE (delegato a ResourcePanel.vue)
 // ═══════════════════════════════════════════════════════════
 function openResourcePanel(slot) {
-  // Pre-carica le risorse assegnate dal DB nei v-model del pannello
-  slot.assigned_guides = slot.guides || []
-  slot.assigned_boats = slot.rafts || []
-  slot.assigned_vans = slot.vans || []
-  slot.assigned_trailers = slot.trailers || []
   activeResourceSlot.value = slot
   resourcePanelOpen.value = true
 }
 
-async function saveResourceAllocations() {
-  const slot = activeResourceSlot.value
-  if (!slot || !slot.id) return
-
-  try {
-    // Raccogli tutti gli ID risorse selezionati
-    const extractIds = (arr) => (arr || []).map(item => typeof item === 'string' ? item : item?.id).filter(Boolean)
-    const allIds = [
-      ...extractIds(slot.assigned_guides),
-      ...extractIds(slot.assigned_boats),
-      ...extractIds(slot.assigned_vans),
-      ...extractIds(slot.assigned_trailers),
-    ]
-
-    await store.saveRideAllocationsSupabase(slot, allIds)
-
-    // Ricarica i dati
-    const dateStr = selectedDate.value.replace(/\//g, '-')
-    await store.fetchDailyScheduleSupabase(dateStr)
-
-    // Aggiorna la modale turno se aperta
-    if (showRideDialog.value && rideData.value && rideData.value.id === slot.id) {
-      const freshSlot = store.dailySchedule.find(s => s.id === slot.id)
-      if (freshSlot) Object.assign(rideData.value, freshSlot)
-    }
-
-    resourcePanelOpen.value = false
-    $q.notify({ type: 'positive', message: 'Logistica aggiornata nel cloud! ☁️', position: 'top' })
-  } catch (err) {
-    console.error('Save allocations error:', err)
-    $q.notify({ type: 'negative', message: 'Errore salvataggio risorse: ' + err.message })
+async function onResourcePanelSaved() {
+  // Ricarica daily schedule e aggiorna eventuale modale turno aperta
+  const dateStr = selectedDate.value.replace(/\//g, '-')
+  await store.fetchDailyScheduleSupabase(dateStr)
+  if (showRideDialog.value && rideData.value && activeResourceSlot.value) {
+    const freshSlot = store.dailySchedule.find(s => s.id === activeResourceSlot.value.id)
+    if (freshSlot) Object.assign(rideData.value, freshSlot)
   }
+  updateMonthOverview(currentYear.value, currentMonth.value)
 }
 
 // ═══════════════════════════════════════════════════════════
