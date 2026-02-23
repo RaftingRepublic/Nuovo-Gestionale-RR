@@ -364,7 +364,7 @@
                       <q-btn round outline icon="link" color="primary" size="md" @click.stop="copyMagicLink(order.id)">
                         <q-tooltip>Copia Link Manleva</q-tooltip>
                       </q-btn>
-                      <q-btn round outline icon="qr_code" color="primary" size="md" @click.stop="showQrDialog(order.id)">
+                      <q-btn round outline icon="qr_code" color="primary" size="md" @click.stop="openQrModal(order.id)">
                         <q-tooltip>Mostra QR Code</q-tooltip>
                       </q-btn>
                       <q-btn round outline icon="chat" color="green" size="md" @click.stop="shareWhatsApp(order.id)">
@@ -545,21 +545,8 @@
       </div>
     </div>
 
-    <!-- ═══ DIALOG: QR CODE ═══ -->
-    <q-dialog v-model="qrDialog.open">
-      <q-card style="min-width: 350px; text-align: center;">
-        <q-card-section class="bg-primary text-white">
-          <div class="text-h6"><q-icon name="qr_code" class="q-mr-sm" />QR Code Manleva</div>
-        </q-card-section>
-        <q-card-section class="q-pa-lg">
-          <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qrDialog.url)" style="width: 100%; max-width: 300px;" />
-          <div class="text-caption text-grey-7 q-mt-md">Inquadra con il telefono per compilare il consenso</div>
-        </q-card-section>
-        <q-card-actions align="center">
-          <q-btn flat label="Chiudi" color="primary" v-close-popup />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- QR Dialog (componente condiviso) -->
+    <QrDialog v-model="qrDialogOpen" :url="qrUrl" />
     <!-- ═══ DIALOG: LISTA PARTECIPANTI RAPIDA ═══ -->
     <q-dialog v-model="quickGroupDialog.open">
       <q-card style="min-width: 400px;">
@@ -616,6 +603,8 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useQuasar, date as qdate } from 'quasar'
 import { api } from 'boot/axios'
 import { supabase } from 'src/supabase'
+import { useCheckin } from 'src/composables/useCheckin'
+import QrDialog from 'src/components/QrDialog.vue'
 
 // ─── PROPS (Cantiere 4: innesto nella PlanningPage) ─────
 const props = defineProps({
@@ -624,6 +613,7 @@ const props = defineProps({
 })
 
 const $q = useQuasar()
+const { qrDialogOpen, qrUrl, copyMagicLink, openQrModal, shareWhatsApp } = useCheckin()
 
 // ─── STATE ───────────────────────────────────────────────
 const selectedDate = ref(qdate.formatDate(Date.now(), 'YYYY-MM-DD'))
@@ -658,8 +648,6 @@ const newTx = reactive({
   note: '',
 })
 
-// ─── CANTIERE 3: Check-in Digitale ──────────────────────
-const qrDialog = reactive({ open: false, url: '' })
 const quickGroupDialog = reactive({ open: false, order: null, participants: [], loading: false })
 
 async function openQuickGroup(order) {
@@ -681,26 +669,7 @@ async function openQuickGroup(order) {
   }
 }
 
-function getPublicUrl(orderId) {
-  return window.location.origin + '/#/consenso?order_id=' + orderId
-}
 
-function copyMagicLink(orderId) {
-  const url = getPublicUrl(orderId)
-  navigator.clipboard.writeText(url)
-  $q.notify({ type: 'positive', message: 'Link copiato negli appunti!', icon: 'content_copy', position: 'top' })
-}
-
-function showQrDialog(orderId) {
-  qrDialog.url = getPublicUrl(orderId)
-  qrDialog.open = true
-}
-
-function shareWhatsApp(orderId) {
-  const url = getPublicUrl(orderId)
-  const text = 'Ciao! Ecco il link per compilare il consenso per la nostra discesa: ' + url
-  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank')
-}
 
 
 

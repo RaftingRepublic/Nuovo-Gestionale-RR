@@ -352,19 +352,8 @@
     </q-card>
   </q-dialog>
 
-  <!-- ═══ MODALE QR CODE (Magic Link) ═══ -->
-  <q-dialog v-model="qrDialogForLink.open">
-    <q-card style="width: 350px; text-align: center;" class="q-pa-md">
-      <q-card-section class="row items-center q-pb-none">
-        <div class="text-h6"><q-icon name="qr_code" class="q-mr-sm" />Scansiona per Check-in</div>
-        <q-space />
-        <q-btn icon="close" flat round dense v-close-popup />
-      </q-card-section>
-      <q-card-section class="flex flex-center q-pt-md">
-        <img v-if="qrDialogForLink.url" :src="qrDialogForLink.url" style="width: 300px; height: 300px; margin: 0 auto;" alt="QR Code" />
-      </q-card-section>
-    </q-card>
-  </q-dialog>
+  <!-- QR Dialog (componente condiviso) -->
+  <QrDialog v-model="qrDialogOpen" :url="qrUrl" />
 </template>
 
 <script setup>
@@ -373,6 +362,8 @@ import { useQuasar } from 'quasar'
 import { useResourceStore } from 'stores/resource-store'
 import { supabase } from 'src/supabase'
 import { api } from 'boot/axios'
+import { useCheckin } from 'src/composables/useCheckin'
+import QrDialog from 'src/components/QrDialog.vue'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -385,6 +376,7 @@ const emit = defineEmits([
 
 const $q = useQuasar()
 const store = useResourceStore()
+const { qrDialogOpen, qrUrl, copyMagicLink, openQrModal, shareWhatsApp } = useCheckin()
 
 const isOpen = computed({
   get: () => props.modelValue,
@@ -436,8 +428,7 @@ const orderStatusOptions = [
   { label: 'Cancellato', value: 'CANCELLATO' },
 ]
 
-// QR
-const qrDialogForLink = reactive({ open: false, url: '' })
+
 
 // Pre-popola quando il dialog si apre
 watch(() => props.ride, (slot) => {
@@ -576,36 +567,7 @@ function onPaxChange(order, val) {
   syncRideState()
 }
 
-// ═══════════════════════════════════════════════════════════
-// MAGIC LINK — Check-in Digitale
-// ═══════════════════════════════════════════════════════════
-function getMagicLink(order) {
-  if (!order || !order.id) return ''
-  const baseUrl = window.location.origin + window.location.pathname
-  return `${baseUrl}#/consenso?order_id=${order.id}`
-}
-
-function copyMagicLink(order) {
-  if (!order || !order.id) return
-  navigator.clipboard.writeText(getMagicLink(order))
-    .then(() => {
-      $q.notify({ type: 'positive', message: 'Link copiato negli appunti!', icon: 'content_copy', position: 'top' })
-    })
-    .catch(err => console.error('Errore clipboard:', err))
-}
-
-function openQrModal(order) {
-  if (!order || !order.id) return
-  qrDialogForLink.url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(getMagicLink(order))}`
-  qrDialogForLink.open = true
-}
-
-function shareWhatsApp(order) {
-  if (!order || !order.id) return
-  const name = order.customer_name || 'Referente'
-  const text = encodeURIComponent(`Ciao ${name}! Ecco il link per compilare velocemente le liberatorie prima della discesa: ${getMagicLink(order)}`)
-  window.open(`https://wa.me/?text=${text}`, '_blank')
-}
+// MAGIC LINK / QR / WHATSAPP — delegato a useCheckin composable
 
 // ═══════════════════════════════════════════════════════════
 // PARTECIPANTI
