@@ -1044,27 +1044,70 @@ function reloadRideData() {
   }
 }
 
-// Override / Semaforo
+// Override / Semaforo — Supabase diretto
 async function setOverride(status) {
-  if (!currentSlotId.value) return
+  const rideId = currentSlotId.value
+  if (!rideId || String(rideId).startsWith('ghost')) return
+
   try {
-    await api.patch(`/calendar/daily-rides/${currentSlotId.value}/override`, { forced_status: status, clear_override: false })
-    $q.notify({ type: 'positive', message: 'Stato forzato' })
-    reloadRideData()
-    loadSchedule()
+    const { error } = await supabase.from('rides').update({
+      status: status,
+      is_overridden: true
+    }).eq('id', rideId)
+    if (error) throw error
+
+    // Aggiorna lo state locale per reattività istantanea
+    const localSlot = store.dailySchedule.find(r => r.id === rideId)
+    if (localSlot) {
+      localSlot.status = status
+      localSlot.is_overridden = true
+      localSlot.engine_status = status === 'A' ? 'VERDE' : status === 'B' ? 'GIALLO' : status === 'C' ? 'ROSSO' : 'BLU'
+      localSlot.status_desc = status === 'A' ? 'Disponibile' : status === 'B' ? 'Quasi Pieno' : status === 'C' ? 'Pieno / Chiuso' : 'Fuori Stagione'
+    }
+    if (rideData.value && rideData.value.id === rideId) {
+      rideData.value.status = status
+      rideData.value.is_overridden = true
+    }
+
+    $q.notify({ type: 'positive', message: 'Stato forzato ☁️' })
     updateMonthOverview(currentYear.value, currentMonth.value)
-  } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore override' }) }
+  } catch (e) {
+    console.error('[setOverride] Errore Supabase:', e)
+    $q.notify({ type: 'negative', message: 'Errore override: ' + (e.message || e) })
+  }
 }
 
 async function clearOverride() {
-  if (!currentSlotId.value) return
+  const rideId = currentSlotId.value
+  if (!rideId || String(rideId).startsWith('ghost')) return
+
   try {
-    await api.patch(`/calendar/daily-rides/${currentSlotId.value}/override`, { forced_status: 'A', clear_override: true })
-    $q.notify({ type: 'positive', message: 'Semaforo automatico ripristinato' })
-    reloadRideData()
-    loadSchedule()
+    const { error } = await supabase.from('rides').update({
+      status: 'Disponibile',
+      is_overridden: false
+    }).eq('id', rideId)
+    if (error) throw error
+
+    // Ricalcola lo status automatico basato sui pax
+    const localSlot = store.dailySchedule.find(r => r.id === rideId)
+    if (localSlot) {
+      localSlot.is_overridden = false
+      const pax = localSlot.booked_pax || 0
+      const max = localSlot.total_capacity || 16
+      localSlot.engine_status = pax >= max ? 'ROSSO' : pax >= max * 0.75 ? 'GIALLO' : 'VERDE'
+      localSlot.status_desc = pax >= max ? 'Pieno / Chiuso' : pax >= max * 0.75 ? 'Quasi Pieno' : 'Disponibile'
+      localSlot.status = localSlot.engine_status === 'ROSSO' ? 'C' : localSlot.engine_status === 'GIALLO' ? 'B' : 'A'
+    }
+    if (rideData.value && rideData.value.id === rideId) {
+      rideData.value.is_overridden = false
+    }
+
+    $q.notify({ type: 'positive', message: 'Semaforo automatico ripristinato ☁️' })
     updateMonthOverview(currentYear.value, currentMonth.value)
-  } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore reset' }) }
+  } catch (e) {
+    console.error('[clearOverride] Errore Supabase:', e)
+    $q.notify({ type: 'negative', message: 'Errore reset: ' + (e.message || e) })
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

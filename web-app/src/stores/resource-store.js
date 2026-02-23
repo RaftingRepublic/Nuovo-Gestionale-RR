@@ -359,7 +359,8 @@ export const useResourceStore = defineStore('resource', {
           days.push({
             date: dStr,
             booked_rides: combined,
-            staff_count: 5
+            // TODO: Sostituire con calcolo dinamico da ride_allocations tramite RPC Supabase per evitare query N+1 sul mese.
+            staff_count: 0
           })
         }
 
@@ -393,7 +394,8 @@ export const useResourceStore = defineStore('resource', {
               pax: 0,
               isGhost: true
             })),
-            staff_count: 5
+            // TODO: Sostituire con calcolo dinamico da ride_allocations tramite RPC Supabase per evitare query N+1 sul mese.
+            staff_count: 0
           })
         }
         return days
