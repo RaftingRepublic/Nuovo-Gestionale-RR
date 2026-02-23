@@ -138,7 +138,7 @@ export const useResourceStore = defineStore('resource', {
     },
 
     // --- DAILY SCHEDULE via Supabase ---
-    async fetchDailyScheduleSupabase(dateStr) {
+    async fetchDailySchedule(dateStr) {
       this.loading = true
       try {
         const { data: rides, error } = await supabase
@@ -272,13 +272,13 @@ export const useResourceStore = defineStore('resource', {
           this.dailySchedule.splice(0, this.dailySchedule.length, ...mappedRides)
         }
       } catch (e) {
-        console.error('[Supabase Error] fetchDailyScheduleSupabase:', e)
+        console.error('[Supabase Error] fetchDailySchedule:', e)
         this.dailySchedule.splice(0, this.dailySchedule.length)
       }
       finally { this.loading = false }
     },
 
-    async fetchMonthOverviewSupabase(year, month) {
+    async fetchMonthOverview(year, month) {
       try {
         const startDate = `${year}-${String(month).padStart(2, '0')}-01`
         const lastDay = new Date(year, month, 0).getDate()
@@ -368,7 +368,7 @@ export const useResourceStore = defineStore('resource', {
         console.log('[MonthOverview] Giorni:', days.length, '| Rides DB:', sourceRides.length, '| Reali mappati:', totalReal)
         return days
       } catch (e) {
-        console.error('[Supabase Error] fetchMonthOverviewSupabase:', e)
+        console.error('[Supabase Error] fetchMonthOverview:', e)
         // Fallback: genera griglia vuota con 7 ghost slots
         const baseSlotsFallback = [
           { time: '09:00', activity_code: 'FA', title: 'Rafting Family' },
@@ -403,7 +403,7 @@ export const useResourceStore = defineStore('resource', {
     },
 
     // --- SALVATAGGIO ORDINE SU SUPABASE ---
-    async saveOrderToSupabase({ activityId, dateStr, timeStr, customerName, customerEmail, customerPhone, pax, totalPrice, status, notes }) {
+    async saveOrder({ activityId, dateStr, timeStr, customerName, customerEmail, customerPhone, pax, totalPrice, status, notes }) {
       // Scudo UUID: traduce nome testuale in UUID se necessario
       let safeActId = activityId
       if (safeActId && !String(safeActId).includes('-')) {
@@ -476,7 +476,7 @@ export const useResourceStore = defineStore('resource', {
     selectResource(id) { this.selectedResourceId = id },
 
     // --- SALVATAGGIO ALLOCAZIONI RISORSE (con materializzazione ghost) ---
-    async saveRideAllocationsSupabase(ride, resourceIds) {
+    async saveRideAllocations(ride, resourceIds) {
       let actualRideId = ride.id || ride
 
       // Scudo UUID per activity_id

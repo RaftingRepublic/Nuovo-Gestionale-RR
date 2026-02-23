@@ -244,7 +244,7 @@ async function save() {
       const dateStr = (form.date || props.selectedDate || '').replace(/\//g, '-')
       const timeStr = (String(form.time || '09:00').substring(0, 5)) + ':00'
 
-      await store.saveOrderToSupabase({
+      await store.saveOrder({
         activityId,
         dateStr,
         timeStr,

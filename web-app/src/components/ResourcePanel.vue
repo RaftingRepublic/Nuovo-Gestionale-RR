@@ -146,7 +146,7 @@ async function saveAllocations() {
       ...extractIds(localSlot.assigned_trailers),
     ]
 
-    await store.saveRideAllocationsSupabase({ id: localSlot.id }, allIds)
+    await store.saveRideAllocations({ id: localSlot.id }, allIds)
 
     isOpen.value = false
     $q.notify({ type: 'positive', message: 'Logistica aggiornata nel cloud! ☁️', position: 'top' })

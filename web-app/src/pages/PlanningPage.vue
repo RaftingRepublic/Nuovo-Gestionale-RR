@@ -270,7 +270,7 @@ onMounted(async () => {
 async function updateMonthOverview(year, month) {
   $q.loading.show({ message: 'Aggiornamento calendario...' })
   try {
-    const data = await store.fetchMonthOverviewSupabase(year, month)
+    const data = await store.fetchMonthOverview(year, month)
     monthOverview.value = Array.isArray(data) ? data : []
     console.log('[PlanningPage] monthOverview aggiornato:', monthOverview.value.length, 'giorni')
   } catch(e) {
@@ -331,7 +331,7 @@ async function loadSchedule() {
   $q.loading.show({ message: 'Caricamento giornata...' })
   try {
     const d = selectedDate.value.replace(/\//g, '-')
-    await store.fetchDailyScheduleSupabase(d)
+    await store.fetchDailySchedule(d)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore caricamento' }) }
   finally { $q.loading.hide() }
 }
@@ -431,9 +431,9 @@ function deleteOrderLocally(ride, order) {
 // ═══════════════════════════════════════════════════════════
 async function reloadCalendarData() {
   const dateStr = selectedDate.value.replace(/\//g, '-')
-  await store.fetchDailyScheduleSupabase(dateStr)
+  await store.fetchDailySchedule(dateStr)
   const [yyyy, mm] = dateStr.split('-')
-  const monthData = await store.fetchMonthOverviewSupabase(parseInt(yyyy), parseInt(mm))
+  const monthData = await store.fetchMonthOverview(parseInt(yyyy), parseInt(mm))
   monthOverview.value = Array.isArray(monthData) ? monthData : []
 }
 
@@ -447,7 +447,7 @@ async function onBookingSaved() {
 
 async function onResourcePanelSaved() {
   const dateStr = selectedDate.value.replace(/\//g, '-')
-  await store.fetchDailyScheduleSupabase(dateStr)
+  await store.fetchDailySchedule(dateStr)
   if (showRideDialog.value && rideDialogSlot.value && activeResourceSlot.value) {
     const freshSlot = store.dailySchedule.find(s => s.id === activeResourceSlot.value.id)
     if (freshSlot) rideDialogSlot.value = freshSlot
@@ -457,7 +457,7 @@ async function onResourcePanelSaved() {
 
 async function onFiraftRegistered() {
   const dateStr = selectedDate.value.replace(/\//g, '-')
-  await store.fetchDailyScheduleSupabase(dateStr)
+  await store.fetchDailySchedule(dateStr)
   if (showRideDialog.value && rideDialogSlot.value) {
     const freshSlot = store.dailySchedule.find(s => s.id === rideDialogSlot.value.id)
     if (freshSlot) rideDialogSlot.value = freshSlot
