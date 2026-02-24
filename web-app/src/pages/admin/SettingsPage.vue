@@ -174,6 +174,26 @@
           </div>
         </q-banner>
 
+        <q-card v-if="schema && schema.logistics" flat bordered class="q-mb-md bg-grey-1">
+          <q-card-section class="q-pa-sm">
+            <div class="text-subtitle2 text-primary q-mb-xs">
+              <q-icon name="local_shipping" class="q-mr-xs" />
+              Footprint Logistico (Assorbimento Sacco Risorse)
+            </div>
+            <div class="row q-col-gutter-sm items-center">
+              <div class="col-12 col-md-4">
+                <q-input v-model.number="schema.logistics.min_guides" type="number" min="0" label="Guide Minime (Fiume)" dense outlined bg-color="white" />
+              </div>
+              <div class="col-12 col-md-4">
+                <q-checkbox v-model="schema.logistics.requires_van" label="Impegna Navetta" color="primary" />
+              </div>
+              <div class="col-12 col-md-4">
+                <q-checkbox v-model="schema.logistics.requires_trailer" label="Richiede Carrello" color="primary" />
+              </div>
+            </div>
+          </q-card-section>
+        </q-card>
+
         <!-- Nessuna Attività -->
         <div v-if="!selectedActivity" class="text-center q-pa-xl text-grey-5">
           <q-icon name="touch_app" size="64px" class="q-mb-md" />
@@ -569,6 +589,7 @@ watch(selectedActivity, (act) => {
   if (act.workflow_schema && act.workflow_schema.flows) {
     // Deep clone + fallback allocation_rule per blocchi legacy
     const cloned = JSON.parse(JSON.stringify(act.workflow_schema))
+    if (!cloned.logistics) cloned.logistics = { min_guides: 1, requires_van: false, requires_trailer: false };
     for (const flow of cloned.flows) {
       for (const block of flow.blocks) {
         if (!block.allocation_rule) block.allocation_rule = 'per_unit'
@@ -576,7 +597,7 @@ watch(selectedActivity, (act) => {
     }
     schema.value = cloned
   } else {
-    schema.value = { flows: [] }
+    schema.value = { flows: [], logistics: { min_guides: 1, requires_van: false, requires_trailer: false } };
   }
 }, { immediate: true })
 
