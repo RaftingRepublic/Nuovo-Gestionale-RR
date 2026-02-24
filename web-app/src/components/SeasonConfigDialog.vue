@@ -83,7 +83,7 @@
                   <div class="col-4 col-sm-3">
                     <q-input v-model.number="act.duration_hours" label="Durata (ore)" type="number" outlined dense step="0.5" />
                   </div>
-                  <div class="col-4 col-sm-3">
+                  <div class="col-8 col-sm-6">
                     <q-input v-model="act.color_hex" label="Colore" outlined dense>
                       <template v-slot:append>
                         <q-icon name="palette" class="cursor-pointer">
@@ -96,9 +96,6 @@
                         <div :style="{ width: '18px', height: '18px', borderRadius: '4px', backgroundColor: act.color_hex }" />
                       </template>
                     </q-input>
-                  </div>
-                  <div class="col-12 col-sm-3">
-                    <q-input v-model="act.river_segments" label="Tratti Fiume" outlined dense placeholder="T1,T2" />
                   </div>
                 </div>
 
@@ -288,6 +285,7 @@ import { ref, reactive, watch, computed } from 'vue'
 import { api } from 'boot/axios'
 import { useQuasar } from 'quasar'
 
+const emit = defineEmits(['saved'])
 const $q = useQuasar()
 
 // ═══ STATE PRINCIPALE ═══
@@ -309,6 +307,7 @@ function createNewActivity() {
     const code = name.trim().substring(0, 2).toUpperCase()
     try {
       await api.post('/calendar/activities', { name: name.trim(), code })
+      emit('saved')
       $q.notify({ type: 'positive', message: `✅ "${name.trim()}" creata!` })
       await loadActivities()
     } catch (e) {
@@ -328,6 +327,7 @@ function deleteActivity(id, name) {
   }).onOk(async () => {
     try {
       await api.delete('/calendar/activities/' + id)
+      emit('saved')
       $q.notify({ type: 'info', message: `🗑️ "${name}" eliminata` })
       await loadActivities()
     } catch (e) {
@@ -505,6 +505,9 @@ async function saveSeason(act) {
       overbooking_limit: act.overbooking_limit ?? 0,
       sub_periods: cleanSp,
     })
+
+    // ──── REACTIVITY FIX ────
+    emit('saved')            // Notifica il parent per triggerare fetchDailySchedule
 
     $q.notify({ type: 'positive', message: `✅ ${act.name} salvata con successo!`, icon: 'check_circle' })
     await loadActivities()

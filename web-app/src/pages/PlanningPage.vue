@@ -146,7 +146,7 @@
     <!-- COMPONENTI ISOLATI (dialoghi estratti)                    -->
     <!-- ═══════════════════════════════════════════════════════════ -->
 
-    <SeasonConfigDialog ref="seasonDialog" />
+    <SeasonConfigDialog ref="seasonDialog" @saved="onSeasonConfigSaved" />
 
     <ResourcePanel v-model="resourcePanelOpen" :ride="activeResourceSlot" @saved="onResourcePanelSaved" />
 
@@ -483,6 +483,13 @@ async function reloadCalendarData() {
   const [yyyy, mm] = dateStr.split('-')
   const monthData = await store.fetchMonthOverview(parseInt(yyyy), parseInt(mm))
   monthOverview.value = Array.isArray(monthData) ? monthData : []
+}
+
+async function onSeasonConfigSaved() {
+  // Quando vengono salvate le impostazioni della stagione o le eccezioni,
+  // dobbiamo forzare un reload completo per rigenerare anche i Ghost Slots
+  await store.fetchActivities() // Aggiorna i metadati base
+  await reloadCalendarData()    // Rigenera la UI del calendario
 }
 
 async function onBookingSaved() {

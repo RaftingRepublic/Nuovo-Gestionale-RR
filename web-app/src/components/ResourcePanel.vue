@@ -191,17 +191,79 @@ const isOpen = computed({
   set: (val) => emit('update:modelValue', val)
 })
 
-const GUIDE_ROLES = ['RAF4', 'RAF3', 'SK', 'HYD', 'SH', 'CB']
-const DRIVER_ROLES = ['N', 'NC']  // NC = legacy transitorio
+const GUIDE_ROLES = ['RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB'];
+const DRIVER_ROLES = ['N', 'C'];
 
-// ═══ Helper: parsing sicuro orari per overlap detection ═══
-const parseTime = (t) => {
-  if (!t || typeof t !== 'string' || !t.includes(':')) return 0
-  try {
-    const [h, m] = t.split(':').map(Number)
-    if (isNaN(h) || isNaN(m)) return 0
-    return (h * 60) + m
-  } catch { return 0 }
+function matchesResourceType(blockResources, allocType) {
+  if (!blockResources || !Array.isArray(blockResources)) return false;
+  const tags = blockResources.map(r => String(r).toUpperCase().trim());
+  if (allocType === 'guide') return tags.some(r => GUIDE_ROLES.includes(r));
+  if (allocType === 'driver') return tags.some(r => DRIVER_ROLES.includes(r));
+  if (allocType === 'van') return tags.includes('VAN');
+  if (allocType === 'raft') return tags.includes('RAFT');
+  if (allocType === 'trailer') return tags.includes('TRAILER');
+  return false;
+}
+
+function getResourceWindows(rideTime, durHours, workflow, allocType) {
+  if (!rideTime) return [];
+  const [h, m] = rideTime.split(':').map(Number);
+  const tStart = h * 60 + m;
+  const durM = Math.round((parseFloat(durHours) || 2.0) * 60);
+  const tEnd = tStart + durM;
+  let windows = [];
+
+  const flows = workflow?.flows || [];
+  let hasBlocks = false;
+  for (const f of flows) {
+    if (f.blocks && f.blocks.length > 0) { hasBlocks = true; break; }
+  }
+
+  // FALLBACK V5: Se l'attività non ha mattoncini, blocca l'intero turno
+  if (!hasBlocks) {
+    return [[tStart, tEnd]];
+  }
+
+  for (const flow of flows) {
+    const blocks = flow.blocks || [];
+
+    // Forward pass (Start)
+    let cursor = tStart;
+    for (const b of blocks) {
+      if (b.anchor === 'end') continue;
+      const dur = parseInt(b.duration_min) || 0;
+      if (matchesResourceType(b.resources, allocType)) {
+        windows.push([cursor, cursor + dur]);
+      }
+      cursor += dur;
+    }
+
+    // Backward pass (End)
+    const endBlocks = blocks.filter(b => b.anchor === 'end');
+    const totalEndDur = endBlocks.reduce((sum, b) => sum + (parseInt(b.duration_min) || 0), 0);
+    cursor = tEnd - totalEndDur;
+    for (const b of endBlocks) {
+      const dur = parseInt(b.duration_min) || 0;
+      if (matchesResourceType(b.resources, allocType)) {
+        windows.push([cursor, cursor + dur]);
+      }
+      cursor += dur;
+    }
+  }
+
+  if (!windows.length) return [];
+  windows.sort((a, b) => a[0] - b[0]);
+  let merged = [windows[0]];
+  for (let i = 1; i < windows.length; i++) {
+    const current = windows[i];
+    const last = merged[merged.length - 1];
+    if (current[0] <= last[1]) {
+      last[1] = Math.max(last[1], current[1]);
+    } else {
+      merged.push(current);
+    }
+  }
+  return merged;
 }
 
 // ═══ Anti-Ubiquità CROSS-RIDE: risorse occupate in turni sovrapposti ═══
@@ -210,39 +272,55 @@ const busyResourceNames = computed(() => {
   const currentRide = props.ride
   if (!currentRide || !currentRide.time) return busy
 
-  // Durata del turno corrente (da SQLite activity o fallback 2h)
-  const currentDur = currentRide.duration_hours || localSlot.duration_hours || 2
-  const currentStart = parseTime(currentRide.time)
-  const currentEnd = currentStart + (currentDur * 60)
+  const currentAct = store.activities.find(a => String(a.id) === String(currentRide.activity_id)) || {}
+  const currentDur = parseFloat(currentAct.duration_hours) || 2.0
+  const currentWorkflow = currentAct.workflow_schema || { flows: [] }
 
-  // Itera sui turni del giorno dallo store (dailySchedule)
+  const targetWindowsByType = {
+    guide: getResourceWindows(currentRide.time, currentDur, currentWorkflow, 'guide'),
+    driver: getResourceWindows(currentRide.time, currentDur, currentWorkflow, 'driver'),
+    van: getResourceWindows(currentRide.time, currentDur, currentWorkflow, 'van'),
+    raft: getResourceWindows(currentRide.time, currentDur, currentWorkflow, 'raft'),
+    trailer: getResourceWindows(currentRide.time, currentDur, currentWorkflow, 'trailer')
+  }
+
   const schedule = store.dailySchedule || []
   for (const ride of schedule) {
-    // Escludi i ghost slots — cerchiamo solo turni reali allocati
-    if (!ride || ride.isGhost) continue
+    if (ride.isGhost) continue
+    if (String(ride.id) === String(currentRide.id)) continue
 
-    // Escludi il turno correntemente aperto nel pannello
-    if (currentRide.id && String(ride.id) === String(currentRide.id)) continue
+    const act = store.activities.find(a => String(a.id) === String(ride.activity_id)) || {}
+    const dur = parseFloat(act.duration_hours) || 2.0
+    const workflow = act.workflow_schema || { flows: [] }
 
-    const rideStart = parseTime(ride.time)
-    const rideDur = ride.duration_hours || 2
-    const rideEnd = rideStart + (rideDur * 60)
+    const checkOverlap = (resourceName, resType) => {
+      if (!resourceName) return
+      const tWindows = targetWindowsByType[resType]
+      if (!tWindows || !tWindows.length) return
 
-    // Check sovrapposizione rigorosa: Start_A < End_B && End_A > Start_B
-    if (currentStart < rideEnd && currentEnd > rideStart) {
-      // Raccogli tutti i nomi delle risorse allocate a questo ride
-      const allNames = [
-        ...(ride.guides || []).map(g => typeof g === 'string' ? g : g?.name),
-        ...(ride.drivers || []).map(d => typeof d === 'string' ? d : d?.name),
-        ...(ride.rafts || []).map(r => typeof r === 'string' ? r : r?.name),
-        ...(ride.vans || []).map(v => typeof v === 'string' ? v : v?.name),
-        ...(ride.trailers || []).map(t => typeof t === 'string' ? t : t?.name),
-      ]
-      for (const name of allNames) {
-        if (name) busy.add(name)
+      const aWindows = getResourceWindows(ride.time, dur, workflow, resType)
+      if (!aWindows.length) return
+
+      let overlap = false
+      for (const [twStart, twEnd] of tWindows) {
+        for (const [awStart, awEnd] of aWindows) {
+          if (Math.max(twStart, awStart) < Math.min(twEnd, awEnd)) {
+            overlap = true; break
+          }
+        }
+        if (overlap) break
       }
+      if (overlap) busy.add(resourceName)
     }
+
+    const resName = (item) => typeof item === 'string' ? item : item?.name
+    ;(ride.guides || []).forEach(g => checkOverlap(resName(g), 'guide'))
+    ;(ride.drivers || []).forEach(d => checkOverlap(resName(d), 'driver'))
+    ;(ride.vans || []).forEach(v => checkOverlap(resName(v), 'van'))
+    ;(ride.rafts || []).forEach(r => checkOverlap(resName(r), 'raft'))
+    ;(ride.trailers || []).forEach(t => checkOverlap(resName(t), 'trailer'))
   }
+
   return busy
 })
 
@@ -321,7 +399,7 @@ const filteredGuideOptions = computed(() => {
   return store.staffList
     .filter(s =>
       s.is_active !== false &&
-      (s.roles || []).some(r => roles.includes(r)) &&
+      (s.is_guide || (s.roles && s.roles.some(r => roles.includes(r)))) &&
       !conflicts.includes(s.name)
     )
     .map(s => ({ label: s.name, value: s.name, _roles: s.roles || [] }))
@@ -329,7 +407,10 @@ const filteredGuideOptions = computed(() => {
 
 const filteredDriverOptions = computed(() => {
   return store.staffList
-    .filter(s => s.is_active !== false && (s.roles || []).some(r => DRIVER_ROLES.includes(r)))
+    .filter(s =>
+      s.is_active !== false &&
+      (s.is_driver || (s.roles && s.roles.some(r => DRIVER_ROLES.includes(r))))
+    )
     .map(s => ({ label: s.name, value: s.name, _roles: s.roles || [] }))
 })
 
@@ -382,7 +463,8 @@ const ubiquityConflicts = computed(() => {
 
   for (const s of allStaff) {
     const roles = s.roles || []
-    const isMultiRole = roles.some(r => GUIDE_ROLES.includes(r)) && roles.some(r => DRIVER_ROLES.includes(r))
+    const isMultiRole = (s.is_guide || roles.some(r => GUIDE_ROLES.includes(r))) &&
+                        (s.is_driver || roles.some(r => DRIVER_ROLES.includes(r)))
     if (isMultiRole && (selectedGuideNames.value.includes(s.name) || selectedDriverNames.value.includes(s.name))) {
       conflicts.push(s.name)
     }

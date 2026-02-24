@@ -469,6 +469,8 @@
         <q-separator />
 
         <q-card-actions align="right" class="q-pa-md">
+          <q-btn v-if="dialogMode === 'flow'" flat color="negative" icon="delete" label="Rimuovi" @click="removeBlockFromFlow" />
+          <q-space />
           <q-btn label="Annulla" flat color="grey" v-close-popup />
           <q-btn
             :label="dialogMode === 'library'
@@ -659,6 +661,22 @@ function confirmDialog() {
   }
 
   dialogOpen.value = false
+}
+
+function removeBlockFromFlow() {
+  if (dialogMode.value !== 'flow') return
+  $q.dialog({
+    title: 'Rimuovi Mattoncino',
+    message: 'Vuoi rimuovere questo mattoncino dal flusso?',
+    cancel: true,
+    persistent: true,
+  }).onOk(() => {
+    const flow = schema.value.flows[dialogFlowIdx.value]
+    if (flow && flow.blocks[dialogFlowBlockIdx.value]) {
+      flow.blocks.splice(dialogFlowBlockIdx.value, 1)
+    }
+    dialogOpen.value = false
+  })
 }
 
 // ═══════════════════════════════════════════════════════════

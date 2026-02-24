@@ -57,6 +57,22 @@ export const useResourceStore = defineStore('resource', {
       return true
     },
 
+    // ── Helper: Validazione eccezioni (Chiusure Totali) ──
+    _isActivityClosedOnDate(act, dateStr) {
+      const exceptions = act.sub_periods || []
+      if (!Array.isArray(exceptions)) return false
+
+      return exceptions.some(exc => {
+        const isClosed = exc.is_closed === true
+        if (!isClosed) return false
+
+        // Verifica se la data target è inclusa nell'array dates
+        if (Array.isArray(exc.dates) && exc.dates.includes(dateStr)) return true
+
+        return false
+      })
+    },
+
     // ── Helper: Parsing sicuro degli orari attività ──
     _parseDefaultTimes(act) {
       let times = act.default_times || act.slots || []
@@ -302,6 +318,9 @@ export const useResourceStore = defineStore('resource', {
             // Filtro stagionale: salta attività fuori stagione
             if (!this._isDateInSeason(dateStr, act.season_start, act.season_end)) continue
 
+            // Filtro eccezioni: salta giorni di chiusura totale
+            if (this._isActivityClosedOnDate(act, dateStr)) continue
+
             // Parsing orari configurati per questa attività
             const actTimes = this._parseDefaultTimes(act)
             if (actTimes.length === 0) continue
@@ -445,6 +464,9 @@ export const useResourceStore = defineStore('resource', {
             // Filtro stagionale
             if (!this._isDateInSeason(dStr, act.season_start, act.season_end)) continue
 
+            // Filtro eccezioni: chiusura totale
+            if (this._isActivityClosedOnDate(act, dStr)) continue
+
             const actTimes = this._parseDefaultTimes(act)
             if (actTimes.length === 0) continue
 
@@ -497,6 +519,7 @@ export const useResourceStore = defineStore('resource', {
           for (const act of fallbackActs) {
             if (!act || !act.name) continue
             if (!this._isDateInSeason(dateStr, act.season_start, act.season_end)) continue
+            if (this._isActivityClosedOnDate(act, dateStr)) continue
             const actTimes = this._parseDefaultTimes(act)
             for (const time of actTimes) {
               if (ghosts.some(g => g.time === time)) continue

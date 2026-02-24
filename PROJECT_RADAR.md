@@ -1,21 +1,21 @@
-# 🧭 Rafting Republic Gestionale - Project Radar
+# PROJECT RADAR
 
-## 🟢 STATO ATTUALE: FASE 4 COMPLETATA (Logistica e Calendario)
+## STATO ATTUALE: FASE 5 COMPLETATA (Pivot Architetturale V5 BPMN)
 
-### ✅ Traguardi Raggiunti (Ultima Sessione)
+## Traguardi Raggiunti:
 
-- **UI Calendario Operativo:** Implementati semafori dinamici di riempimento (16px), "Ghost Slots" colorati, navigazione rapida Mese/Anno con menu a tendina e Footer "Potenza di Fuoco" (Badge colorati riassuntivi delle risorse attive).
-- **Yield Engine V4 (Motore Logistico):** Completamente dinamico. Tempi di percorrenza (Tratti A, B, C) e capienze nette dei mezzi non sono più hardcodati, ma vengono letti in tempo reale dal database locale SQLite (`system_settings`).
-- **Resilienza Database:** Rimossa FK `rides_activity_id_fkey` da Supabase per sbloccare i salvataggi. Join con `activities` spostato 100% in locale nel frontend, garantendo l'assenza di crash API. Vecchi dati di test svuotati.
-- **Scudo Anti-Ubiquità:** Il `ResourcePanel.vue` calcola le sovrapposizioni temporali (`Start_A < End_B && End_A > Start_B`) di tutti i turni reali della giornata e disabilita (in grigio) le opzioni di guide e mezzi già in acqua in quello stesso orario.
+1. Incenerito il vecchio Yield Engine V4 e le costanti temporali globali.
+2. Implementato **Costruttore di Flussi a Mattoncini** in `SettingsPage.vue` (Libreria LocalStorage, Inserimento Pull a tendina, Giustificazione Flexbox Navetta).
+3. Implementato **Yield Engine V5 e Scudo Anti-Ubiquità V5**: logica a scostamento cumulativo (ancoraggi `start`/`end`), normalizzazione tag, fallback monolitico per attività vergini.
+4. Fix Reattività State Management: estirpato campo fossile "Tratti Fiume" e risolto il bug di desync (F5) sui Ghost Slots tramite l'helper `_isActivityClosedOnDate`.
+5. Eseguita pulizia Supabase dai vecchi dati orfani (Split-Brain risolto).
 
-### 🧹 Debito Tecnico Pendente (Da pulire in futuro)
+## Debito Tecnico Pendente:
 
-- Rimuovere variabile non usata `internalViewMode` in `CalendarComponent.vue`.
-- Ripulire i `console.log` di telemetria e sostituire i `print()` in `yield_engine.py` con il modulo `logging` standard.
+Nessuno critico. Solo pulizia di vecchi file di migrazione o commenti JSDoc obsoleti.
 
-### 🚧 PROSSIMI PASSI (Fase 5 - Da decidere al prossimo avvio)
+## PROSSIMI PASSI (Fase 6):
 
-1. **Opzione A:** Modulo Presenze Giornaliere (Assenze, Riposi, Malattie) per filtrare ulteriormente la "Potenza di Fuoco" reale.
-2. **Opzione B:** Flusso di Prenotazione CRM (Gestione anagrafica, note intolleranze, caparre, saldi).
-3. **Opzione C:** Dashboard Principale (Grafici, alert operativi, riepilogo giornaliero).
+- Opzione A: Timeline View (Visualizzazione grafica a Gantt nidificata Discese/Flussi/Blocchi) integrata come nuova rotta in Quasar.
+- Opzione B: Modulo Presenze Giornaliere Staff.
+- Opzione C: Flusso Prenotazioni CRM (Anagrafiche, Pagamenti).

@@ -56,16 +56,17 @@ def _matches_resource_type(block_resources: list, alloc_type: str) -> bool:
     Mappa i tag del blocco (es. 'RAF4', 'N', 'VAN') ai tipi Supabase
     (guide, driver, van, raft, trailer).
     """
+    tags = [str(r).upper().strip() for r in block_resources]
     if alloc_type == 'guide':
-        return any(r in GUIDE_ROLES for r in block_resources)
+        return any(r in GUIDE_ROLES for r in tags)
     if alloc_type == 'driver':
-        return any(r in DRIVER_ROLES for r in block_resources)
+        return any(r in DRIVER_ROLES for r in tags)
     if alloc_type == 'van':
-        return 'VAN' in block_resources
+        return 'VAN' in tags
     if alloc_type == 'raft':
-        return 'RAFT' in block_resources
+        return 'RAFT' in tags
     if alloc_type == 'trailer':
-        return 'TRAILER' in block_resources
+        return 'TRAILER' in tags
     return False
 
 
@@ -102,9 +103,17 @@ def _get_resource_windows(
 
     dur_h = float(dur_hours) if dur_hours else DEFAULT_DURATION_HOURS
     t_end = t_start + int(dur_h * 60)
+    
+    flows = workflow.get("flows", [])
+    has_blocks = any(len(f.get("blocks", [])) > 0 for f in flows)
+    
+    # FALLBACK V5: Se l'attività non ha mattoncini, blocca l'intero turno
+    if not has_blocks:
+        return [(t_start, t_end)]
+        
     windows = []
 
-    for flow in workflow.get("flows", []):
+    for flow in flows:
         blocks = flow.get("blocks", [])
 
         # ── Forward Pass: blocchi ancorati a 'start' ──
