@@ -262,6 +262,9 @@ export const useResourceStore = defineStore('resource', {
           const bookedPax = orders.reduce((sum, o) => sum + (o.actual_pax || o.pax || 0), 0)
           // Decorazione da SQLite (Single Source of Truth per code/color) — NO FK activities
           const act = (this.activities || []).find(a => String(a.id) === String(ride.activity_id)) || {}
+          const cap = ride.total_capacity || act.default_capacity || null
+          const engStatus = cap ? (bookedPax >= cap ? 'ROSSO' : bookedPax >= cap * 0.75 ? 'GIALLO' : 'VERDE') : 'VERDE'
+
           return {
             id: ride.id,
             time: ride.time,
@@ -275,17 +278,17 @@ export const useResourceStore = defineStore('resource', {
             is_overridden: ride.is_overridden || false,
             notes: ride.notes || '',
             booked_pax: bookedPax,
-            total_capacity: ride.total_capacity || act.default_capacity || 16,
+            total_capacity: cap,
             arr_bonus_seats: 0,
-            remaining_seats: (ride.total_capacity || 16) - bookedPax,
-            engine_status: bookedPax >= (ride.total_capacity || 16) ? 'ROSSO' : bookedPax >= (ride.total_capacity || 16) * 0.75 ? 'GIALLO' : 'VERDE',
-            cap_rafts_pax: ride.total_capacity || 16,
-            cap_guides_pax: ride.total_capacity || 16,
+            remaining_seats: cap ? cap - bookedPax : null,
+            engine_status: engStatus,
+            cap_rafts_pax: cap,
+            cap_guides_pax: cap,
             avail_guides: '—',
             avail_rafts: '—',
             avail_vans: '—',
             duration_hours: act.duration_hours || 2,
-            status_desc: _engineStatusDesc(bookedPax >= (ride.total_capacity || 16) ? 'ROSSO' : bookedPax >= (ride.total_capacity || 16) * 0.75 ? 'GIALLO' : 'VERDE'),
+            status_desc: _engineStatusDesc(engStatus),
             assigned_staff: ride.assigned_staff || [],
             assigned_fleet: ride.assigned_fleet || [],
             orders: orders.map(o => ({
@@ -349,7 +352,7 @@ export const useResourceStore = defineStore('resource', {
               const ghostExists = ghosts.some(g => g.time === time + ':00')
               if (ghostExists) continue
 
-              const cap = act.default_capacity || 16
+              const cap = act.default_capacity || null
 
               ghosts.push({
                 id: 'ghost-' + time.replace(':', '') + '-' + String(act.id).substring(0, 8),

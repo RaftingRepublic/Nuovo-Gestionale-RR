@@ -78,9 +78,10 @@
               </q-item>
               <q-separator />
               <q-card-section class="q-pa-sm text-center" :class="getSlotBgClass(slot)" v-show="viewFilter === 'tutto' || viewFilter === 'discese'">
-                <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax }}</span>
-                <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
-                <q-linear-progress :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity || 16))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity || 16)" class="q-mt-xs" rounded />
+                <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax || 0 }}</span>
+                <span v-if="slot.total_capacity" class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity }} pax</span>
+                <span v-else class="text-caption text-grey-6 q-ml-xs">pax</span>
+                <q-linear-progress v-if="slot.total_capacity" :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity)" class="q-mt-xs" rounded />
               </q-card-section>
               <!-- Badge Risorse Assegnate — Visualizzazione Individuale -->
               <q-card-section class="q-pa-xs q-pt-none" v-show="viewFilter === 'tutto' || viewFilter === 'staff'">
@@ -583,7 +584,8 @@ function filterKnownResources(resources) {
   })
 }
 
-function getProgressBarColor(pax, max = 16) {
+function getProgressBarColor(pax, max = null) {
+  if (!max) return 'grey-4'
   if (pax >= max) return 'negative'
   if (pax >= max - 4 && pax > 0) return 'warning'
   return 'primary'
@@ -591,7 +593,8 @@ function getProgressBarColor(pax, max = 16) {
 
 function getSlotBgClass(slot) {
   const pax = slot.booked_pax || 0
-  const max = slot.total_capacity || 16
+  const max = slot.total_capacity
+  if (!max) return pax > 0 ? 'bg-green-1' : 'bg-white'
   if (pax >= max) return 'bg-red-1'
   if (pax >= max - 4 && pax > 0) return 'bg-orange-1'
   return 'bg-green-1'
