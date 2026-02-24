@@ -49,12 +49,22 @@ export default defineRouter(function (/* { store, ssrContext } */) {
     const isAuthenticated = authStore.isAuthenticated
     const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
 
+    // ─── ANTI-LOOP: Operatore autenticato su area pubblica → admin ───
+    // Se l'utente è loggato e atterra sulla root "/" o "/consenso" (Kiosk),
+    // lo redirigiamo all'area admin. Il Kiosk resta accessibile da browser
+    // non autenticati (tablet clienti).
+    const publicPaths = ['/', '/consenso']
+    if (isAuthenticated && publicPaths.includes(to.path)) {
+      next('/admin/operativo')
+      return
+    }
+
     if (requiresAuth && !isAuthenticated) {
       // Rotta protetta, utente NON autenticato → manda al login
       next('/login')
     } else if (to.path === '/login' && isAuthenticated) {
-      // Utente già autenticato che prova ad andare su /login → manda alla home
-      next('/')
+      // Utente già autenticato che prova ad andare su /login → manda alla home admin
+      next('/admin/operativo')
     } else {
       // Tutto ok, procedi
       next()

@@ -504,6 +504,8 @@ def update_activity_season(
         activity.yellow_threshold = payload.yellow_threshold
     if payload.overbooking_limit is not None:
         activity.overbooking_limit = payload.overbooking_limit
+    if payload.workflow_schema is not None:
+        activity.workflow_schema = payload.workflow_schema
 
     # Gestione bulk sub_periods: se il campo è presente, replace all
     if payload.sub_periods is not None:

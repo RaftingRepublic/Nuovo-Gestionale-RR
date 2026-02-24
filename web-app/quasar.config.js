@@ -100,7 +100,8 @@ export default defineConfig((/* ctx */) => {
       plugins: [
         'Notify',
         'Loading',
-        'Dialog'
+        'Dialog',
+        'LocalStorage'
       ]
     },
 

@@ -5,7 +5,7 @@ Schemi Pydantic V2 per il dominio Calendario.
 from __future__ import annotations
 
 from datetime import date, time
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from pydantic import BaseModel, ConfigDict
 
 
@@ -53,6 +53,7 @@ class ActivityCreate(BaseModel):
     activity_class: str = "RAFTING"
     yellow_threshold: int = 8
     overbooking_limit: int = 0
+    workflow_schema: Optional[Dict[str, Any]] = None
 
 class ActivityResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -72,6 +73,7 @@ class ActivityResponse(BaseModel):
     activity_class: str = "RAFTING"
     yellow_threshold: int = 8
     overbooking_limit: int = 0
+    workflow_schema: Optional[Dict[str, Any]] = None
     is_active: bool
     sub_periods: List[ActivitySubPeriodResponse] = []
 
@@ -90,6 +92,7 @@ class ActivitySeasonUpdate(BaseModel):
     activity_class: Optional[str] = None
     yellow_threshold: Optional[int] = None
     overbooking_limit: Optional[int] = None
+    workflow_schema: Optional[Dict[str, Any]] = None
     sub_periods: Optional[List[ActivitySubPeriodCreate]] = None
 
 

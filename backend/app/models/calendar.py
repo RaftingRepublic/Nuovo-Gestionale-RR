@@ -43,6 +43,9 @@ class ActivityDB(Base):
     yellow_threshold = Column(Integer, default=8, comment="Posti residui per giallo")
     overbooking_limit = Column(Integer, default=0, comment="Posti extra vendibili")
 
+    # ── WORKFLOW BPMN (Lego Blocks) ──
+    workflow_schema = Column(JSON, default=dict, comment='Schema flussi operativi {"flows":[...]}')
+
     is_active = Column(Boolean, default=True)
 
     rides = relationship("DailyRideDB", back_populates="activity")

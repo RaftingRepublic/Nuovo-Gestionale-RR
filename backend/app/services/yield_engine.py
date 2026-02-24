@@ -1,35 +1,36 @@
 """
-Yield Engine v4 — Motore Matematico per il Calcolo Posti Vendibili.
+Yield Engine v5 — Motore Matematico BPMN per il Calcolo Posti Vendibili.
 
 Calcola i posti vendibili (pax) incrociando le risorse libere (SQLite)
-con le allocazioni già assegnate (Supabase ride_allocations) e applicando
+con le allocazioni gia' assegnate (Supabase ride_allocations) e applicando
 i vincoli logistici di acqua (guide + gommoni) e terra (furgoni gancio +
 autisti patente C + carrelli).
 
-V4: Variabili Dinamiche dal DB (Pannello Impostazioni)
-  - Capienze furgoni lette da system_settings (van_total_seats, van_driver_seats, van_guide_seats)
-  - Tempi Navetta Elastica letti da system_settings per tratto (briefing + prep, return_to_base)
-  - RIMOSSA costante globale SHUTTLE_MINUTES
-  - RIMOSSO divisore hardcodato / 7
+V5: Parser Temporale BPMN (Workflow Schema)
+  - I tempi di occupazione di ogni risorsa sono calcolati dai "mattoncini"
+    (blocchi operativi) definiti nel workflow_schema di ogni attivita'.
+  - RIMOSSA _get_system_settings (tabella system_settings non piu' usata)
+  - RIMOSSA _detect_segment_prefix (tratti ora gestiti dal workflow)
+  - RIMOSSA _parse_time (sostituita da parsing interi minuti)
+  - Overlap bidimensionale: finestre target vs finestre allocazione
 
 Architettura:
   1. Query Supabase REST per scoprire TUTTE le risorse allocate nel GIORNO
-  2. Query SQLite per metadati attivita' -> {activity_id: {dur, seg}}
-  3. Estrazione settings dal DB (system_settings -> dict piatto)
-  4. Calcolo finestre temporali differenziate Acqua vs Terra (tempi dal DB)
-  5. Incrocio -> risorse LIBERE
-  6. Greedy match con veto logistico -> pax disponibili
+  2. Query SQLite per metadati attivita' -> {activity_id: {dur, seg, workflow_schema}}
+  3. Parser BPMN: workflow_schema -> finestre temporali per tipo risorsa
+  4. Incrocio -> risorse LIBERE
+  5. Greedy match con veto logistico -> pax disponibili
 """
 import gc
 import httpx
-from datetime import datetime as dt_datetime, timedelta
 from sqlalchemy.orm import Session
 
-from app.models.calendar import StaffDB, FleetDB, ActivityDB, SystemSettingDB
+from app.models.calendar import StaffDB, FleetDB, ActivityDB
 from app.schemas.availability import AvailabilityRequest, AvailabilityResponse
 
 # ── Costanti (solo ruoli e tipi, nessun valore numerico hardcodato) ──
 GUIDE_ROLES = frozenset(['RAF4', 'RAF3', 'SK', 'HYD', 'SH', 'CB'])
+DRIVER_ROLES = frozenset(['N', 'C'])
 DEFAULT_DURATION_HOURS = 2.0
 WATER_RESOURCE_TYPES = frozenset(['guide', 'raft'])
 LAND_RESOURCE_TYPES = frozenset(['driver', 'van', 'trailer'])
@@ -45,124 +46,101 @@ _SUPABASE_KEY = (
 
 
 # ══════════════════════════════════════════════════════════════
-# HELPER: Estrazione Settings dal DB
+# HELPER V5: Matching Ruoli Risorse ↔ Blocchi Workflow
 # ══════════════════════════════════════════════════════════════
 
-def _get_system_settings(db: Session) -> dict:
+def _matches_resource_type(block_resources: list, alloc_type: str) -> bool:
     """
-    Estrae tutte le chiavi dalla tabella system_settings e ritorna
-    un dict piatto: {key: float(valore)} dove possibile.
+    Verifica se un blocco workflow richiede un dato tipo di risorsa.
 
-    In caso di eccezione o tabella vuota ritorna un dict vuoto {}.
+    Mappa i tag del blocco (es. 'RAF4', 'N', 'VAN') ai tipi Supabase
+    (guide, driver, van, raft, trailer).
     """
-    try:
-        rows = db.query(SystemSettingDB.key, SystemSettingDB.value).all()
-        if not rows:
-            return {}
-        result = {}
-        for row in rows:
-            k = row.key
-            v = row.value
-            try:
-                result[k] = float(v)
-            except (ValueError, TypeError):
-                result[k] = v  # Conserva come stringa se non numerico
-        return result
-    except Exception as e:
-        print(f"[YieldEngine] Errore lettura system_settings: {e}")
-        return {}
+    if alloc_type == 'guide':
+        return any(r in GUIDE_ROLES for r in block_resources)
+    if alloc_type == 'driver':
+        return any(r in DRIVER_ROLES for r in block_resources)
+    if alloc_type == 'van':
+        return 'VAN' in block_resources
+    if alloc_type == 'raft':
+        return 'RAFT' in block_resources
+    if alloc_type == 'trailer':
+        return 'TRAILER' in block_resources
+    return False
 
 
 # ══════════════════════════════════════════════════════════════
-# HELPERS: Finestre Temporali V4
+# HELPER V5: Parser Temporale BPMN (Cuore Matematico)
 # ══════════════════════════════════════════════════════════════
-
-def _parse_time(time_str: str) -> dt_datetime:
-    """Converte HH:MM o HH:MM:SS in datetime (solo componente oraria)."""
-    try:
-        clean = str(time_str).strip()[:5]
-        return dt_datetime.strptime(clean, "%H:%M")
-    except (ValueError, TypeError):
-        return dt_datetime.strptime("00:00", "%H:%M")
-
-
-def _detect_segment_prefix(segments: str) -> str:
-    """
-    Determina il prefisso per le chiavi settings in base al tratto fiume.
-
-    Se contiene 'B' -> 'b_'
-    Se contiene 'C' (e non B) -> 'c_'
-    Altrimenti -> 'a_' (default)
-    """
-    seg_upper = str(segments or "").upper().strip()
-    if "B" in seg_upper:
-        return "b_"
-    if "C" in seg_upper:
-        return "c_"
-    return "a_"
-
 
 def _get_resource_windows(
-    start_time: dt_datetime,
-    duration_hours: float,
-    segments: str,
-    is_water: bool,
-    settings: dict,
+    ride_time: str,
+    dur_hours: float,
+    workflow: dict,
+    alloc_type: str,
 ) -> list:
     """
-    Genera la lista di finestre temporali [(start, end), ...] per una risorsa.
+    Genera le finestre temporali [(min_start, min_end), ...] in cui
+    una risorsa di tipo alloc_type e' effettivamente occupata,
+    basandosi sui blocchi del workflow_schema.
 
-    V4: Tempi letti dal DB (settings dict) in base al tratto fiume.
+    V5: Scostamento temporale cumulativo con Forward Pass (start)
+        e Backward Pass (end).
 
-    Acqua: sempre blocco unico [start, end].
-    Terra:
-      - Tratto A presente (o nessun tratto, o durata <= 1h): Ammiraglia -> blocco unico.
-      - Solo Tratti B/C: Navetta Elastica -> due finestre calcolate:
-        * Drop-off (Andata): [start, start + briefing + prep_ti_im]
-        * Pick-up  (Ritorno): [end - return_to_base, end]
+    Se il workflow e' vuoto o nessun blocco coinvolge il tipo risorsa,
+    ritorna [] (nessuna finestra = risorsa non richiesta da questo workflow).
+
+    Nota: i tempi sono in MINUTI dall'inizio del giorno (0 = 00:00, 540 = 09:00).
     """
-    dur = float(duration_hours or DEFAULT_DURATION_HOURS)
-    end_time = start_time + timedelta(hours=dur)
+    # Parse ride_time -> minuti
+    try:
+        parts = str(ride_time).strip()[:5].split(':')
+        h, m = int(parts[0]), int(parts[1])
+        t_start = h * 60 + m
+    except (ValueError, TypeError, IndexError):
+        t_start = 9 * 60  # Fallback: 09:00
 
-    # Acqua: sempre blocco continuo
-    if is_water:
-        return [(start_time, end_time)]
+    dur_h = float(dur_hours) if dur_hours else DEFAULT_DURATION_HOURS
+    t_end = t_start + int(dur_h * 60)
+    windows = []
 
-    # Terra: controlla i tratti fiume
-    seg_upper = str(segments or "").upper().strip()
+    for flow in workflow.get("flows", []):
+        blocks = flow.get("blocks", [])
 
-    # Ammiraglia: Tratto A presente, nessun tratto specificato, o durata troppo corta
-    if not seg_upper or "A" in seg_upper or dur <= 1.0:
-        return [(start_time, end_time)]
+        # ── Forward Pass: blocchi ancorati a 'start' ──
+        cursor = t_start
+        for b in blocks:
+            if b.get('anchor', 'start') == 'end':
+                continue
+            dur = int(b.get('duration_min', 0))
+            if _matches_resource_type(b.get('resources', []), alloc_type):
+                windows.append((cursor, cursor + dur))
+            cursor += dur
 
-    # ── Navetta Elastica: solo Tratti B/C ──
-    # Determina prefisso per lookup settings
-    prefix = _detect_segment_prefix(segments)
+        # ── Backward Pass: blocchi ancorati a 'end' ──
+        # Preserva l'ordine cronologico dei blocchi finali
+        end_blocks = [b for b in blocks if b.get('anchor') == 'end']
+        total_end_dur = sum(int(b.get('duration_min', 0)) for b in end_blocks)
+        cursor = t_end - total_end_dur
+        for b in end_blocks:
+            dur = int(b.get('duration_min', 0))
+            if _matches_resource_type(b.get('resources', []), alloc_type):
+                windows.append((cursor, cursor + dur))
+            cursor += dur
 
-    # Finestra Drop-off (Andata): briefing + preparazione TI + imbarco
-    briefing_min = float(settings.get('briefing_duration_min', 30.0))
-    prep_ti_im_min = float(settings.get(f'{prefix}prep_ti_im_min', 20.0))
-    dropoff_duration = briefing_min + prep_ti_im_min
-    dropoff_end = start_time + timedelta(minutes=dropoff_duration)
+    if not windows:
+        return []
 
-    # Finestra Pick-up (Ritorno): ritorno in base
-    pickup_min = float(settings.get(f'{prefix}return_to_base_min', 20.0))
-    pickup_start = end_time - timedelta(minutes=pickup_min)
-
-    # Safety Fallback: se dropoff >= pickup, blocco unico continuo
-    if dropoff_end >= pickup_start:
-        return [(start_time, end_time)]
-
-    return [(start_time, dropoff_end), (pickup_start, end_time)]
-
-
-def _has_overlap(windows1: list, windows2: list) -> bool:
-    """Verifica se almeno una coppia di finestre si sovrappone."""
-    for s1, e1 in windows1:
-        for s2, e2 in windows2:
-            if max(s1, s2) < min(e1, e2):
-                return True
-    return False
+    # Ordina e fondi finestre adiacenti o sovrapposte
+    windows.sort()
+    merged = [windows[0]]
+    for current in windows[1:]:
+        last = merged[-1]
+        if current[0] <= last[1]:
+            merged[-1] = (last[0], max(last[1], current[1]))
+        else:
+            merged.append(current)
+    return merged
 
 
 # ══════════════════════════════════════════════════════════════
@@ -228,92 +206,97 @@ async def _fetch_day_allocations(date: str) -> list:
 
 
 # ══════════════════════════════════════════════════════════════
-# SQLITE: Mappa metadati attivita'
+# SQLITE: Mappa metadati attivita' (V5: include workflow_schema)
 # ══════════════════════════════════════════════════════════════
 
 def _build_activities_meta_map(db: Session) -> dict:
     """
-    Costruisce una mappa {activity_id_str: {dur, seg}} da SQLite.
-    Contiene durata e tratti fiume per ogni attivita'.
+    Costruisce una mappa {activity_id_str: {duration_hours, segments, workflow_schema}}
+    da SQLite. V5: include il workflow_schema per il parser BPMN.
     """
     activities = db.query(
         ActivityDB.id,
         ActivityDB.duration_hours,
         ActivityDB.river_segments,
+        ActivityDB.workflow_schema,
     ).all()
     return {
         str(a.id): {
-            "dur": float(a.duration_hours or DEFAULT_DURATION_HOURS),
-            "seg": str(a.river_segments or "").upper(),
+            "duration_hours": float(a.duration_hours or DEFAULT_DURATION_HOURS),
+            "segments": str(a.river_segments or "").upper(),
+            "workflow_schema": a.workflow_schema or {"flows": []},
         }
         for a in activities
     }
 
 
 # ══════════════════════════════════════════════════════════════
-# OVERLAP V4: Calcolo risorse occupate con Logistica Elastica
+# OVERLAP V5: Calcolo risorse occupate con Parser BPMN
 # ══════════════════════════════════════════════════════════════
 
 def _compute_busy_names_with_overlap(
-    day_allocations: list,
+    date_allocations: list,
     target_time: str,
-    target_activity_id: str,
-    target_ride_id: str,
-    meta_map: dict,
-    settings: dict,
+    target_dur: float,
+    target_workflow: dict,
+    activities_meta: dict,
 ) -> set:
     """
-    Calcola il set di nomi risorse OCCUPATE con Logistica Elastica V4.
+    Calcola il set di nomi risorse OCCUPATE con il Parser BPMN V5.
 
     Per ogni allocazione del giorno:
-      1. Determina se la risorsa e' Acqua o Terra
-      2. Genera le finestre temporali appropriate (tempi dal DB):
-         - Acqua: blocco unico [start, end]
-         - Terra con Tratto A: blocco unico (Ammiraglia)
-         - Terra solo B/C: due finestre drop-off + pick-up (Navetta Elastica)
-      3. Confronta con le finestre del turno target
+      1. Genera le finestre temporali del TARGET per il tipo risorsa
+      2. Genera le finestre temporali dell'ALLOCAZIONE per lo stesso tipo
+      3. Verifica overlap matematico rigoroso
     """
-    busy = set()
+    busy_names = set()
 
-    # Metadati del turno target
-    target_meta = meta_map.get(str(target_activity_id), {"dur": DEFAULT_DURATION_HOURS, "seg": ""})
-    target_start = _parse_time(target_time)
-
-    for alloc in day_allocations:
-        # Salta il turno che stiamo calcolando (non compete con se stesso)
-        if target_ride_id and str(alloc.get("ride_id", "")) == str(target_ride_id):
-            continue
-
-        name = alloc.get("resource_name")
-        if not name:
-            continue
-
-        resource_type = str(alloc.get("resource_type", "")).lower()
-        is_water = resource_type in WATER_RESOURCE_TYPES
-
-        # Metadati del turno allocato
-        alloc_act_id = alloc.get("activity_id", "")
-        alloc_meta = meta_map.get(str(alloc_act_id), {"dur": DEFAULT_DURATION_HOURS, "seg": ""})
-        alloc_start = _parse_time(alloc.get("ride_time", "00:00"))
-
-        # Finestre target (dipendono dal tipo di risorsa che stiamo valutando)
-        target_windows = _get_resource_windows(
-            target_start, target_meta["dur"], target_meta["seg"], is_water, settings
-        )
-        # Finestre allocazione (dipendono dal tipo di risorsa e dai tratti)
-        alloc_windows = _get_resource_windows(
-            alloc_start, alloc_meta["dur"], alloc_meta["seg"], is_water, settings
+    # Pre-calcola le finestre temporali richieste dal target per ogni tipo di risorsa
+    target_windows_by_type = {}
+    for r_type in ['guide', 'driver', 'van', 'raft', 'trailer']:
+        target_windows_by_type[r_type] = _get_resource_windows(
+            target_time, target_dur, target_workflow, r_type
         )
 
-        # Check sovrapposizione
-        if _has_overlap(target_windows, alloc_windows):
-            busy.add(name)
+    for alloc in date_allocations:
+        res_name = alloc.get('resource_name')
+        res_type = alloc.get('resource_type')
+        if not res_name or not res_type:
+            continue
 
-    return busy
+        # Se il target non richiede questo tipo di risorsa, salta
+        t_windows = target_windows_by_type.get(res_type, [])
+        if not t_windows:
+            continue
+
+        # Calcola le finestre in cui la risorsa allocata e' effettivamente occupata
+        alloc_act_id = str(alloc.get('activity_id', ''))
+        alloc_meta = activities_meta.get(alloc_act_id, {})
+        alloc_dur = alloc_meta.get('duration_hours', DEFAULT_DURATION_HOURS)
+        alloc_workflow = alloc_meta.get('workflow_schema', {"flows": []})
+
+        a_windows = _get_resource_windows(
+            alloc.get('ride_time', '00:00'), alloc_dur, alloc_workflow, res_type
+        )
+
+        # Overlap Check Matematico Rigoroso
+        overlap_found = False
+        for tw_start, tw_end in t_windows:
+            for aw_start, aw_end in a_windows:
+                if max(tw_start, aw_start) < min(tw_end, aw_end):
+                    overlap_found = True
+                    break
+            if overlap_found:
+                break
+
+        if overlap_found:
+            busy_names.add(res_name)
+
+    return busy_names
 
 
 # ══════════════════════════════════════════════════════════════
-# MOTORE PRINCIPALE V4
+# MOTORE PRINCIPALE V5
 # ══════════════════════════════════════════════════════════════
 
 async def calculate_slot_availability(
@@ -321,15 +304,13 @@ async def calculate_slot_availability(
     db: Session,
 ) -> AvailabilityResponse:
     """
-    Motore V4: calcola i pax vendibili per un dato slot con
-    disaccoppiamento Acqua/Terra, Logistica Elastica e
-    variabili dinamiche dal DB (Pannello Impostazioni).
+    Motore V5: calcola i pax vendibili per un dato slot con
+    Parser Temporale BPMN e workflow_schema dalle attivita'.
 
     Flusso:
       Fase 0:  Recupera TUTTE le allocazioni del giorno (Supabase)
-      Fase 0b: Costruisci mappa metadati attivita' (SQLite: durata + tratti)
-      Fase 0c: Estrai settings dal DB (system_settings)
-      Fase 0d: Calcola risorse occupate con overlap V4 (Acqua/Terra split, tempi dal DB)
+      Fase 0b: Costruisci mappa metadati attivita' (SQLite: durata + tratti + workflow)
+      Fase 0c: Estrai workflow del target e calcola overlap V5
       Fase 1:  Recupera risorse totali attive (SQLite), filtra libere
       Fase A:  Potenziale Acqua (guide x gommoni)
       Fase B:  Veto Logistico Terra (furgoni gancio x autisti C x carrelli)
@@ -344,20 +325,20 @@ async def calculate_slot_availability(
         print(f"[YieldEngine] Errore fase 0 (Supabase): {e}")
         day_allocations = []  # Graceful degradation: assume tutto libero
 
-    # ── Fase 0b: Mappa metadati attivita' da SQLite (durata + tratti fiume) ──
-    meta_map = _build_activities_meta_map(db)
+    # ── Fase 0b: Mappa metadati attivita' da SQLite (durata + tratti + workflow) ──
+    activities_meta = _build_activities_meta_map(db)
 
-    # ── Fase 0c: Settings dal DB (system_settings -> dict piatto) ──
-    settings = _get_system_settings(db)
+    # ── Fase 0c: Workflow target + Overlap V5 (Parser BPMN) ──
+    target_meta = activities_meta.get(str(request.activity_id), {})
+    duration_hours = target_meta.get('duration_hours', DEFAULT_DURATION_HOURS)
+    target_workflow = target_meta.get('workflow_schema', {"flows": []})
 
-    # ── Fase 0d: Risorse occupate con overlap temporale V4 (Acqua/Terra split, tempi dal DB) ──
     busy_names = _compute_busy_names_with_overlap(
-        day_allocations=day_allocations,
+        date_allocations=day_allocations,
         target_time=request.time,
-        target_activity_id="",  # TODO: aggiungere activity_id al request quando necessario
-        target_ride_id="",
-        meta_map=meta_map,
-        settings=settings,
+        target_dur=duration_hours,
+        target_workflow=target_workflow,
+        activities_meta=activities_meta,
     )
 
     # ── Fase 1: Risorse attive da SQLite ──
@@ -431,7 +412,7 @@ async def calculate_slot_availability(
     selected_rafts = free_rafts[:actual_rafts]
     available_pax = sum(r.capacity or 0 for r in selected_rafts)
 
-    # ── Bottleneck Detection (V4: capienza furgoni dal DB) ──
+    # ── Bottleneck Detection V5 ──
     bottleneck = _detect_bottleneck(
         n_guides=len(free_guides),
         n_rafts=len(free_rafts),
@@ -440,30 +421,25 @@ async def calculate_slot_availability(
         n_trailers=len(free_trailers),
         transport_cap=transport_capacity,
         water_potential=rafts_to_deploy,
-        settings=settings,
     )
 
-    # ── Debug Info (V4: Acqua/Terra split + Logistica Elastica + Settings DB) ──
-    # Capienza netta furgone dal DB
-    van_net_cap = (
-        float(settings.get('van_total_seats', 9.0))
-        - float(settings.get('van_driver_seats', 1.0))
-        - float(settings.get('van_guide_seats', 0.0))
-    )
-    if van_net_cap <= 0:
-        van_net_cap = 7.0
+    # ── Debug Info V5 ──
+    # Finestre temporali BPMN per debug
+    target_guide_windows = _get_resource_windows(request.time, duration_hours, target_workflow, 'guide')
+    target_driver_windows = _get_resource_windows(request.time, duration_hours, target_workflow, 'driver')
 
-    target_meta = meta_map.get("", {"dur": DEFAULT_DURATION_HOURS, "seg": ""})
-    target_s = _parse_time(request.time)
-    target_e = target_s + timedelta(hours=target_meta["dur"])
+    def _win_str(windows):
+        """Converte finestre (minuti) in stringhe HH:MM leggibili."""
+        return [f"{s // 60:02d}:{s % 60:02d}-{e // 60:02d}:{e % 60:02d}" for s, e in windows]
+
     debug_info = {
         "slot": f"{request.date} {request.time}",
-        "engine_version": "V4-dynamic",
-        "target_window": f"{target_s.strftime('%H:%M')}-{target_e.strftime('%H:%M')}",
+        "engine_version": "V5-BPMN",
+        "target_workflow_flows": len(target_workflow.get("flows", [])),
+        "target_guide_windows": _win_str(target_guide_windows),
+        "target_driver_windows": _win_str(target_driver_windows),
         "day_allocations_total": len(day_allocations),
         "busy_resources_overlap": sorted(busy_names),
-        "settings_loaded": len(settings),
-        "van_net_capacity": van_net_cap,
         "free_guides": [s.name for s in free_guides],
         "free_drivers_c": [s.name for s in free_drivers_c],
         "free_rafts": [
@@ -493,7 +469,7 @@ async def calculate_slot_availability(
 
 
 # ══════════════════════════════════════════════════════════════
-# BOTTLENECK DETECTION (V4: capienza furgoni dal DB)
+# BOTTLENECK DETECTION V5 (semplificato, senza settings DB)
 # ══════════════════════════════════════════════════════════════
 
 def _detect_bottleneck(
@@ -504,22 +480,11 @@ def _detect_bottleneck(
     n_trailers: int,
     transport_cap: int,
     water_potential: int,
-    settings: dict,
 ) -> str:
     """
     Identifica la risorsa che limita la capacita' complessiva.
-
-    V4: Usa capienza netta furgone dal DB per calcolo 'Mezzi In Difetto'.
+    V5: Rimosso calcolo capienza netta furgoni (gestito dal workflow).
     """
-
-    # Capienza netta furgone dal DB
-    van_net_cap = (
-        float(settings.get('van_total_seats', 9.0))
-        - float(settings.get('van_driver_seats', 1.0))
-        - float(settings.get('van_guide_seats', 0.0))
-    )
-    if van_net_cap <= 0:
-        van_net_cap = 7.0  # Fallback safety
 
     # Nessuna risorsa
     if n_guides == 0 and n_rafts == 0:
@@ -541,7 +506,7 @@ def _detect_bottleneck(
     if transport_cap < water_potential:
         min_terra = min(n_vans_hitch, n_drivers_c, n_trailers)
         if n_vans_hitch == min_terra:
-            return f"Furgoni con gancio insufficienti per i convogli (cap. netta: {van_net_cap:.0f} pax)"
+            return "Furgoni con gancio insufficienti per i convogli"
         if n_drivers_c == min_terra:
             return "Autisti patente carrello insufficienti per i convogli"
         return "Carrelli insufficienti per i convogli"
