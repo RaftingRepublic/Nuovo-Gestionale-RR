@@ -77,6 +77,10 @@ class ActivityResponse(BaseModel):
 
 
 class ActivitySeasonUpdate(BaseModel):
+    code: Optional[str] = None
+    color_hex: Optional[str] = None
+    duration_hours: Optional[float] = None
+    river_segments: Optional[str] = None
     manager: Optional[str] = None
     price: Optional[float] = None
     season_start: Optional[date] = None

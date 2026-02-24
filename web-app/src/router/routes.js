@@ -36,6 +36,9 @@ const routes = [
       // Gestione Risorse (Staff, Flotta, Slot)
       { path: 'risorse', component: () => import('pages/ResourcesPage.vue') },
 
+      // Pannello Variabili (Tempi e Capienze)
+      { path: 'impostazioni', component: () => import('pages/admin/SettingsPage.vue') },
+
       // FASE 1: Due ambienti separati che caricano lo stesso componente
       // Calendario Operativo
       { path: 'operativo', component: () => import('pages/PlanningPage.vue') },

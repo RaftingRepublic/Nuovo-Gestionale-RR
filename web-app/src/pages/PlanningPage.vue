@@ -13,6 +13,9 @@
           <q-btn :color="viewFilter === 'tutto' ? 'primary' : 'white'" :text-color="viewFilter === 'tutto' ? 'white' : 'grey-8'" label="TUTTO" @click="viewFilter = 'tutto'" size="sm" />
         </q-btn-group>
         <q-btn color="blue-grey" icon="tune" label="Configura Stagione" outline @click="seasonDialog.isOpen = true" />
+        <q-btn color="deep-purple" icon="calculate" label="Simulatore" unelevated @click="yieldSimOpen = true">
+          <q-tooltip>Motore Matematico Yield</q-tooltip>
+        </q-btn>
         <q-btn color="primary" icon="add" label="Nuova Prenotazione" unelevated @click="openBookingForm(null, null)" />
       </div>
     </div>
@@ -30,6 +33,7 @@
         @update:month="changeMonth"
         @day-click="openDayDetail"
         @ride-click="onRideClickFromMonth"
+        @quick-book="onQuickBookFromMonth"
       />
     </div>
 
@@ -77,25 +81,44 @@
                 <span class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity || '—' }} pax</span>
                 <q-linear-progress :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity || 16))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity || 16)" class="q-mt-xs" rounded />
               </q-card-section>
-              <!-- Badge Risorse Assegnate -->
+              <!-- Badge Risorse Assegnate — Visualizzazione Individuale -->
               <q-card-section class="q-pa-xs q-pt-none" v-show="viewFilter === 'tutto' || viewFilter === 'staff'">
-                <div class="row q-gutter-xs q-mb-xs wrap" v-if="slot.assigned_guides?.length > 0 || slot.assigned_boats?.length > 0 || slot.assigned_vans?.length > 0 || slot.assigned_trailers?.length > 0">
-                  <q-badge color="blue-grey-1" text-color="blue-grey-9" v-if="slot.assigned_guides?.length > 0">
-                    <q-icon name="person" class="q-mr-xs" size="14px" /> {{ slot.assigned_guides.length }} Guide
-                  </q-badge>
-                  <q-badge color="light-blue-1" text-color="light-blue-9" v-if="slot.assigned_boats?.length > 0">
-                    <q-icon name="rowing" class="q-mr-xs" size="14px" /> {{ slot.assigned_boats.length }} Gommoni
-                  </q-badge>
-                  <q-badge color="orange-1" text-color="orange-10" v-if="slot.assigned_vans?.length > 0">
-                    <q-icon name="directions_bus" class="q-mr-xs" size="14px" /> {{ slot.assigned_vans.length }} Furgoni
-                  </q-badge>
-                  <q-badge color="brown-1" text-color="brown-10" v-if="slot.assigned_trailers?.length > 0">
-                    <q-icon name="rv_hookup" class="q-mr-xs" size="14px" /> {{ slot.assigned_trailers.length }} Carrelli
-                  </q-badge>
+                <!-- Risorse da Supabase (assegnate via ride_allocations) -->
+                <div class="row q-gutter-xs q-mb-xs wrap" v-if="hasAnyResources(slot)">
+                  <!-- Guide individuali (filtrate anti-fantasma) -->
+                  <q-chip
+                    v-for="g in filterKnownResources(slot.guides)" :key="'g-' + g.id"
+                    size="sm" color="teal" text-color="white" icon="person" dense
+                  >{{ g.name }}</q-chip>
+                  <!-- Autisti / Staff assegnati -->
+                  <q-chip
+                    v-for="s in filterKnownResources(getDriversFromStaff(slot))" :key="'d-' + s.id"
+                    size="sm" color="orange" text-color="white" icon="directions_bus" dense
+                  >{{ s.name }}</q-chip>
+                  <!-- Gommoni -->
+                  <q-chip
+                    v-for="r in filterKnownResources(slot.rafts)" :key="'r-' + r.id"
+                    size="sm" color="blue" text-color="white" icon="sailing" dense
+                  >{{ r.name }}</q-chip>
+                  <!-- Furgoni -->
+                  <q-chip
+                    v-for="v in filterKnownResources(slot.vans)" :key="'v-' + v.id"
+                    size="sm" color="deep-orange" text-color="white" icon="local_shipping" dense
+                  >{{ v.name }}</q-chip>
+                  <!-- Carrelli -->
+                  <q-chip
+                    v-for="t in filterKnownResources(slot.trailers)" :key="'t-' + t.id"
+                    size="sm" color="brown" text-color="white" icon="rv_hookup" dense
+                  >{{ t.name }}</q-chip>
                 </div>
-                <div class="row q-gutter-xs q-mb-xs" v-if="slot.assigned_staff?.length || slot.assigned_fleet?.length">
-                  <q-chip v-for="s in slot.assigned_staff" :key="'s'+s.id" dense icon="person" color="blue-1" text-color="primary" size="sm">{{ s.name }}</q-chip>
-                  <q-chip v-for="f in slot.assigned_fleet" :key="'f'+f.id" dense :icon="f.category === 'RAFT' ? 'rowing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'teal-1' : 'orange-1'" :text-color="f.category === 'RAFT' ? 'teal-9' : 'orange-9'" size="sm">{{ f.name }}</q-chip>
+                <!-- Fallback: risorse assegnate via SQLite (assigned_staff / assigned_fleet) -->
+                <div class="row q-gutter-xs q-mb-xs wrap" v-else-if="slot.assigned_staff?.length || slot.assigned_fleet?.length">
+                  <q-chip v-for="s in slot.assigned_staff" :key="'as'+s.id" dense icon="person" color="teal" text-color="white" size="sm">{{ s.name }}</q-chip>
+                  <q-chip v-for="f in slot.assigned_fleet" :key="'af'+f.id" dense :icon="f.category === 'RAFT' ? 'sailing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'blue' : 'orange'" text-color="white" size="sm">{{ f.name }}</q-chip>
+                </div>
+                <!-- Nessuna risorsa -->
+                <div v-else class="text-caption text-grey-4 q-mb-xs text-center" style="font-size: 11px;">
+                  Nessuna risorsa assegnata
                 </div>
                 <q-btn flat dense icon="groups" label="Assegna Risorse" color="primary" class="full-width" size="sm" @click.stop="openResourcePanel(slot)" />
               </q-card-section>
@@ -152,6 +175,11 @@
       @refresh="onRideDialogRefresh"
     />
 
+    <YieldSimulatorDialog
+      v-model="yieldSimOpen"
+      :initial-date="selectedDate"
+    />
+
   </q-page>
 </template>
 
@@ -168,12 +196,14 @@ import BookingDialog from 'components/BookingDialog.vue'
 import FiraftDialog from 'components/FiraftDialog.vue'
 import RideDialog from 'components/RideDialog.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
+import YieldSimulatorDialog from 'components/YieldSimulatorDialog.vue'
 
 const route = useRoute()
 const store = useResourceStore()
 const $q = useQuasar()
 const seasonDialog = ref(null)
 const selectedDate = ref(new Date().toISOString().split('T')[0].replace(/-/g, '/'))
+const yieldSimOpen = ref(false)
 
 // Ambiente determinato dalla rotta
 const isSegreteria = computed(() => route.path.includes('segreteria'))
@@ -209,7 +239,7 @@ const currentMonth = ref(new Date().getMonth() + 1)
 const monthOverview = ref([])
 
 // Filtri visivi (DISCESE / STAFF / TUTTO)
-const viewFilter = ref('tutto')
+const viewFilter = ref('discese')
 const filteredDailySchedule = computed(() => {
   if (viewFilter.value === 'discese') {
     return store.dailySchedule.filter(slot => slot.booked_pax > 0 || (slot.orders && slot.orders.length > 0))
@@ -217,8 +247,9 @@ const filteredDailySchedule = computed(() => {
   return store.dailySchedule
 })
 
-watch(viewMode, () => {
-  viewFilter.value = 'tutto'
+watch(viewMode, (newMode) => {
+  // Sincronizza il filtro visivo: in MONTH mostra solo mattoncini, in DETAIL mostra tutto
+  viewFilter.value = newMode === 'MONTH' ? 'discese' : 'tutto'
 }, { immediate: true })
 
 // ═══════════════════════════════════════════════════════════
@@ -237,7 +268,7 @@ onMounted(async () => {
   $q.loading.show({ message: 'Inizializzazione...' })
   try {
     await store.fetchCatalogs()
-    console.log('🟢 [SUPABASE] Attività:', store.activities.length, '| Risorse:', store.resources.length)
+    console.log('[SQLite] Attività:', store.activities.length, '| Risorse Supabase:', store.resources.length)
 
     await Promise.all([
       store.fetchActivityRules(),
@@ -344,6 +375,23 @@ function openRideDialog(slot) {
   slot.ride_date = selectedDate.value ? String(selectedDate.value).replace(/\//g, '-') : ''
   rideDialogSlot.value = slot
   showRideDialog.value = true
+}
+
+// ═══════════════════════════════════════════════════════════
+// QUICK-BOOK — Click su Ghost Slot dal calendario mensile
+// ═══════════════════════════════════════════════════════════
+function onQuickBookFromMonth(ride, dateStr) {
+  // Costruisci un contextRide con i dati del ghost per pre-popolare il BookingDialog
+  const contextRide = {
+    id: ride.id,
+    activity_id: ride.activity_id || null,
+    activity_name: ride.title || ride.activity_code || '',
+    time: ride.time ? String(ride.time).substring(0, 5) : '',
+    ride_date: dateStr,
+    date: dateStr,
+    isGhost: true,
+  }
+  openBookingForm(null, contextRide)
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -475,6 +523,48 @@ async function onRideDialogRefresh() {
 // ═══════════════════════════════════════════════════════════
 // HELPERS VISIVI (usati solo nella griglia slot)
 // ═══════════════════════════════════════════════════════════
+
+/**
+ * Controlla se il turno ha almeno una risorsa assegnata dalla sorgente Supabase.
+ */
+function hasAnyResources(slot) {
+  return (slot.guides?.length > 0) ||
+         (slot.drivers?.length > 0) ||
+         (slot.rafts?.length > 0) ||
+         (slot.vans?.length > 0) ||
+         (slot.trailers?.length > 0)
+}
+
+/**
+ * Estrae le risorse "driver" (autisti) dall'array risorse assegnate.
+ * I driver possono essere sia risorse di tipo 'driver' che staff con ruolo NC.
+ */
+function getDriversFromStaff(slot) {
+  // Se il turno ha un array 'drivers' specifico, usalo
+  if (slot.drivers && slot.drivers.length > 0) return slot.drivers
+  // Altrimenti cerca tra assigned_staff chi ha type 'driver'
+  if (slot.assigned_staff) {
+    return slot.assigned_staff.filter(s => s.type === 'driver')
+  }
+  return []
+}
+
+/**
+ * Filtro Anti-Fantasmi: mostra solo risorse il cui nome esiste
+ * nell'anagrafica SQLite corrente (staffList + fleetList).
+ */
+function filterKnownResources(resources) {
+  if (!resources || !Array.isArray(resources)) return []
+  const knownNames = new Set([
+    ...store.staffList.map(s => (s.name || '').trim().toLowerCase()),
+    ...store.fleetList.map(f => (f.name || '').trim().toLowerCase()),
+  ])
+  return resources.filter(r => {
+    if (!r || !r.name) return false
+    return knownNames.has(r.name.trim().toLowerCase())
+  })
+}
+
 function getProgressBarColor(pax, max = 16) {
   if (pax >= max) return 'negative'
   if (pax >= max - 4 && pax > 0) return 'warning'

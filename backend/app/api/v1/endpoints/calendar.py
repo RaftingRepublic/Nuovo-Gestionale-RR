@@ -478,6 +478,14 @@ def update_activity_season(
         raise HTTPException(status_code=404, detail=f"Attività '{activity_id}' non trovata.")
 
     # Aggiorna campi scalari (solo se forniti)
+    if payload.code is not None:
+        activity.code = payload.code
+    if payload.color_hex is not None:
+        activity.color_hex = payload.color_hex
+    if payload.duration_hours is not None:
+        activity.duration_hours = payload.duration_hours
+    if payload.river_segments is not None:
+        activity.river_segments = payload.river_segments
     if payload.manager is not None:
         activity.manager = payload.manager
     if payload.price is not None:

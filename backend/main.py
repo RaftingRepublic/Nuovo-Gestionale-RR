@@ -104,6 +104,10 @@ app.include_router(desk.router, prefix="/api/v1/orders", tags=["Desk POS"])
 from app.api.v1.endpoints import public
 app.include_router(public.router, prefix="/api/v1/public", tags=["Public Check-in"])
 
+# 11. Yield Engine (Motore Matematico Disponibilità)
+from app.api.v1.endpoints import availability
+app.include_router(availability.router, prefix="/api/v1/availability", tags=["Availability Engine"])
+
 # --- LOG AVVIO ---
 print("\n" + "="*60)
 print("🚀 BACKEND AVVIATO")

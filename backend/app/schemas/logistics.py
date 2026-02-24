@@ -15,10 +15,21 @@ from typing import Optional, List
 class SystemSettingResponse(BaseModel):
     key: str
     value: str
+    category: Optional[str] = "Generale"
+    description: Optional[str] = None
     model_config = {"from_attributes": True}
 
 class SystemSettingUpdate(BaseModel):
     value: str
+
+class SystemSettingBulkItem(BaseModel):
+    """Singolo setting nell'array di bulk update."""
+    key: str
+    value: str
+
+class SystemSettingBulkUpdate(BaseModel):
+    """Payload per aggiornamento massivo di più settings."""
+    settings: List[SystemSettingBulkItem]
 
 
 # ══════════════════════════════════════════
@@ -31,6 +42,9 @@ class FleetResponse(BaseModel):
     total_quantity: int
     capacity_per_unit: int
     is_active: bool
+    capacity: int = 0
+    has_tow_hitch: bool = False
+    max_rafts: int = 0
     model_config = {"from_attributes": True}
 
 class FleetCreate(BaseModel):
@@ -38,7 +52,18 @@ class FleetCreate(BaseModel):
     category: str = "RAFT"
     total_quantity: int = 1
     capacity_per_unit: int = 8
+    capacity: int = 0
+    has_tow_hitch: bool = False
+    max_rafts: int = 0
 
+class FleetUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    total_quantity: Optional[int] = None
+    capacity_per_unit: Optional[int] = None
+    capacity: Optional[int] = None
+    has_tow_hitch: Optional[bool] = None
+    max_rafts: Optional[int] = None
 
 # ══════════════════════════════════════════
 # RESOURCE EXCEPTION (Diario Unificato)

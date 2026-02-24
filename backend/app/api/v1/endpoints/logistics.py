@@ -16,8 +16,8 @@ from app.models.calendar import (
     StaffDB, FleetDB, ResourceExceptionDB, SystemSettingDB,
 )
 from app.schemas.logistics import (
-    SystemSettingResponse, SystemSettingUpdate,
-    FleetResponse, FleetCreate,
+    SystemSettingResponse, SystemSettingUpdate, SystemSettingBulkUpdate,
+    FleetResponse, FleetCreate, FleetUpdate,
     ResourceExceptionCreate, ResourceExceptionResponse, ResourceExceptionUpdate,
     StaffResponse, StaffCreate, StaffUpdate,
 )
@@ -46,6 +46,21 @@ def update_setting(key: str, payload: SystemSettingUpdate, db: Session = Depends
     return setting
 
 
+@router.put("/settings/bulk", response_model=List[SystemSettingResponse])
+def bulk_update_settings(payload: SystemSettingBulkUpdate, db: Session = Depends(get_db)):
+    """Aggiorna in batch tutte le impostazioni inviate dal pannello di controllo."""
+    updated = []
+    for item in payload.settings:
+        setting = db.query(SystemSettingDB).filter(SystemSettingDB.key == item.key).first()
+        if setting:
+            setting.value = item.value
+            updated.append(setting)
+    db.commit()
+    for s in updated:
+        db.refresh(s)
+    return updated
+
+
 # ══════════════════════════════════════════
 # FLEET (Flotta)
 # ══════════════════════════════════════════
@@ -63,11 +78,42 @@ def create_fleet(payload: FleetCreate, db: Session = Depends(get_db)):
         category=payload.category,
         total_quantity=payload.total_quantity,
         capacity_per_unit=payload.capacity_per_unit,
+        capacity=payload.capacity,
+        has_tow_hitch=payload.has_tow_hitch,
+        max_rafts=payload.max_rafts,
     )
     db.add(new_fleet)
     db.commit()
     db.refresh(new_fleet)
     return new_fleet
+
+
+@router.delete("/fleet/{fleet_id}", status_code=204)
+def delete_fleet(fleet_id: str, db: Session = Depends(get_db)):
+    """Archivia (soft-delete) un mezzo della flotta."""
+    fleet = db.query(FleetDB).filter(FleetDB.id == fleet_id).first()
+    if not fleet:
+        raise HTTPException(status_code=404, detail="Mezzo non trovato")
+    fleet.is_active = False
+    db.commit()
+    return None
+
+
+@router.patch("/fleet/{fleet_id}", response_model=FleetResponse)
+def update_fleet(fleet_id: str, payload: FleetUpdate, db: Session = Depends(get_db)):
+    """Aggiorna i dati di un mezzo della flotta."""
+    fleet = db.query(FleetDB).filter(FleetDB.id == fleet_id).first()
+    if not fleet:
+        raise HTTPException(status_code=404, detail="Mezzo non trovato")
+
+    for field in ['name', 'category', 'total_quantity', 'capacity_per_unit', 'capacity', 'has_tow_hitch', 'max_rafts']:
+        val = getattr(payload, field, None)
+        if val is not None:
+            setattr(fleet, field, val)
+
+    db.commit()
+    db.refresh(fleet)
+    return fleet
 
 
 # ══════════════════════════════════════════

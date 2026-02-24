@@ -9,8 +9,8 @@ export const useResourceStore = defineStore('resource', {
     resourceExceptions: [],  // Eccezioni della risorsa selezionata
     activityRules: [],
     dailySchedule: [],
-    activities: [],    // Catalogo attività da Supabase
-    resources: [],     // Catalogo risorse da Supabase
+    activities: [],    // Catalogo attività da SQLite (Single Source of Truth: code, color_hex, activity_class)
+    resources: [],     // Catalogo risorse Supabase (bridge UUID per ride_allocations)
     loading: false,
     selectedResourceId: null
   }),
@@ -39,18 +39,53 @@ export const useResourceStore = defineStore('resource', {
   },
 
   actions: {
-    // --- CATALOGHI SUPABASE ---
+    // ── Helper: Filtro Stagionale per Ghost Slots ──
+    _isDateInSeason(targetDateStr, seasonStart, seasonEnd) {
+      const target = new Date(targetDateStr)
+      target.setHours(0, 0, 0, 0)
+
+      if (seasonStart) {
+        const start = new Date(seasonStart)
+        start.setHours(0, 0, 0, 0)
+        if (target < start) return false
+      }
+      if (seasonEnd) {
+        const end = new Date(seasonEnd)
+        end.setHours(23, 59, 59, 999)
+        if (target > end) return false
+      }
+      return true
+    },
+
+    // ── Helper: Parsing sicuro degli orari attività ──
+    _parseDefaultTimes(act) {
+      let times = act.default_times || act.slots || []
+      if (typeof times === 'string') {
+        try { times = JSON.parse(times) } catch { times = [] }
+      }
+      if (!Array.isArray(times)) return []
+      return times
+        .filter(t => t && typeof t === 'string' && t.trim() !== '' && t !== '--:--')
+        .map(t => t.trim().substring(0, 5))
+    },
+
+    // --- CATALOGHI (Single Source of Truth: SQLite via FastAPI) ---
     async fetchCatalogs() {
       try {
-        const { data: acts, error: errActs } = await supabase.from('activities').select('*').order('name')
-        if (errActs) throw errActs
-        if (acts) this.activities = acts
+        // Attività: UNICA fonte è SQLite (ha code, color_hex, activity_class)
+        const actRes = await api.get('/calendar/activities')
+        this.activities = Array.isArray(actRes.data) ? actRes.data : (actRes.data?.activities || [])
+        console.log('[Store] Catalogo attività (SQLite):', this.activities.length)
 
-        const { data: res, error: errRes } = await supabase.from('resources').select('*').order('name')
-        if (errRes) throw errRes
-        if (res) this.resources = res
+        // Risorse Supabase: servono SOLO come bridge UUID per ride_allocations
+        try {
+          const { data: res, error: errRes } = await supabase.from('resources').select('*').order('name')
+          if (!errRes && res) this.resources = res
+        } catch (e) {
+          console.warn('[Store] Supabase resources fetch fallito (non bloccante):', e)
+        }
       } catch (err) {
-        console.error('Errore fetch cataloghi Supabase:', err)
+        console.error('[Store] Errore fetch cataloghi:', err)
         throw err
       }
     },
@@ -65,9 +100,54 @@ export const useResourceStore = defineStore('resource', {
       this.staffList.push(res.data)
     },
     async deleteStaff(id) {
+      // 1. Trova il nome per il cleanup Supabase
+      const staff = this.staffList.find(s => s.id === id)
+      const staffName = staff?.name || ''
+
+      // 2. Soft-delete su SQLite
       await api.delete(`/logistics/staff/${id}`)
+
+      // 3. Cleanup Split-Brain: rimuovi da Supabase resources per nome
+      if (staffName) {
+        try {
+          await supabase.from('resources').delete().ilike('name', staffName.trim())
+          console.log(`[Store] Supabase cleanup: rimosso resource "${staffName}"`)
+        } catch (e) {
+          console.warn('[Store] Supabase cleanup staff fallito (non bloccante):', e)
+        }
+      }
+
+      // 4. Aggiorna stato locale
       this.staffList = this.staffList.filter(s => s.id !== id)
       if (this.selectedResourceId === id) this.selectedResourceId = null
+
+      // 5. Ricarica catalogo risorse Supabase per sincronizzare le tendine
+      try { await this.fetchCatalogs() } catch { /* silenzioso */ }
+    },
+    async deleteFleet(id) {
+      // 1. Trova il nome per il cleanup Supabase
+      const fleet = this.fleetList.find(f => f.id === id)
+      const fleetName = fleet?.name || ''
+
+      // 2. Soft-delete su SQLite
+      await api.delete(`/logistics/fleet/${id}`)
+
+      // 3. Cleanup Split-Brain: rimuovi da Supabase resources per nome
+      if (fleetName) {
+        try {
+          await supabase.from('resources').delete().ilike('name', fleetName.trim())
+          console.log(`[Store] Supabase cleanup: rimosso resource "${fleetName}"`)
+        } catch (e) {
+          console.warn('[Store] Supabase cleanup fleet fallito (non bloccante):', e)
+        }
+      }
+
+      // 4. Aggiorna stato locale
+      this.fleetList = this.fleetList.filter(f => f.id !== id)
+      if (this.selectedResourceId === id) this.selectedResourceId = null
+
+      // 5. Ricarica catalogo risorse Supabase per sincronizzare le tendine
+      try { await this.fetchCatalogs() } catch { /* silenzioso */ }
     },
     async updateStaff(staffId, payload) {
       const res = await api.patch(`/logistics/staff/${staffId}`, payload)
@@ -84,10 +164,10 @@ export const useResourceStore = defineStore('resource', {
       const res = await api.post('/logistics/fleet', payload)
       this.fleetList.push(res.data)
     },
-    async deleteFleet(id) {
-      await api.delete(`/logistics/fleet/${id}`)
-      this.fleetList = this.fleetList.filter(f => f.id !== id)
-      if (this.selectedResourceId === id) this.selectedResourceId = null
+    async updateFleet(fleetId, payload) {
+      const res = await api.patch(`/logistics/fleet/${fleetId}`, payload)
+      const idx = this.fleetList.findIndex(f => f.id === fleetId)
+      if (idx !== -1) this.fleetList[idx] = res.data
     },
 
     // --- RESOURCE EXCEPTIONS (Diario Unificato) ---
@@ -141,24 +221,28 @@ export const useResourceStore = defineStore('resource', {
     async fetchDailySchedule(dateStr) {
       this.loading = true
       try {
-        const { data: rides, error } = await supabase
+        const { data, error } = await supabase
           .from('rides')
-          .select('*, activities(*), orders(*), ride_allocations(*, resources(*))')
+          .select('*, orders(*), ride_allocations(*, resources(*))')
           .eq('date', dateStr)
           .order('time')
-        if (error) throw error
+        if (error) console.error('[Supabase] fetchDailySchedule error (non bloccante):', error)
 
-        const mappedRides = (rides || []).map(ride => {
-          const act = ride.activities || {}
+        const mappedRides = (data || []).map(ride => {
           const orders = ride.orders || []
           const allocs = ride.ride_allocations || []
           const bookedPax = orders.reduce((sum, o) => sum + (o.actual_pax || o.pax || 0), 0)
+          // Decorazione da SQLite (Single Source of Truth per code/color) — NO FK activities
+          const act = (this.activities || []).find(a => String(a.id) === String(ride.activity_id)) || {}
           return {
             id: ride.id,
             time: ride.time,
-            activity_type: act.name || 'Sconosciuta',
+            activity_type: act.name || ride.activity_type || 'Sconosciuta',
+            activity_name: act.name || ride.activity_name || 'Sconosciuta',
             activity_id: ride.activity_id,
-            color_hex: act.color || '#607d8b',
+            activity_code: act.code || ride.activity_code || 'RA',
+            activity_class: act.activity_class || 'RAFTING',
+            color_hex: act.color_hex || act.color || ride.color_hex || '#607d8b',
             status: ride.status || 'Disponibile',
             is_overridden: ride.is_overridden || false,
             notes: ride.notes || '',
@@ -172,6 +256,7 @@ export const useResourceStore = defineStore('resource', {
             avail_guides: '—',
             avail_rafts: '—',
             avail_vans: '—',
+            duration_hours: act.duration_hours || 2,
             status_desc: _engineStatusDesc(bookedPax >= (ride.total_capacity || 16) ? 'ROSSO' : bookedPax >= (ride.total_capacity || 16) * 0.75 ? 'GIALLO' : 'VERDE'),
             assigned_staff: ride.assigned_staff || [],
             assigned_fleet: ride.assigned_fleet || [],
@@ -195,6 +280,7 @@ export const useResourceStore = defineStore('resource', {
               registrations: [],
             })),
             guides: allocs.filter(a => a && a.resources && a.resources.type === 'guide').map(a => a.resources),
+            drivers: allocs.filter(a => a && a.resources && a.resources.type === 'driver').map(a => a.resources),
             rafts: allocs.filter(a => a && a.resources && a.resources.type === 'raft').map(a => a.resources),
             vans: allocs.filter(a => a && a.resources && a.resources.type === 'van').map(a => a.resources),
             trailers: allocs.filter(a => a && a.resources && a.resources.type === 'trailer').map(a => a.resources),
@@ -203,36 +289,48 @@ export const useResourceStore = defineStore('resource', {
           }
         })
 
-        // Ghost Skeleton: genera slot vuoti per gli orari base mancanti
-        // BLINDATURA: isolato in try/catch dedicato per evitare silent crash
-        const baseSlots = [
-          { time: '09:00', defaultTitle: 'Rafting Family' },
-          { time: '10:00', defaultTitle: 'Rafting Selection' },
-          { time: '11:00', defaultTitle: 'Rafting Classic' },
-          { time: '13:30', defaultTitle: 'Rafting Classic' },
-          { time: '14:00', defaultTitle: 'Rafting Selection' },
-          { time: '15:00', defaultTitle: 'Hydrospeed Base' },
-          { time: '16:00', defaultTitle: 'Rafting Family' },
-        ]
+        // Ghost Skeleton DINAMICO: genera slot vuoti dagli orari configurati nelle attività SQLite
+        // NESSUN ORARIO HARDCODATO — tutto viene da this.activities (default_times + season_start/season_end)
 
         try {
           const storeActivities = Array.isArray(this.activities) ? this.activities : []
           const ghosts = []
-          for (const slot of baseSlots) {
-            if (!mappedRides.some(r => r && r.time && String(r.time).startsWith(slot.time))) {
-              const act = storeActivities.find(a => a && a.name && String(a.name).toLowerCase() === slot.defaultTitle.toLowerCase())
-              const validActId = (act && act.id) ? act.id : 'ghost-id'
-              const cap = (act && act.default_capacity) ? act.default_capacity : 16
+
+          for (const act of storeActivities) {
+            if (!act || !act.name) continue
+
+            // Filtro stagionale: salta attività fuori stagione
+            if (!this._isDateInSeason(dateStr, act.season_start, act.season_end)) continue
+
+            // Parsing orari configurati per questa attività
+            const actTimes = this._parseDefaultTimes(act)
+            if (actTimes.length === 0) continue
+
+            for (const time of actTimes) {
+              // Non generare ghost se esiste già un turno reale a quest'ora per questa attività
+              const alreadyExists = mappedRides.some(r =>
+                r && r.time && String(r.time).startsWith(time) &&
+                (String(r.activity_id) === String(act.id) || String(r.activity_type || '').toLowerCase() === act.name.toLowerCase())
+              )
+              if (alreadyExists) continue
+
+              // Non generare ghost se c'è già un ghost a quest'ora per un'altra attività
+              const ghostExists = ghosts.some(g => g.time === time + ':00')
+              if (ghostExists) continue
+
+              const cap = act.default_capacity || 16
 
               ghosts.push({
-                id: 'ghost-' + slot.time.replace(':', ''),
-                time: slot.time + ':00',
-                activity_type: act ? act.name : slot.defaultTitle,
-                activity_name: act ? act.name : slot.defaultTitle,
-                activity_id: validActId,
-                title: act ? act.name : slot.defaultTitle,
-                color: act ? (act.color || '#e0e0e0') : '#e0e0e0',
-                color_hex: act ? (act.color || '#e0e0e0') : '#e0e0e0',
+                id: 'ghost-' + time.replace(':', '') + '-' + String(act.id).substring(0, 8),
+                time: time + ':00',
+                activity_type: act.name,
+                activity_name: act.name,
+                activity_id: act.id,
+                activity_code: act.code || String(act.name).substring(0, 2).toUpperCase(),
+                activity_class: act.activity_class || 'RAFTING',
+                title: act.name,
+                color: act.color_hex || '#90a4ae',
+                color_hex: act.color_hex || '#90a4ae',
                 status: 'Disponibile',
                 is_overridden: false,
                 notes: '',
@@ -280,73 +378,94 @@ export const useResourceStore = defineStore('resource', {
 
     async fetchMonthOverview(year, month) {
       try {
+        // Precarica attività SQLite se non ancora disponibili
+        if (!this.activities.length) await this.fetchCatalogs()
+
         const startDate = `${year}-${String(month).padStart(2, '0')}-01`
         const lastDay = new Date(year, month, 0).getDate()
         const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
         const { data, error } = await supabase
           .from('rides')
-          .select('id, date, time, activity_id, activities(name, color), orders(pax, actual_pax)')
+          .select('id, date, time, activity_id, orders(pax, actual_pax), ride_allocations(resource_id,resources(name,type))')
           .gte('date', startDate)
           .lte('date', endDate)
           .order('time')
-        if (error) throw error
+        if (error) {
+          console.error('[Supabase] fetchMonthOverview error (non bloccante):', error)
+        }
 
-        // FASE 3.17 — Merge reali + ghost (7 slot, allineato al daily)
+        // Merge reali + ghost DINAMICI (basati su this.activities)
         const sourceRides = Array.isArray(data) ? data : []
 
         const daysInMonth = new Date(year, month, 0).getDate()
         const yStr = String(year)
         const mStr = String(month).padStart(2, '0')
         const days = []
-
-        // Palinsesto identico al tabellone giornaliero (7 slot)
-        const baseSlots = [
-          { time: '09:00', activity_code: 'FA', defaultTitle: 'Rafting Family' },
-          { time: '10:00', activity_code: 'SL', defaultTitle: 'Rafting Selection' },
-          { time: '11:00', activity_code: 'CL', defaultTitle: 'Rafting Classic' },
-          { time: '13:30', activity_code: 'CL', defaultTitle: 'Rafting Classic' },
-          { time: '14:00', activity_code: 'SL', defaultTitle: 'Rafting Selection' },
-          { time: '15:00', activity_code: 'HB', defaultTitle: 'Hydrospeed Base' },
-          { time: '16:00', activity_code: 'FA', defaultTitle: 'Rafting Family' }
-        ]
+        const storeActs = Array.isArray(this.activities) ? this.activities : []
 
         for (let i = 1; i <= daysInMonth; i++) {
           const dStr = `${yStr}-${mStr}-${String(i).padStart(2, '0')}`
-          // Normalizza la data di Supabase rimuovendo il timestamp per il match sicuro
           const dayRides = sourceRides.filter(r => r.date && String(r.date).split('T')[0] === dStr)
 
-          // 1. Mappa i turni REALI dal DB
+          // 1. Mappa i turni REALI dal DB (MAI filtrati)
           let realMapped = []
           if (dayRides.length > 0) {
             realMapped = dayRides.map(r => {
               const paxCount = r.orders
                 ? r.orders.reduce((sum, o) => sum + (o.actual_pax !== undefined && o.actual_pax !== null ? Number(o.actual_pax) : (Number(o.pax) || 0)), 0)
                 : 0
+              const sqlAct = storeActs.find(a => String(a.id) === String(r.activity_id)) || {}
+              const actName = sqlAct.name || r.activity_name || 'Turno'
+              const actCode = sqlAct.code || (actName ? String(actName).substring(0, 2).toUpperCase() : 'XX')
+              const actColor = sqlAct.color_hex || sqlAct.color || '#2196f3'
               return {
                 id: r.id,
+                activity_id: r.activity_id,
                 time: r.time ? String(r.time).substring(0, 5) : '',
-                activity_code: (r.activities && r.activities.name) ? String(r.activities.name).substring(0, 2).toUpperCase() : 'XX',
-                title: (r.activities && r.activities.name) ? r.activities.name : 'Turno',
-                color_hex: (r.activities && r.activities.color) ? r.activities.color : '#2196f3',
+                activity_code: actCode,
+                title: actName,
+                color_hex: actColor,
                 pax: paxCount,
-                isGhost: false
+                isGhost: false,
+                allocations: Array.isArray(r.ride_allocations)
+                  ? r.ride_allocations
+                      .filter(a => a && a.resources)
+                      .map(a => ({ resource_name: a.resources.name, resource_type: a.resources.type }))
+                  : []
               }
             })
           }
 
-          // 2. I 7 Slot Base per l'ossatura logistica — genera ghost SOLO se l'orario è buco
-          const currentActivities = Array.isArray(this.activities) ? this.activities : []
+          // 2. Ghost DINAMICI da this.activities (nessun hardcode)
           const ghosts = []
-          for (const slot of baseSlots) {
-            if (!realMapped.some(r => r.time === slot.time)) {
-              const act = currentActivities.find(a => a && a.name && String(a.name).toLowerCase() === String(slot.defaultTitle).toLowerCase())
+          for (const act of storeActs) {
+            if (!act || !act.name) continue
+
+            // Filtro stagionale
+            if (!this._isDateInSeason(dStr, act.season_start, act.season_end)) continue
+
+            const actTimes = this._parseDefaultTimes(act)
+            if (actTimes.length === 0) continue
+
+            for (const time of actTimes) {
+              // Non creare ghost se c'è già un ride reale a quest'ora per quest'attività
+              const alreadyExists = realMapped.some(r =>
+                r.time === time && (String(r.activity_id) === String(act.id))
+              )
+              if (alreadyExists) continue
+
+              // Non duplicare ghost sullo stesso orario
+              const ghostExists = ghosts.some(g => g.time === time)
+              if (ghostExists) continue
+
               ghosts.push({
-                id: 'ghost-m-' + dStr + '-' + slot.time.replace(':', ''),
-                time: slot.time,
-                activity_code: act && act.name ? String(act.name).substring(0, 2).toUpperCase() : slot.defaultTitle.substring(0, 2).toUpperCase(),
-                title: act ? act.name : slot.defaultTitle,
-                color_hex: '#e0e0e0',
+                id: 'ghost-m-' + dStr + '-' + time.replace(':', '') + '-' + String(act.id).substring(0, 8),
+                time: time,
+                activity_id: act.id,
+                activity_code: act.code || String(act.name).substring(0, 2).toUpperCase(),
+                title: act.name,
+                color_hex: act.color_hex || '#90a4ae',
                 pax: 0,
                 isGhost: true
               })
@@ -359,7 +478,6 @@ export const useResourceStore = defineStore('resource', {
           days.push({
             date: dStr,
             booked_rides: combined,
-            // TODO: Sostituire con calcolo dinamico da ride_allocations tramite RPC Supabase per evitare query N+1 sul mese.
             staff_count: 0
           })
         }
@@ -369,32 +487,34 @@ export const useResourceStore = defineStore('resource', {
         return days
       } catch (e) {
         console.error('[Supabase Error] fetchMonthOverview:', e)
-        // Fallback: genera griglia vuota con 7 ghost slots
-        const baseSlotsFallback = [
-          { time: '09:00', activity_code: 'FA', title: 'Rafting Family' },
-          { time: '10:00', activity_code: 'SL', title: 'Rafting Selection' },
-          { time: '11:00', activity_code: 'CL', title: 'Rafting Classic' },
-          { time: '13:30', activity_code: 'CL', title: 'Rafting Classic' },
-          { time: '14:00', activity_code: 'SL', title: 'Rafting Selection' },
-          { time: '15:00', activity_code: 'HB', title: 'Hydrospeed Base' },
-          { time: '16:00', activity_code: 'FA', title: 'Rafting Family' }
-        ]
+        // Fallback dinamico: usa this.activities se disponibili, altrimenti griglia vuota
+        const fallbackActs = Array.isArray(this.activities) ? this.activities : []
         const lastDay = new Date(year, month, 0).getDate()
         const days = []
         for (let d = 1; d <= lastDay; d++) {
           const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+          const ghosts = []
+          for (const act of fallbackActs) {
+            if (!act || !act.name) continue
+            if (!this._isDateInSeason(dateStr, act.season_start, act.season_end)) continue
+            const actTimes = this._parseDefaultTimes(act)
+            for (const time of actTimes) {
+              if (ghosts.some(g => g.time === time)) continue
+              ghosts.push({
+                id: 'ghost-m-' + dateStr + '-' + time.replace(':', '') + '-' + String(act.id).substring(0, 8),
+                time: time,
+                activity_id: act.id,
+                activity_code: act.code || String(act.name).substring(0, 2).toUpperCase(),
+                title: act.name,
+                color_hex: act.color_hex || '#90a4ae',
+                pax: 0,
+                isGhost: true
+              })
+            }
+          }
           days.push({
             date: dateStr,
-            booked_rides: baseSlotsFallback.map(g => ({
-              id: 'ghost-m-' + dateStr + '-' + g.time.replace(':', ''),
-              time: g.time,
-              activity_code: g.activity_code,
-              title: g.title,
-              color_hex: '#e0e0e0',
-              pax: 0,
-              isGhost: true
-            })),
-            // TODO: Sostituire con calcolo dinamico da ride_allocations tramite RPC Supabase per evitare query N+1 sul mese.
+            booked_rides: ghosts.sort((a, b) => (a.time || '').localeCompare(b.time || '')),
             staff_count: 0
           })
         }
@@ -474,6 +594,62 @@ export const useResourceStore = defineStore('resource', {
     },
 
     selectResource(id) { this.selectedResourceId = id },
+
+    // --- AUTO-HEALING: Name → UUID Supabase (Upsert JIT) ---
+    async ensureSupabaseIds(payload) {
+      if (!payload || payload.length === 0) return []
+
+      // 1. Scarica tutte le risorse da Supabase per match robusto lato client
+      const { data: allResources, error: fetchErr } = await supabase
+        .from('resources').select('id, name, type')
+      if (fetchErr) throw fetchErr
+
+      // 2. Crea mappa lowercase per ricerca O(1)
+      const existingLowerMap = {}
+      ;(allResources || []).forEach(r => {
+        if (r.name) existingLowerMap[r.name.trim().toLowerCase()] = r.id
+      })
+
+      const toInsert = []
+      const nameToUuidMap = {}
+
+      // 3. Analizza il payload
+      payload.forEach(item => {
+        if (!item.name) return
+        const cleanName = item.name.trim().toLowerCase()
+
+        if (existingLowerMap[cleanName]) {
+          // Esiste già nello storico (es. "Stefano")
+          nameToUuidMap[item.name] = existingLowerMap[cleanName]
+        } else {
+          // Da creare. Evitiamo duplicati multipli nello stesso payload
+          if (!toInsert.some(i => i.name.trim().toLowerCase() === cleanName)) {
+            toInsert.push({ name: item.name.trim(), type: item.type || 'guide' })
+          }
+        }
+      })
+
+      // 4. Inserisci i mancanti in blocco
+      if (toInsert.length > 0) {
+        console.log('[Store] Auto-Healing: inserimento nuove risorse in Supabase:', toInsert)
+        const { data: inserted, error: insertErr } = await supabase
+          .from('resources').insert(toInsert).select('id, name')
+        if (insertErr) throw insertErr
+
+        ;(inserted || []).forEach(r => {
+          const original = payload.find(p =>
+            p.name.trim().toLowerCase() === r.name.trim().toLowerCase()
+          )
+          if (original) nameToUuidMap[original.name] = r.id
+        })
+      }
+
+      // 5. Aggiorna il catalogo locale per coerenza
+      try { await this.fetchCatalogs() } catch { /* silenzioso */ }
+
+      // 6. Mappa il payload originale agli UUID validi
+      return payload.map(p => nameToUuidMap[p.name]).filter(id => id)
+    },
 
     // --- SALVATAGGIO ALLOCAZIONI RISORSE (con materializzazione ghost) ---
     async saveRideAllocations(ride, resourceIds) {

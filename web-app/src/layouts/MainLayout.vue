@@ -53,6 +53,11 @@
           <q-item-section>Staff &amp; Risorse</q-item-section>
         </q-item>
 
+        <q-item clickable v-ripple to="/admin/impostazioni" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="tune" /></q-item-section>
+          <q-item-section>Pannello Variabili</q-item-section>
+        </q-item>
+
         <!-- Spacer per spingere il logout in fondo -->
         <q-space />
 

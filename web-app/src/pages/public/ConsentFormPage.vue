@@ -343,12 +343,23 @@ onMounted(async () => {
     try {
       const { data, error } = await supabase
         .from('orders')
-        .select('*, rides(date, time, activities(name))')
+        .select('*, rides(date, time, activity_id)')
         .eq('id', orderId.value)
         .single()
       if (data && !error) {
+        // Risolvi il nome attività da SQLite (niente FK activities su Supabase)
+        let actName = 'Discesa'
+        if (data.rides?.activity_id) {
+          try {
+            const { api: axiosApi } = await import('src/boot/axios')
+            const actRes = await axiosApi.get('/calendar/activities')
+            const acts = Array.isArray(actRes.data) ? actRes.data : (actRes.data?.activities || [])
+            const found = acts.find(a => String(a.id) === String(data.rides.activity_id))
+            if (found?.name) actName = found.name
+          } catch { /* fallback silenzioso */ }
+        }
         orderInfo.value = {
-          activity_name: data.rides?.activities?.name || 'Discesa',
+          activity_name: actName,
           date: data.rides?.date || '',
           time: data.rides?.time ? data.rides.time.substring(0, 5) : ''
         }

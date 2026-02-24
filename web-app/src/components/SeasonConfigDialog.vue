@@ -71,7 +71,7 @@
                     </q-select>
                   </div>
                   <div class="col-6 col-sm-3">
-                    <q-input v-model="act.code" label="Codice" outlined dense readonly />
+                    <q-input v-model="act.code" label="Codice" outlined dense hint="Es: CL, FA, SL" />
                   </div>
                 </div>
 
@@ -490,6 +490,10 @@ async function saveSeason(act) {
     }))
 
     await api.patch(`/calendar/activities/${act.id}/season`, {
+      code: act.code || undefined,
+      color_hex: act.color_hex || undefined,
+      duration_hours: act.duration_hours ?? undefined,
+      river_segments: act.river_segments || undefined,
       manager: act.manager,
       price: act.price,
       season_start: act.season_start || null,

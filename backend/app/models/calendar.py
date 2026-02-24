@@ -191,8 +191,12 @@ class FleetDB(Base):
     name = Column(String(100), nullable=False)
     category = Column(String(20), default="RAFT", comment="RAFT, VAN, TRAILER")
     total_quantity = Column(Integer, default=1, comment="Quanti mezzi di questo tipo")
-    capacity_per_unit = Column(Integer, default=8, comment="Posti per singolo mezzo")
+    capacity_per_unit = Column(Integer, default=8, comment="Posti per singolo mezzo (legacy)")
     is_active = Column(Boolean, default=True)
+    # ── Parametri Logistici per Algoritmo Yield ──
+    capacity = Column(Integer, default=0, comment="Capienza passeggeri (gommoni) o posti a sedere escluso autista (furgoni)")
+    has_tow_hitch = Column(Boolean, default=False, comment="Solo VAN: dotato di gancio traino")
+    max_rafts = Column(Integer, default=0, comment="Solo TRAILER: quanti gommoni può trasportare")
 
     crew_assignments = relationship("CrewAssignmentDB", back_populates="boat")
 
@@ -243,3 +247,5 @@ class SystemSettingDB(Base):
 
     key = Column(String(50), primary_key=True, index=True)
     value = Column(String(255), nullable=False)
+    category = Column(String(50), nullable=True, default="Generale", comment="Gruppo logico: Capienze Mezzi, Tempi Base, ecc.")
+    description = Column(String(255), nullable=True, comment="Descrizione leggibile per la UI")

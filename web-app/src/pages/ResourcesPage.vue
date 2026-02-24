@@ -84,7 +84,14 @@
                 </q-item-section>
                 <q-item-section>
                   <q-item-label class="text-weight-bold">{{ f.name }}</q-item-label>
-                  <q-item-label caption>{{ f.category }} · {{ f.total_quantity }} x {{ f.capacity_per_unit }} posti</q-item-label>
+                  <q-item-label caption class="row q-gutter-xs items-center">
+                    <span>{{ f.category }}</span>
+                    <q-chip v-if="f.category === 'RAFT' && f.capacity" dense size="xs" color="blue" text-color="white" icon="people">{{ f.capacity }} pax</q-chip>
+                    <q-chip v-if="f.category === 'VAN' && f.capacity" dense size="xs" color="orange" text-color="white" icon="airline_seat_recline_normal">{{ f.capacity }} posti</q-chip>
+                    <q-chip v-if="f.category === 'VAN' && f.has_tow_hitch" dense size="xs" color="teal" text-color="white" icon="link">Gancio</q-chip>
+                    <q-chip v-if="f.category === 'TRAILER' && f.max_rafts" dense size="xs" color="brown" text-color="white" icon="rv_hookup">{{ f.max_rafts }} gommoni</q-chip>
+
+                  </q-item-label>
                 </q-item-section>
                 <q-item-section side>
                   <q-btn flat round dense icon="delete" color="grey-4" size="sm" @click.stop="deleteItem('FLEET', f.id)" />
@@ -112,10 +119,18 @@
                 <q-badge :color="selectedRes.contract_type === 'EXTRA' ? 'amber' : 'blue-grey'" class="q-py-xs">{{ selectedRes.contract_type }}</q-badge>
               </div>
               <div v-else class="text-subtitle2 text-grey-7 q-mt-xs">
-                {{ selectedRes.category === 'RAFT' ? '🛶 Gommone' : '🚐 Furgone' }}
-                · {{ selectedRes.total_quantity }} unità x {{ selectedRes.capacity_per_unit }} posti
+                {{ selectedRes.category === 'RAFT' ? '🛶 Gommone' : selectedRes.category === 'TRAILER' ? '🚛 Carrello' : '🚐 Furgone' }}
+                <div class="row q-gutter-xs q-mt-xs">
+                  <q-chip v-if="selectedRes.capacity" dense size="sm" color="blue" text-color="white" icon="people">{{ selectedRes.capacity }} pax</q-chip>
+                  <q-chip v-if="selectedRes.has_tow_hitch" dense size="sm" color="teal" text-color="white" icon="link">Gancio Traino</q-chip>
+                  <q-chip v-if="selectedRes.max_rafts" dense size="sm" color="brown" text-color="white" icon="rv_hookup">{{ selectedRes.max_rafts }} gommoni max</q-chip>
+
+                </div>
               </div>
             </div>
+            <q-btn flat round icon="edit" color="primary" size="md" @click="openEditDialog">
+              <q-tooltip>Modifica attributi</q-tooltip>
+            </q-btn>
           </div>
 
           <!-- ═══ PERIODI CONTRATTO (solo Staff FISSO) ═══ -->
@@ -253,15 +268,71 @@
             <div class="row justify-end q-mt-lg"><q-btn label="Salva" type="submit" color="primary" /></div>
           </q-form>
           <q-form v-if="dialog.type === 'FLEET'" @submit="submitFleet" class="q-gutter-md">
-            <q-select v-model="formFleet.category" :options="[{label:'Gommone', value:'RAFT'}, {label:'Furgone', value:'VAN'}]" emit-value map-options label="Tipo" outlined dense />
+            <q-select v-model="formFleet.category" :options="[{label:'Gommone', value:'RAFT'}, {label:'Furgone', value:'VAN'}, {label:'Carrello', value:'TRAILER'}]" emit-value map-options label="Tipo" outlined dense />
             <q-input v-model="formFleet.name" label="Nome" outlined dense />
-            <div class="row q-col-gutter-sm">
-              <div class="col-6"><q-input v-model.number="formFleet.total_quantity" label="Quantità" type="number" outlined dense /></div>
-              <div class="col-6"><q-input v-model.number="formFleet.capacity_per_unit" label="Capienza/unità" type="number" outlined dense /></div>
+
+            <!-- CAMPI CONDIZIONALI PER TIPO -->
+            <!-- RAFT: Capienza passeggeri -->
+            <q-input v-if="formFleet.category === 'RAFT'" v-model.number="formFleet.capacity" label="Capienza Passeggeri" type="number" outlined dense hint="Es: 8 per gommone L, 6 per gommone S">
+              <template #prepend><q-icon name="people" color="blue" /></template>
+            </q-input>
+
+            <!-- VAN: Posti + Gancio traino -->
+            <div v-if="formFleet.category === 'VAN'">
+              <q-input v-model.number="formFleet.capacity" label="Posti a sedere (escluso autista)" type="number" outlined dense class="q-mb-md" hint="Passeggeri trasportabili nel furgone">
+                <template #prepend><q-icon name="airline_seat_recline_normal" color="orange" /></template>
+              </q-input>
+              <q-checkbox v-model="formFleet.has_tow_hitch" label="Dotato di Gancio Traino" color="teal" />
             </div>
+
+            <!-- TRAILER: Max gommoni -->
+            <q-input v-if="formFleet.category === 'TRAILER'" v-model.number="formFleet.max_rafts" label="Capienza max Gommoni" type="number" outlined dense hint="Quanti gommoni può trasportare contemporaneamente">
+              <template #prepend><q-icon name="rv_hookup" color="brown" /></template>
+            </q-input>
+
             <div class="row justify-end q-mt-lg"><q-btn label="Salva" type="submit" color="secondary" /></div>
           </q-form>
         </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- ═══ DIALOG MODIFICA RISORSA ═══ -->
+    <q-dialog v-model="editDialog" persistent>
+      <q-card style="min-width: 420px;">
+        <q-card-section class="bg-primary text-white">
+          <div class="text-h6"><q-icon name="edit" class="q-mr-sm" />Modifica {{ activeCategory === 'STAFF' ? 'Staff' : 'Mezzo' }}</div>
+        </q-card-section>
+        <q-card-section class="q-gutter-md q-pt-lg">
+          <!-- Nome (sempre) -->
+          <q-input v-model="editForm.name" label="Nome" outlined dense />
+
+          <!-- STAFF: Ruoli -->
+          <template v-if="activeCategory === 'STAFF'">
+            <q-select v-model="editForm.roles" :options="roleOptions" multiple use-chips outlined dense emit-value map-options label="Ruoli" />
+            <q-select v-model="editForm.contract_type" :options="['FISSO','EXTRA']" outlined dense label="Tipo Contratto" />
+          </template>
+
+          <!-- FLEET: Campi condizionali per tipo -->
+          <template v-if="activeCategory === 'FLEET'">
+            <q-select v-model="editForm.category" :options="[{label:'Gommone', value:'RAFT'}, {label:'Furgone', value:'VAN'}, {label:'Carrello', value:'TRAILER'}]" emit-value map-options label="Tipo" outlined dense />
+            <q-input v-if="editForm.category === 'RAFT'" v-model.number="editForm.capacity" label="Capienza Passeggeri" type="number" outlined dense hint="Es: 8 per gommone L, 6 per gommone S">
+              <template #prepend><q-icon name="people" color="blue" /></template>
+            </q-input>
+            <div v-if="editForm.category === 'VAN'">
+              <q-input v-model.number="editForm.capacity" label="Posti a sedere (escluso autista)" type="number" outlined dense class="q-mb-md">
+                <template #prepend><q-icon name="airline_seat_recline_normal" color="orange" /></template>
+              </q-input>
+              <q-checkbox v-model="editForm.has_tow_hitch" label="Dotato di Gancio Traino" color="teal" />
+            </div>
+            <q-input v-if="editForm.category === 'TRAILER'" v-model.number="editForm.max_rafts" label="Capienza max Gommoni" type="number" outlined dense>
+              <template #prepend><q-icon name="rv_hookup" color="brown" /></template>
+            </q-input>
+          </template>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Annulla" color="grey" v-close-popup />
+          <q-btn unelevated label="Salva Modifiche" color="primary" icon="save" @click="saveEdit" :loading="editSaving" />
+        </q-card-actions>
       </q-card>
     </q-dialog>
 
@@ -277,7 +348,13 @@ const store = useResourceStore()
 const $q = useQuasar()
 
 const activeCategory = ref('STAFF')
-const dialog = reactive({ open: false, type: null })
+const dialog = reactive({ open: false, type: 'STAFF' })
+const editDialog = ref(false)
+const editSaving = ref(false)
+const editForm = reactive({
+  name: '', category: 'RAFT', capacity: 0, has_tow_hitch: false, max_rafts: 0,
+  total_quantity: 1, capacity_per_unit: 8, roles: [], contract_type: 'FISSO'
+})
 const selectedRes = computed(() => store.selectedResource)
 
 // Calendar
@@ -286,39 +363,50 @@ const excName = ref('')
 
 // Form
 const formStaff = reactive({ name: '', contract_type: 'FISSO', roles: [] })
-const formFleet = reactive({ category: 'RAFT', name: '', total_quantity: 1, capacity_per_unit: 8 })
+const formFleet = reactive({ category: 'RAFT', name: '', total_quantity: 1, capacity_per_unit: 8, capacity: 0, has_tow_hitch: false, max_rafts: 0 })
 
 onMounted(() => { store.fetchStaff(); store.fetchFleet() })
 
-// Role system
+// Role system — Ruoli atomici combinabili (Manuale Operativo v2)
 const roleOptions = [
-  { label: 'Guida Rafting R4', value: 'RAF4' },
-  { label: 'Guida Rafting R3', value: 'RAF3' },
+  { label: 'Guida Rafting 4/A', value: 'RAF4' },
+  { label: 'Guida Rafting 3°', value: 'RAF3' },
   { label: 'Safety Kayak', value: 'SK' },
-  { label: 'Navetta / Autista', value: 'NC' },
+  { label: 'Guida Hydrospeed', value: 'HYD' },
+  { label: 'Safety Hydro', value: 'SH' },
+  { label: 'Navettista', value: 'N' },
+  { label: 'Patente Carrello', value: 'C' },
+  { label: 'Fotografo', value: 'F' },
   { label: 'Segreteria', value: 'SEG' },
-  { label: 'Fotografo', value: 'FOT' },
   { label: 'Capobase', value: 'CB' },
 ]
-const roleLabelMap = { RAF4: 'Guida R4', RAF3: 'Guida R3', SK: 'Safety Kayak', NC: 'Autista', SEG: 'Segreteria', FOT: 'Fotografo', CB: 'Capobase' }
+const roleLabelMap = {
+  RAF4: 'Guida R4', RAF3: 'Guida R3', SK: 'Safety Kayak',
+  HYD: 'Guida Hydro', SH: 'Safety Hydro',
+  N: 'Navettista', C: 'Pat. Carrello', F: 'Fotografo',
+  SEG: 'Segreteria', CB: 'Capobase',
+  // Legacy fallback
+  NC: 'Autista', FOT: 'Fotografo',
+}
 function roleColor(r) {
   if (r === 'RAF4' || r === 'RAF3') return 'teal'
-  if (r === 'SK') return 'cyan-8'
-  if (r === 'NC') return 'orange'
-  if (r === 'SEG') return 'indigo'
-  if (r === 'FOT') return 'purple'
-  if (r === 'CB') return 'red-8'
+  if (r === 'SK' || r === 'HYD' || r === 'SH') return 'cyan-8'
+  if (r === 'N' || r === 'NC') return 'orange'
+  if (r === 'C') return 'deep-orange'
+  if (r === 'F' || r === 'FOT') return 'purple'
+  if (r === 'SEG') return 'pink'
+  if (r === 'CB') return 'dark'
   return 'grey'
 }
 function getAvatarColor(m) {
   const roles = m.roles || []
-  if (roles.includes('RAF4') || roles.includes('RAF3') || m.is_guide) return 'teal'
-  if (roles.includes('NC') || m.is_driver) return 'orange'
-  if (roles.includes('CB')) return 'red-8'
-  if (roles.includes('SEG')) return 'indigo'
+  if (roles.includes('RAF4') || roles.includes('RAF3') || roles.includes('HYD') || m.is_guide) return 'teal'
+  if (roles.includes('N') || roles.includes('NC') || m.is_driver) return 'orange'
+  if (roles.includes('CB')) return 'dark'
+  if (roles.includes('SEG')) return 'pink'
   return 'blue-grey'
 }
-function getFleetIcon(cat) { return cat==='RAFT'?'sailing':'airport_shuttle' }
+function getFleetIcon(cat) { return cat==='RAFT'?'sailing':cat==='TRAILER'?'rv_hookup':'airport_shuttle' }
 
 // ═══ PERIODI CONTRATTO ═══
 const newContractStart = ref('')
@@ -347,7 +435,7 @@ async function removeContractPeriod(idx) {
 }
 
 // Actions
-function openDialog(type) { dialog.type = type; dialog.open = true; formStaff.name=''; formStaff.roles=[]; formFleet.name='' }
+function openDialog(type) { dialog.type = type; dialog.open = true; formStaff.name=''; formStaff.roles=[]; formFleet.name=''; formFleet.capacity=0; formFleet.has_tow_hitch=false; formFleet.max_rafts=0 }
 
 async function submitStaff() {
   const payload = {
@@ -363,7 +451,13 @@ async function submitStaff() {
 }
 
 async function submitFleet() {
-  await store.addFleet({...formFleet})
+  // Forza i valori legacy per retrocompatibilità backend
+  const payload = {
+    ...formFleet,
+    total_quantity: 1,
+    capacity_per_unit: formFleet.capacity || 0,
+  }
+  await store.addFleet(payload)
   dialog.open = false
   $q.notify({ type: 'positive', message: 'Mezzo aggiunto' })
 }
@@ -375,11 +469,80 @@ async function selectResource(id) {
   excName.value = ''
 }
 
-async function deleteItem(type, id) {
-  if (!confirm('Eliminare definitivamente?')) return
-  if (type==='STAFF') await store.deleteStaff(id)
-  else await store.deleteFleet(id)
-  $q.notify({ type: 'info', message: 'Eliminato' })
+function openEditDialog() {
+  if (!selectedRes.value) return
+  const r = selectedRes.value
+  editForm.name = r.name || ''
+  if (activeCategory.value === 'STAFF') {
+    editForm.roles = r.roles || []
+    editForm.contract_type = r.contract_type || 'FISSO'
+  } else {
+    editForm.category = r.category || 'RAFT'
+    editForm.capacity = r.capacity || 0
+    editForm.has_tow_hitch = r.has_tow_hitch || false
+    editForm.max_rafts = r.max_rafts || 0
+    editForm.total_quantity = r.total_quantity || 1
+    editForm.capacity_per_unit = r.capacity_per_unit || 8
+  }
+  editDialog.value = true
+}
+
+async function saveEdit() {
+  if (!selectedRes.value) return
+  editSaving.value = true
+  try {
+    if (activeCategory.value === 'STAFF') {
+      await store.updateStaff(selectedRes.value.id, {
+        name: editForm.name,
+        roles: editForm.roles,
+        contract_type: editForm.contract_type,
+      })
+    } else {
+      await store.updateFleet(selectedRes.value.id, {
+        name: editForm.name,
+        category: editForm.category,
+        capacity: editForm.capacity,
+        has_tow_hitch: editForm.has_tow_hitch,
+        max_rafts: editForm.max_rafts,
+        total_quantity: editForm.total_quantity,
+        capacity_per_unit: editForm.capacity_per_unit,
+      })
+    }
+    editDialog.value = false
+    $q.notify({ type: 'positive', message: `${editForm.name} aggiornato con successo ✓`, position: 'top' })
+  } catch (err) {
+    console.error('[ResourcesPage] Update error:', err)
+    $q.notify({ type: 'negative', message: 'Errore aggiornamento: ' + (err?.response?.data?.detail || err.message) })
+  } finally {
+    editSaving.value = false
+  }
+}
+
+function deleteItem(type, id) {
+  const item = type === 'STAFF'
+    ? store.staffList.find(s => s.id === id)
+    : store.fleetList.find(f => f.id === id)
+
+  $q.dialog({
+    title: 'Conferma Archiviazione',
+    message: `Sei sicuro di voler archiviare <strong>${item?.name || 'questa risorsa'}</strong>?<br><br>Non sarà più disponibile per le nuove assegnazioni. Lo storico dei turni passati rimarrà intatto.`,
+    html: true,
+    cancel: { flat: true, label: 'Annulla', color: 'grey' },
+    ok: { unelevated: true, label: 'Archivia', color: 'negative', icon: 'archive' },
+    persistent: true,
+  }).onOk(async () => {
+    try {
+      if (type === 'STAFF') {
+        await store.deleteStaff(id)
+      } else {
+        await store.deleteFleet(id)
+      }
+      $q.notify({ type: 'positive', message: `${item?.name || 'Risorsa'} archiviata con successo ✓`, position: 'top' })
+    } catch (err) {
+      console.error('[ResourcesPage] Delete error:', err)
+      $q.notify({ type: 'negative', message: 'Errore archiviazione: ' + (err?.response?.data?.detail || err.message) })
+    }
+  })
 }
 
 // ═══ SALVA ECCEZIONE ═══
