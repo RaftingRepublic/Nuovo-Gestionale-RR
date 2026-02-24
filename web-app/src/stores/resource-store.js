@@ -36,6 +36,16 @@ export const useResourceStore = defineStore('resource', {
     },
     rafts: (state) => state.fleetList.filter(f => f.category === 'RAFT'),
     vans: (state) => state.fleetList.filter(f => f.category === 'VAN'),
+    trailers: (state) => state.fleetList.filter(f => f.category === 'TRAILER'),
+    towVans: (state) => state.fleetList.filter(f => f.category === 'VAN' && f.has_tow_hitch),
+    riverGuides: (state) => state.staffList.filter(s => s.is_guide),
+    shuttleDrivers: (state) => state.staffList.filter(s => s.is_driver),
+    totalDailyPool: (state) => ({
+      guides: state.staffList.filter(s => s.is_guide).length,
+      drivers: state.staffList.filter(s => s.is_driver).length,
+      vans: state.fleetList.filter(f => f.category === 'VAN').length,
+      trailers: state.fleetList.filter(f => f.category === 'TRAILER').length
+    }),
   },
 
   actions: {
