@@ -22,6 +22,16 @@
           <q-item-section>Calendario Operativo</q-item-section>
         </q-item>
 
+        <q-item clickable v-ripple to="/admin/timeline" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="view_timeline" /></q-item-section>
+          <q-item-section>Timeline Operativa</q-item-section>
+        </q-item>
+
+        <q-item clickable v-ripple to="/admin/board" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="view_column" /></q-item-section>
+          <q-item-section>Lavagna Operativa</q-item-section>
+        </q-item>
+
         <q-item clickable v-ripple to="/admin/segreteria" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
           <q-item-section avatar><q-icon name="point_of_sale" /></q-item-section>
           <q-item-section>Segreteria (POS)</q-item-section>

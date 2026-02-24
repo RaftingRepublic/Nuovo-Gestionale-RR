@@ -48,6 +48,7 @@
         <q-btn round flat icon="chevron_left" @click="prevDay" color="primary" />
         <span class="text-h6 text-weight-bold text-uppercase q-mx-md">{{ formatSelectedDate }}</span>
         <q-btn round flat icon="chevron_right" @click="nextDay" color="primary" />
+        <q-btn outline icon="view_column" label="Lavagna Operativa" color="primary" size="sm" class="q-ml-sm" @click="goToBoard" />
         <q-space />
         <q-btn outline icon="download" label="Export FIRAFT (CSV)" color="teal" size="sm" @click="exportFiraft" />
       </div>
@@ -185,7 +186,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useResourceStore } from 'stores/resource-store'
 import { useQuasar, date as qdate } from 'quasar'
 import { supabase } from 'src/supabase'
@@ -199,10 +200,11 @@ import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
 import YieldSimulatorDialog from 'components/YieldSimulatorDialog.vue'
 
 const route = useRoute()
+const router = useRouter()
 const store = useResourceStore()
 const $q = useQuasar()
 const seasonDialog = ref(null)
-const selectedDate = ref(new Date().toISOString().split('T')[0].replace(/-/g, '/'))
+const selectedDate = ref(route.query.date ? String(route.query.date).replace(/-/g, '/') : new Date().toISOString().split('T')[0].replace(/-/g, '/'))
 const yieldSimOpen = ref(false)
 
 // Ambiente determinato dalla rotta
@@ -232,7 +234,7 @@ const rideDialogSlot = ref(null)
 // ═══════════════════════════════════════════════════════════
 // CALENDAR STATE
 // ═══════════════════════════════════════════════════════════
-const viewMode = ref('MONTH')
+const viewMode = ref(route.query.date ? 'DETAIL' : 'MONTH')
 const calendarDisplayMode = ref('DESCENTS')
 const currentYear = ref(new Date().getFullYear())
 const currentMonth = ref(new Date().getMonth() + 1)
@@ -279,6 +281,10 @@ onMounted(async () => {
     currentYear.value = parseInt(y)
     currentMonth.value = parseInt(m)
     await updateMonthOverview(currentYear.value, currentMonth.value)
+
+    if (viewMode.value === 'DETAIL') {
+      await loadSchedule()
+    }
 
     $q.notify({ type: 'positive', message: '🔄 Sincronizzazione completata', position: 'top', timeout: 2000 })
   } catch(e) {
@@ -365,6 +371,11 @@ async function loadSchedule() {
     await store.fetchDailySchedule(d)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore caricamento' }) }
   finally { $q.loading.hide() }
+}
+
+function goToBoard() {
+  const dateParams = selectedDate.value ? String(selectedDate.value).replace(/\//g, '-') : null
+  if (dateParams) router.push({ path: '/admin/board', query: { date: dateParams } })
 }
 
 // ═══════════════════════════════════════════════════════════

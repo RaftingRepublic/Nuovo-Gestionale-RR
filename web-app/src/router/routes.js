@@ -39,6 +39,12 @@ const routes = [
       // Pannello Variabili (Tempi e Capienze)
       { path: 'impostazioni', component: () => import('pages/admin/SettingsPage.vue') },
 
+      // FASE 6.A: Timeline View (Gantt Matematico)
+      { path: 'timeline', component: () => import('pages/admin/TimelinePage.vue') },
+
+      // FASE 6.A.3: Daily Board View (Lavagna Operativa)
+      { path: 'board', component: () => import('pages/admin/DailyBoardPage.vue') },
+
       // FASE 1: Due ambienti separati che caricano lo stesso componente
       // Calendario Operativo
       { path: 'operativo', component: () => import('pages/PlanningPage.vue') },

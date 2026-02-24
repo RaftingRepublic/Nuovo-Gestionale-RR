@@ -141,14 +141,7 @@
           :option-disable="opt => isOptionBusy(opt)"
         />
 
-        <!-- Anti-ubiquità Info (intra-ride: guida/autista) -->
-        <div class="q-mt-lg q-pa-sm bg-amber-1 rounded-borders" v-if="ubiquityConflicts.length > 0">
-          <div class="text-caption text-orange-9">
-            <q-icon name="warning" class="q-mr-xs" />
-            <strong>Anti-Ubiquità:</strong> {{ ubiquityConflicts.join(', ') }}
-            {{ ubiquityConflicts.length === 1 ? 'è' : 'sono' }} selezionato come Guida e quindi non disponibile come Autista (e viceversa).
-          </div>
-        </div>
+
 
         <!-- Anti-ubiquità Info (cross-ride: sovrapposizione temporale) -->
         <div class="q-mt-sm q-pa-sm bg-red-1 rounded-borders" v-if="busyResourceNames.size > 0">
@@ -395,12 +388,10 @@ const validGuideRoles = computed(() => {
 
 const filteredGuideOptions = computed(() => {
   const roles = validGuideRoles.value
-  const conflicts = ubiquityConflicts.value
   return store.staffList
     .filter(s =>
       s.is_active !== false &&
-      (s.is_guide || (s.roles && s.roles.some(r => roles.includes(r)))) &&
-      !conflicts.includes(s.name)
+      (s.is_guide || (s.roles && s.roles.some(r => roles.includes(r))))
     )
     .map(s => ({ label: s.name, value: s.name, _roles: s.roles || [] }))
 })
@@ -456,21 +447,7 @@ function isDisabledByName(opt, otherSelectedNames) {
   return otherSelectedNames.includes(name)
 }
 
-// Trova conflitti multi-ruolo (chi è sia guida che autista e compare in una delle due liste)
-const ubiquityConflicts = computed(() => {
-  const conflicts = []
-  const allStaff = store.staffList.filter(s => s.is_active !== false)
 
-  for (const s of allStaff) {
-    const roles = s.roles || []
-    const isMultiRole = (s.is_guide || roles.some(r => GUIDE_ROLES.includes(r))) &&
-                        (s.is_driver || roles.some(r => DRIVER_ROLES.includes(r)))
-    if (isMultiRole && (selectedGuideNames.value.includes(s.name) || selectedDriverNames.value.includes(s.name))) {
-      conflicts.push(s.name)
-    }
-  }
-  return conflicts
-})
 
 // Trova i ruoli di uno staff per nome (per i chip nel dropdown)
 function getStaffRoles(name, roleFilter) {
@@ -538,12 +515,8 @@ async function saveAllocations() {
       ...buildPayload(localSlot.assigned_trailers, 'trailer'),
     ]
 
-    console.log('[ResourcePanel] ensureSupabaseIds payload:', payload)
-
     // Auto-Healing: trova UUID esistenti o crea risorse mancanti
     const allIds = await store.ensureSupabaseIds(payload)
-
-    console.log('[ResourcePanel] UUID risolti:', allIds)
 
     await store.saveRideAllocations({
       id: localSlot.id,

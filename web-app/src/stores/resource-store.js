@@ -91,7 +91,6 @@ export const useResourceStore = defineStore('resource', {
         // Attività: UNICA fonte è SQLite (ha code, color_hex, activity_class)
         const actRes = await api.get('/calendar/activities')
         this.activities = Array.isArray(actRes.data) ? actRes.data : (actRes.data?.activities || [])
-        console.log('[Store] Catalogo attività (SQLite):', this.activities.length)
 
         // Risorse Supabase: servono SOLO come bridge UUID per ride_allocations
         try {
@@ -108,8 +107,23 @@ export const useResourceStore = defineStore('resource', {
 
     // --- STAFF ---
     async fetchStaff() {
-      try { this.staffList = (await api.get('/logistics/staff')).data }
-      catch (e) { console.error(e) }
+      try {
+        const rawData = (await api.get('/logistics/staff')).data
+        this.staffList = rawData.map(s => {
+          let safeRoles = []
+          if (Array.isArray(s.roles)) {
+            safeRoles = s.roles
+          } else if (s.roles) {
+            try {
+              safeRoles = JSON.parse(s.roles)
+              if (!Array.isArray(safeRoles)) safeRoles = []
+            } catch {
+              safeRoles = String(s.roles).split(',').map(str => str.replace(/[^a-zA-Z0-9_-]/g, '').trim().toUpperCase()).filter(str => str)
+            }
+          }
+          return { ...s, roles: safeRoles }
+        })
+      } catch (e) { console.error(e) }
     },
     async addStaff(payload) {
       const res = await api.post('/logistics/staff', payload)
@@ -127,7 +141,6 @@ export const useResourceStore = defineStore('resource', {
       if (staffName) {
         try {
           await supabase.from('resources').delete().ilike('name', staffName.trim())
-          console.log(`[Store] Supabase cleanup: rimosso resource "${staffName}"`)
         } catch (e) {
           console.warn('[Store] Supabase cleanup staff fallito (non bloccante):', e)
         }
@@ -152,7 +165,6 @@ export const useResourceStore = defineStore('resource', {
       if (fleetName) {
         try {
           await supabase.from('resources').delete().ilike('name', fleetName.trim())
-          console.log(`[Store] Supabase cleanup: rimosso resource "${fleetName}"`)
         } catch (e) {
           console.warn('[Store] Supabase cleanup fleet fallito (non bloccante):', e)
         }
@@ -504,8 +516,6 @@ export const useResourceStore = defineStore('resource', {
           })
         }
 
-        const totalReal = days.reduce((s, d) => s + d.booked_rides.filter(r => !r.isGhost).length, 0)
-        console.log('[MonthOverview] Giorni:', days.length, '| Rides DB:', sourceRides.length, '| Reali mappati:', totalReal)
         return days
       } catch (e) {
         console.error('[Supabase Error] fetchMonthOverview:', e)
@@ -607,7 +617,6 @@ export const useResourceStore = defineStore('resource', {
           is_lead: index === 0
         }))
         await supabase.from('participants').insert(emptySlotsArray)
-        console.log(`[Participants] Pre-generati ${paxCount} slot per ordine ${newOrder.id}`)
       } catch (partErr) {
         console.error('[Participants] Errore pre-generazione slot:', partErr)
         // Non blocca: l'ordine è già salvato
@@ -654,7 +663,6 @@ export const useResourceStore = defineStore('resource', {
 
       // 4. Inserisci i mancanti in blocco
       if (toInsert.length > 0) {
-        console.log('[Store] Auto-Healing: inserimento nuove risorse in Supabase:', toInsert)
         const { data: inserted, error: insertErr } = await supabase
           .from('resources').insert(toInsert).select('id, name')
         if (insertErr) throw insertErr
