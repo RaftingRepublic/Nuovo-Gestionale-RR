@@ -16,8 +16,9 @@ Tiene conto di:
 """
 
 import math
+import json
 from datetime import date, datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -30,34 +31,189 @@ from app.models.calendar import (
 # CONFERMATO = web/bonifico confermato, COMPLETATO = turno concluso,
 # PAGATO = saldato dal desk POS, IN_ATTESA = ordine con caparra parziale (conta comunque posti)
 COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
-RAFT_PAX = 8  # Posti per gommone
 
 
 class AvailabilityEngine:
     """Motore di calcolo disponibilità per una singola data."""
 
     @staticmethod
+    def _get_global_settings(db: Session) -> dict:
+        """Legge le variabili dinamiche dal DB."""
+        # TODO: Aggancio reale con il DB (Pannello Variabili).
+        # Per ora restituiamo un dizionario difensivo temporaneo.
+        return {
+            "raft_capacity": 8,
+            "van_seats": 9,
+            "total_vans": 2,
+        }
+
+    @staticmethod
+    def _parse_workflow_footprint(activity: ActivityDB) -> dict:
+        """Estrae le logistics e i flows in modo difensivo."""
+        workflow_schema = activity.workflow_schema
+
+        if not workflow_schema:
+            return {"logistics": {}, "flows": []}
+
+        if isinstance(workflow_schema, str):
+            try:
+                schema_data = json.loads(workflow_schema)
+                # Gestione stringhe double-escaped
+                if isinstance(schema_data, str):
+                    schema_data = json.loads(schema_data)
+            except Exception:
+                schema_data = {}
+        else:
+            schema_data = workflow_schema
+
+        logistics = schema_data.get("logistics", {})
+        flows = schema_data.get("flows", [])
+
+        return {
+            "logistics": logistics,
+            "flows": flows
+        }
+
+    @staticmethod
+    def _build_resource_timeline(ride_datetime: datetime, flows: list) -> list:
+        """Scorre i flows e i blocks per calcolare l'assorbimento logistico (Two-Pass BPMN parser)."""
+        # Pass 1: Trova la durata massima assoluta (Orizzonte degli eventi dell'attività)
+        max_duration_min = 0
+        for flow in flows:
+            flow_duration = sum(
+                b.get("duration_min", 0) 
+                for b in flow.get("blocks", []) 
+                if b.get("anchor", "start") == "start"
+            )
+            if flow_duration > max_duration_min:
+                max_duration_min = flow_duration
+                
+        ride_end_datetime = ride_datetime + timedelta(minutes=max_duration_min)
+        timeline = []
+
+        # Pass 2: Costruisci la timeline assoluta
+        for flow in flows:
+            cursor = ride_datetime
+            end_cursor = ride_end_datetime
+            
+            start_blocks = [b for b in flow.get("blocks", []) if b.get("anchor", "start") == "start"]
+            end_blocks = [b for b in flow.get("blocks", []) if b.get("anchor", "start") == "end"]
+            
+            # I blocchi start avanzano nel tempo
+            for block in start_blocks:
+                duration_min = block.get("duration_min", 0)
+                block_start = cursor
+                block_end = cursor + timedelta(minutes=duration_min)
+                cursor = block_end
+                
+                timeline.append({
+                    "resources": block.get("resources", []),
+                    "start": block_start,
+                    "end": block_end,
+                    "block_code": block.get("code", "")
+                })
+                
+            # I blocchi end arretrano dal fondo (reversed per concatenarli correttamente)
+            for block in reversed(end_blocks):
+                duration_min = block.get("duration_min", 0)
+                block_end = end_cursor
+                block_start = block_end - timedelta(minutes=duration_min)
+                end_cursor = block_start
+                
+                timeline.append({
+                    "resources": block.get("resources", []),
+                    "start": block_start,
+                    "end": block_end,
+                    "block_code": block.get("code", "")
+                })
+
+        return timeline
+
+    @staticmethod
+    def _evaluate_ride_capacity(target_ride_id: Any, rides_data: dict, pool_rafts: int, pool_guides: int, pool_vans: int) -> dict:
+        """
+        Motore di Intersezione (Time-Array Slicer): calcola i colli di bottiglia sovrapponendo i consumi al minuto.
+        """
+        usage_rafts = [0] * 1440
+        usage_guides = [0] * 1440
+        usage_vans = [0] * 1440
+
+        # Costruisci l'assorbimento degli ALTRI
+        for ride_id, data in rides_data.items():
+            if ride_id == target_ride_id:
+                continue
+            
+            needed_boats = data["needed_boats"]
+            for block in data["timeline"]:
+                start_m = int(block["start"].hour * 60 + block["start"].minute)
+                end_m = int(block["end"].hour * 60 + block["end"].minute)
+                
+                # Clamp per evitare index out of bounds
+                start_m = max(0, min(1439, start_m))
+                end_m = max(0, min(1440, end_m))
+                
+                resources = block.get("resources", [])
+                has_raft = "RAFT" in resources
+                has_guide = any(g in resources for g in ["RAF4", "RAF3", "HYD", "SK", "SH"])
+                has_van = "VAN" in resources
+                
+                for m in range(start_m, end_m):
+                    if has_raft:
+                        usage_rafts[m] += needed_boats
+                    if has_guide:
+                        usage_guides[m] += needed_boats
+                    if has_van:
+                        usage_vans[m] += needed_boats
+
+        # Analisi dei colli di bottiglia del TARGET (Sweep)
+        target_data = rides_data[target_ride_id]
+        max_boats_for_target = 999
+        yield_warning = False
+
+        for block in target_data["timeline"]:
+            start_m = int(block["start"].hour * 60 + block["start"].minute)
+            end_m = int(block["end"].hour * 60 + block["end"].minute)
+            
+            start_m = max(0, min(1439, start_m))
+            end_m = max(0, min(1440, end_m))
+            
+            resources = block.get("resources", [])
+            has_raft = "RAFT" in resources
+            has_guide = any(g in resources for g in ["RAF4", "RAF3", "HYD", "SK", "SH"])
+            has_van = "VAN" in resources
+            
+            for m in range(start_m, end_m):
+                if has_raft:
+                    available = pool_rafts - usage_rafts[m]
+                    max_boats_for_target = min(max_boats_for_target, available)
+                if has_guide:
+                    available = pool_guides - usage_guides[m]
+                    max_boats_for_target = min(max_boats_for_target, available)
+                if has_van:
+                    available = pool_vans - usage_vans[m]
+                    if available < 1:
+                        yield_warning = True
+
+        return {
+            "max_boats_for_target": max(0, max_boats_for_target),
+            "yield_warning": yield_warning
+        }
+
+    @staticmethod
     def calculate_availability(db: Session, target_date: date) -> Dict[str, Dict[str, Any]]:
         """
         Calcola disponibilità per tutti i ride di `target_date`.
-
-        Returns:
-            Dict[ride_id] -> {
-                "status": "VERDE" | "GIALLO" | "ROSSO",
-                "total_capacity": int,
-                "arr_bonus_seats": int,
-                "booked_pax": int,
-                "remaining_seats": int,
-            }
         """
         date_str = target_date.strftime("%Y-%m-%d")
+        settings = AvailabilityEngine._get_global_settings(db)
+        raft_capacity = settings.get("raft_capacity", 8)
 
-        # ═══ STEP 1: Tetto giornaliero ═══
-        total_rafts = AvailabilityEngine._count_available_rafts(db, date_str)
-        active_guides = AvailabilityEngine._count_active_guides(db, target_date, date_str)
-        max_concurrent_boats = max(0, min(total_rafts, active_guides))
+        # Il Fondo del Sacco Globale all'alba
+        pool_rafts = AvailabilityEngine._count_available_rafts(db, date_str)
+        pool_guides = AvailabilityEngine._count_active_guides(db, target_date, date_str)
+        pool_vans = settings.get("total_vans", 2)
 
-        # ═══ STEP 2: Carica ride della data ═══
+        # ═══ Carica ride della data ═══
         rides = (
             db.query(DailyRideDB)
             .options(
@@ -69,114 +225,62 @@ class AvailabilityEngine:
             .all()
         )
 
-        if not rides:
-            return {}
-
-        # ═══ STEP 3: Scorrimento e overlap ═══
-        launched_boats = []  # [{"start": datetime, "end": datetime, "count": int}]
-        river_transit = {}   # {"HH:MM": {"boats_in_water": int, "pax_in_water": int}}
         results = {}
 
+        if not rides:
+            return results
+
+        # ─── Pre-calcolo dei Consumi (Censimento pass 1) ───
+        rides_data = {}
         for ride in rides:
             activity = ride.activity
             if not activity:
                 continue
 
-            # Costruisci datetime completo per T
             T = datetime.combine(target_date, ride.ride_time)
+            booked_pax = AvailabilityEngine._calc_booked_pax(ride, raft_capacity)
+            needed_boats = math.ceil(booked_pax / raft_capacity) if booked_pax > 0 else 0
 
-            # Calcola booked_pax
-            booked_pax = AvailabilityEngine._calc_booked_pax(ride)
+            footprint = AvailabilityEngine._parse_workflow_footprint(activity)
+            timeline = AvailabilityEngine._build_resource_timeline(T, footprint.get("flows", []))
 
-            # Calcola barche già in acqua a quest'ora
-            active_boats_at_T = sum(
-                b["count"] for b in launched_boats
-                if b["start"] <= T < b["end"]
+            rides_data[ride.id] = {
+                "activity": activity,
+                "ride": ride,
+                "booked_pax": booked_pax,
+                "needed_boats": needed_boats,
+                "timeline": timeline,
+            }
+
+        # ─── Il Semaforo Asimmetrico (Censimento pass 2) ───
+        for ride_id, data in rides_data.items():
+            activity = data["activity"]
+            booked_pax = data["booked_pax"]
+
+            eval_data = AvailabilityEngine._evaluate_ride_capacity(
+                ride_id, rides_data, pool_rafts, pool_guides, pool_vans
             )
-            available_base_boats = max(0, max_concurrent_boats - active_boats_at_T)
-            base_capacity = available_base_boats * RAFT_PAX
 
-            # Recupera parametri effettivi (override SubPeriod o base)
-            allow_arr = AvailabilityEngine._get_effective_bool(
-                activity, "allow_intersections", target_date
-            )
-            yellow_threshold = AvailabilityEngine._get_effective_int(
-                activity, "yellow_threshold", target_date
-            )
-            overbooking_limit = AvailabilityEngine._get_effective_int(
-                activity, "overbooking_limit", target_date
-            )
-            activity_class = activity.activity_class or "RAFTING"
-
-            arr_bonus_seats = 0
-
-            if allow_arr and activity_class == "RAFTING":
-                # ═══ LOGICA ARR ═══
-                transit = river_transit.get(
-                    T.strftime("%H:%M"),
-                    {"boats_in_water": 0, "pax_in_water": 0}
-                )
-                arr_bonus_seats = max(0, (transit["boats_in_water"] * RAFT_PAX) - transit["pax_in_water"])
-                total_capacity = base_capacity + arr_bonus_seats
-
-                # Barche da lanciare dalla base per i pax eccedenti il bonus
-                pax_to_accommodate_from_base = max(0, booked_pax - arr_bonus_seats)
-                new_boats_launched = math.ceil(pax_to_accommodate_from_base / RAFT_PAX) if pax_to_accommodate_from_base > 0 else 0
-
-                # Registra lancio
-                launched_boats.append({
-                    "start": T,
-                    "end": T + timedelta(hours=activity.duration_hours),
-                    "count": new_boats_launched,
-                })
-
-                # Calcola flusso in uscita verso la prossima stazione ARR
-                out_boats = transit["boats_in_water"] + new_boats_launched
-                out_pax = transit["pax_in_water"] + booked_pax
-                code = activity.code.upper() if activity.code else ""
-
-                if code == "AD":
-                    next_time = T + timedelta(minutes=60)
-                    next_key = next_time.strftime("%H:%M")
-                    existing = river_transit.get(next_key, {"boats_in_water": 0, "pax_in_water": 0})
-                    river_transit[next_key] = {
-                        "boats_in_water": existing["boats_in_water"] + out_boats,
-                        "pax_in_water": existing["pax_in_water"] + out_pax,
-                    }
-                elif code == "CL":
-                    next_time = T + timedelta(minutes=30)
-                    next_key = next_time.strftime("%H:%M")
-                    existing = river_transit.get(next_key, {"boats_in_water": 0, "pax_in_water": 0})
-                    river_transit[next_key] = {
-                        "boats_in_water": existing["boats_in_water"] + out_boats,
-                        "pax_in_water": existing["pax_in_water"] + out_pax,
-                    }
-            else:
-                # ═══ NO ARR (Hydro, Kayak, o ARR disabilitato) ═══
-                total_capacity = base_capacity
-                new_boats_launched = math.ceil(booked_pax / RAFT_PAX) if booked_pax > 0 else 0
-                launched_boats.append({
-                    "start": T,
-                    "end": T + timedelta(hours=activity.duration_hours),
-                    "count": new_boats_launched,
-                })
-
-            # ═══ STEP 4: Semaforo ═══
+            total_capacity = eval_data["max_boats_for_target"] * raft_capacity
             remaining_seats = total_capacity - booked_pax
+
+            overbooking_limit = AvailabilityEngine._get_effective_int(activity, "overbooking_limit", target_date)
+            yellow_threshold = AvailabilityEngine._get_effective_int(activity, "yellow_threshold", target_date)
 
             if remaining_seats <= -overbooking_limit:
                 status = "ROSSO"
-            elif remaining_seats <= yellow_threshold:
+            elif eval_data["yield_warning"] or remaining_seats <= yellow_threshold:
                 status = "GIALLO"
             else:
                 status = "VERDE"
 
-            results[ride.id] = {
+            results[ride_id] = {
                 "status": status,
                 "total_capacity": total_capacity,
-                "arr_bonus_seats": arr_bonus_seats,
+                "arr_bonus_seats": 0,
                 "booked_pax": booked_pax,
                 "remaining_seats": remaining_seats,
+                "debug_yield_warning": eval_data["yield_warning"],
             }
 
         return results
@@ -269,14 +373,14 @@ class AvailabilityEngine:
 
     # ─── HELPER: Booked pax per ride ───
     @staticmethod
-    def _calc_booked_pax(ride: DailyRideDB) -> int:
-        """Calcola posti prenotati contando gli ordini validi."""
+    def _calc_booked_pax(ride: DailyRideDB, raft_capacity: int) -> int:
+        """Calcola posti prenotati contando ordini validi."""
         pax = 0
         for o in ride.orders:
             if o.order_status not in COUNTING_STATUSES:
                 continue
             if o.is_exclusive_raft:
-                pax += math.ceil(o.total_pax / RAFT_PAX) * RAFT_PAX
+                pax += math.ceil(o.total_pax / raft_capacity) * raft_capacity
             else:
                 pax += o.total_pax
         return pax
