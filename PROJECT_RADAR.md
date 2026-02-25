@@ -13,9 +13,11 @@
 
 - [x] **Fase 6.E.3 (Motore di Svuotamento BPMN Backend):** Implementato il Time-Array Slicer a matrice discreta (1440 min) per incrociare i mattoncini temporali. Applicata Eccezione di Sarre (Soft Limits furgoni -> Semaforo Giallo). Implementato Two-Pass parsing per blocchi a ritroso (anchor=end).
 
+- [x] **Fase 6.E.4 (Caduta dei Mock, Sensori Flotta e Ratio Logistici Reali):** Implementata l'estrazione EAV difensiva dal Pannello Variabili (calcolo posti netti dei van). Implementato sensore \_count_available_vans da FleetDB. Integrata la logica non-lineare della 'Regola del Safety Kayak' (Hard Floor Tributo) per il calcolo delle barche varabili e il blocco semaforo.
+
 **CANTIERE ATTIVO (Obiettivo Prossima Sessione):**
 
-- [ ] **Fase 6.E.4:** Rimozione mock variabili globali (collegamento al DB Settings), gestione Ratio logistici reali (es. min_guides dal JSON) e Ripristino Logica ARR.
+- [ ] **Fase 6.E.5:** Ripristino della Logica ARR (Incroci Fiume/Eredità posti vuoti tra AD/CL/FA) per il recupero dei bonus seats e aggancio definitivo dell'Availability Engine alle API FastAPI.
 
 ---
 

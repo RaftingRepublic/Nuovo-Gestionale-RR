@@ -1,51 +1,52 @@
-"""
-Availability Engine — Cervello Matematico del Gestionale.
-
+""" Availability Engine — Cervello Matematico del Gestionale.
 Calcola dinamicamente per ogni ride di una data:
-- total_capacity (posti totali = base + ARR bonus)
-- arr_bonus_seats (posti ereditati da transito fiume)
-- booked_pax (pax prenotati effettivi)
-- remaining_seats (posti residui)
-- status (VERDE / GIALLO / ROSSO)
-
+total_capacity (posti totali = base + ARR bonus)
+arr_bonus_seats (posti ereditati da transito fiume)
+booked_pax (pax prenotati effettivi)
+remaining_seats (posti residui)
+status (VERDE / GIALLO / ROSSO)
 Tiene conto di:
-- Gommoni disponibili (FleetDB RAFT - eccezioni)
-- Guide disponibili (FISSI in contratto senza assenze + EXTRA con turno)
-- Overlap temporale (barche già in acqua a quell'ora)
-- Matrice ARR: AD→CL (60min) → FA (30min) per trasporto posti vuoti
-"""
+Gommoni disponibili (FleetDB RAFT - eccezioni)
+Guide disponibili (FISSI in contratto senza assenze + EXTRA con turno)
+Overlap temporale (barche già in acqua a quell'ora)
+Matrice ARR: AD→CL (60min) → FA (30min) per trasporto posti vuoti """
 
 import math
 import json
 from datetime import date, datetime, timedelta
 from typing import Dict, Any, List
-
 from sqlalchemy.orm import Session, joinedload
-
 from app.models.calendar import (
     ActivityDB, DailyRideDB, OrderDB, StaffDB, FleetDB,
-    ResourceExceptionDB, ActivitySubPeriodDB,
+    ResourceExceptionDB, ActivitySubPeriodDB, SystemSettingDB
 )
 
 # Stati ordine che occupano posti
-# CONFERMATO = web/bonifico confermato, COMPLETATO = turno concluso,
-# PAGATO = saldato dal desk POS, IN_ATTESA = ordine con caparra parziale (conta comunque posti)
 COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
-
 
 class AvailabilityEngine:
     """Motore di calcolo disponibilità per una singola data."""
 
     @staticmethod
     def _get_global_settings(db: Session) -> dict:
-        """Legge le variabili dinamiche dal DB."""
-        # TODO: Aggancio reale con il DB (Pannello Variabili).
-        # Per ora restituiamo un dizionario difensivo temporaneo.
-        return {
-            "raft_capacity": 8,
-            "van_seats": 9,
-            "total_vans": 2,
+        """Legge le variabili dinamiche dal DB EAV e converte in interi in modo difensivo."""
+        settings = {
+            "raft_capacity": 8,  # Fallback di sicurezza
+            "van_total_seats": 9,
+            "van_driver_seats": 1,
+            "van_guide_seats": 1,
         }
+        
+        rows = db.query(SystemSettingDB).all()
+        for row in rows:
+            try:
+                settings[row.key] = int(row.value)
+            except ValueError:
+                pass
+        
+        # Calcolo dei sedili netti vendibili
+        settings["van_net_seats"] = max(1, settings["van_total_seats"] - settings["van_driver_seats"] - settings["van_guide_seats"])
+        return settings
 
     @staticmethod
     def _parse_workflow_footprint(activity: ActivityDB) -> dict:
@@ -58,7 +59,6 @@ class AvailabilityEngine:
         if isinstance(workflow_schema, str):
             try:
                 schema_data = json.loads(workflow_schema)
-                # Gestione stringhe double-escaped
                 if isinstance(schema_data, str):
                     schema_data = json.loads(schema_data)
             except Exception:
@@ -77,7 +77,6 @@ class AvailabilityEngine:
     @staticmethod
     def _build_resource_timeline(ride_datetime: datetime, flows: list) -> list:
         """Scorre i flows e i blocks per calcolare l'assorbimento logistico (Two-Pass BPMN parser)."""
-        # Pass 1: Trova la durata massima assoluta (Orizzonte degli eventi dell'attività)
         max_duration_min = 0
         for flow in flows:
             flow_duration = sum(
@@ -91,7 +90,6 @@ class AvailabilityEngine:
         ride_end_datetime = ride_datetime + timedelta(minutes=max_duration_min)
         timeline = []
 
-        # Pass 2: Costruisci la timeline assoluta
         for flow in flows:
             cursor = ride_datetime
             end_cursor = ride_end_datetime
@@ -99,7 +97,6 @@ class AvailabilityEngine:
             start_blocks = [b for b in flow.get("blocks", []) if b.get("anchor", "start") == "start"]
             end_blocks = [b for b in flow.get("blocks", []) if b.get("anchor", "start") == "end"]
             
-            # I blocchi start avanzano nel tempo
             for block in start_blocks:
                 duration_min = block.get("duration_min", 0)
                 block_start = cursor
@@ -113,7 +110,6 @@ class AvailabilityEngine:
                     "block_code": block.get("code", "")
                 })
                 
-            # I blocchi end arretrano dal fondo (reversed per concatenarli correttamente)
             for block in reversed(end_blocks):
                 duration_min = block.get("duration_min", 0)
                 block_end = end_cursor
@@ -130,13 +126,15 @@ class AvailabilityEngine:
         return timeline
 
     @staticmethod
-    def _evaluate_ride_capacity(target_ride_id: Any, rides_data: dict, pool_rafts: int, pool_guides: int, pool_vans: int) -> dict:
+    def _evaluate_ride_capacity(target_ride_id: Any, rides_data: dict, pool_rafts: int, pool_guides: int, pool_vans: int, settings: dict) -> dict:
         """
-        Motore di Intersezione (Time-Array Slicer): calcola i colli di bottiglia sovrapponendo i consumi al minuto.
+        Motore di Intersezione (Time-Array Slicer): calcola i colli di bottiglia applicando la "Regola del Safety Kayak" e l'Eccezione di Sarre.
         """
         usage_rafts = [0] * 1440
         usage_guides = [0] * 1440
         usage_vans = [0] * 1440
+        
+        van_net_seats = settings.get("van_net_seats", 7)
 
         # Costruisci l'assorbimento degli ALTRI
         for ride_id, data in rides_data.items():
@@ -144,11 +142,15 @@ class AvailabilityEngine:
                 continue
             
             needed_boats = data["needed_boats"]
+            
+            # 🔴 REGOLA DEL SAFETY KAYAK: Il numero di guide è il massimo tra il minimo richiesto (Tributo) e i gommoni necessari.
+            guides_needed = max(data["min_guides_absolute"], needed_boats) if needed_boats > 0 else 0
+            vans_needed = math.ceil(data["booked_pax"] / van_net_seats) if data["requires_van"] and data["booked_pax"] > 0 else 0
+            
             for block in data["timeline"]:
                 start_m = int(block["start"].hour * 60 + block["start"].minute)
                 end_m = int(block["end"].hour * 60 + block["end"].minute)
                 
-                # Clamp per evitare index out of bounds
                 start_m = max(0, min(1439, start_m))
                 end_m = max(0, min(1440, end_m))
                 
@@ -161,14 +163,20 @@ class AvailabilityEngine:
                     if has_raft:
                         usage_rafts[m] += needed_boats
                     if has_guide:
-                        usage_guides[m] += needed_boats
+                        usage_guides[m] += guides_needed
                     if has_van:
-                        usage_vans[m] += needed_boats
+                        usage_vans[m] += vans_needed
 
         # Analisi dei colli di bottiglia del TARGET (Sweep)
         target_data = rides_data[target_ride_id]
         max_boats_for_target = 999
         yield_warning = False
+        
+        target_min_guides_abs = target_data["min_guides_absolute"]
+        target_requires_van = target_data["requires_van"]
+        
+        # Quanti furgoni fisici ci servirebbero se vendessimo 1 posto aggiuntivo?
+        target_vans_needed = math.ceil((target_data["booked_pax"] + 1) / van_net_seats) if target_requires_van else 0
 
         for block in target_data["timeline"]:
             start_m = int(block["start"].hour * 60 + block["start"].minute)
@@ -187,11 +195,20 @@ class AvailabilityEngine:
                     available = pool_rafts - usage_rafts[m]
                     max_boats_for_target = min(max_boats_for_target, available)
                 if has_guide:
-                    available = pool_guides - usage_guides[m]
-                    max_boats_for_target = min(max_boats_for_target, available)
+                    available_guides = pool_guides - usage_guides[m]
+                    # 🔴 CALCOLO INVERSO DELLA REGOLA DEL SAFETY KAYAK
+                    # Se le guide disponibili sono inferiori alla soglia minima di sicurezza (es. 2) per far partire l'attività, 0 barche.
+                    # Altrimenti, una volta pagato il tributo, il numero massimo di barche che possiamo fare è esattamente pari alle guide.
+                    if available_guides < target_min_guides_abs:
+                        max_boats_from_guides = 0
+                    else:
+                        max_boats_from_guides = available_guides
+                        
+                    max_boats_for_target = min(max_boats_for_target, max_boats_from_guides)
                 if has_van:
-                    available = pool_vans - usage_vans[m]
-                    if available < 1:
+                    available_vans = pool_vans - usage_vans[m]
+                    # Eccezione di Sarre: Se manca il mezzo scatta il loop (Semaforo Giallo)
+                    if available_vans < target_vans_needed:
                         yield_warning = True
 
         return {
@@ -211,9 +228,8 @@ class AvailabilityEngine:
         # Il Fondo del Sacco Globale all'alba
         pool_rafts = AvailabilityEngine._count_available_rafts(db, date_str)
         pool_guides = AvailabilityEngine._count_active_guides(db, target_date, date_str)
-        pool_vans = settings.get("total_vans", 2)
+        pool_vans = AvailabilityEngine._count_available_vans(db, date_str)
 
-        # ═══ Carica ride della data ═══
         rides = (
             db.query(DailyRideDB)
             .options(
@@ -243,6 +259,10 @@ class AvailabilityEngine:
 
             footprint = AvailabilityEngine._parse_workflow_footprint(activity)
             timeline = AvailabilityEngine._build_resource_timeline(T, footprint.get("flows", []))
+            
+            logistics = footprint.get("logistics", {})
+            min_guides_absolute = int(logistics.get("min_guides", 1))
+            requires_van = bool(logistics.get("requires_van", False))
 
             rides_data[ride.id] = {
                 "activity": activity,
@@ -250,6 +270,8 @@ class AvailabilityEngine:
                 "booked_pax": booked_pax,
                 "needed_boats": needed_boats,
                 "timeline": timeline,
+                "min_guides_absolute": min_guides_absolute,
+                "requires_van": requires_van,
             }
 
         # ─── Il Semaforo Asimmetrico (Censimento pass 2) ───
@@ -258,7 +280,7 @@ class AvailabilityEngine:
             booked_pax = data["booked_pax"]
 
             eval_data = AvailabilityEngine._evaluate_ride_capacity(
-                ride_id, rides_data, pool_rafts, pool_guides, pool_vans
+                ride_id, rides_data, pool_rafts, pool_guides, pool_vans, settings
             )
 
             total_capacity = eval_data["max_boats_for_target"] * raft_capacity
@@ -288,45 +310,51 @@ class AvailabilityEngine:
     # ─── HELPER: Conteggio Gommoni disponibili ───
     @staticmethod
     def _count_available_rafts(db: Session, date_str: str) -> int:
-        """Somma total_quantity di tutti i RAFT attivi, meno eccezioni assenza."""
         fleets = db.query(FleetDB).filter(
             FleetDB.category == "RAFT",
-            FleetDB.is_active == True,  # noqa: E712
+            FleetDB.is_active == True,
         ).all()
-
         total = sum(f.total_quantity for f in fleets)
-
-        # Sottrai eccezioni flotta per questa data
         for fleet in fleets:
             exceptions = db.query(ResourceExceptionDB).filter(
                 ResourceExceptionDB.resource_id == fleet.id,
                 ResourceExceptionDB.resource_type == "FLEET",
-                ResourceExceptionDB.is_available == False,  # noqa: E712
+                ResourceExceptionDB.is_available == False,
             ).all()
             for exc in exceptions:
                 if date_str in (exc.dates or []):
-                    # Rimuovi un'unità per eccezione (es. guasto)
                     total -= 1
+        return max(0, total)
 
+    # ─── HELPER: Conteggio Furgoni disponibili ───
+    @staticmethod
+    def _count_available_vans(db: Session, date_str: str) -> int:
+        fleets = db.query(FleetDB).filter(
+            FleetDB.category == "VAN",
+            FleetDB.is_active == True,
+        ).all()
+        total = sum(f.total_quantity for f in fleets)
+        for fleet in fleets:
+            exceptions = db.query(ResourceExceptionDB).filter(
+                ResourceExceptionDB.resource_id == fleet.id,
+                ResourceExceptionDB.resource_type == "FLEET",
+                ResourceExceptionDB.is_available == False,
+            ).all()
+            for exc in exceptions:
+                if date_str in (exc.dates or []):
+                    total -= 1
         return max(0, total)
 
     # ─── HELPER: Conteggio Guide attive ───
     @staticmethod
     def _count_active_guides(db: Session, target_date: date, date_str: str) -> int:
-        """
-        Guide disponibili:
-        - FISSI con is_guide=True + contratto valido per la data + no eccezioni assenza
-        - EXTRA con is_guide=True + eccezione presenza per la data
-        """
         all_guides = db.query(StaffDB).filter(
-            StaffDB.is_guide == True,  # noqa: E712
-            StaffDB.is_active == True,  # noqa: E712
+            StaffDB.is_guide == True,
+            StaffDB.is_active == True,
         ).all()
-
         count = 0
         for guide in all_guides:
             if guide.contract_type == "FISSO":
-                # Verifica se la data cade in un periodo contrattuale
                 in_contract = False
                 for cp in (guide.contract_periods or []):
                     cp_start = date.fromisoformat(cp["start"])
@@ -334,33 +362,18 @@ class AvailabilityEngine:
                     if cp_start <= target_date <= cp_end:
                         in_contract = True
                         break
-                if not in_contract:
+                if not in_contract: continue
+                if AvailabilityEngine._has_exception(db, guide.id, "STAFF", date_str, is_available=False):
                     continue
-
-                # Verifica che non abbia eccezione assenza
-                has_absence = AvailabilityEngine._has_exception(
-                    db, guide.id, "STAFF", date_str, is_available=False
-                )
-                if has_absence:
-                    continue
-
                 count += 1
-
             elif guide.contract_type == "EXTRA":
-                # Extra: presente SOLO se ha eccezione presenza
-                has_presence = AvailabilityEngine._has_exception(
-                    db, guide.id, "STAFF", date_str, is_available=True
-                )
-                if has_presence:
+                if AvailabilityEngine._has_exception(db, guide.id, "STAFF", date_str, is_available=True):
                     count += 1
-
         return count
 
     # ─── HELPER: Check eccezione ───
     @staticmethod
-    def _has_exception(db: Session, resource_id: str, resource_type: str,
-                       date_str: str, is_available: bool) -> bool:
-        """Controlla se esiste un'eccezione per questa risorsa in questa data."""
+    def _has_exception(db: Session, resource_id: str, resource_type: str, date_str: str, is_available: bool) -> bool:
         exceptions = db.query(ResourceExceptionDB).filter(
             ResourceExceptionDB.resource_id == resource_id,
             ResourceExceptionDB.resource_type == resource_type,
@@ -374,11 +387,9 @@ class AvailabilityEngine:
     # ─── HELPER: Booked pax per ride ───
     @staticmethod
     def _calc_booked_pax(ride: DailyRideDB, raft_capacity: int) -> int:
-        """Calcola posti prenotati contando ordini validi."""
         pax = 0
         for o in ride.orders:
-            if o.order_status not in COUNTING_STATUSES:
-                continue
+            if o.order_status not in COUNTING_STATUSES: continue
             if o.is_exclusive_raft:
                 pax += math.ceil(o.total_pax / raft_capacity) * raft_capacity
             else:
@@ -388,22 +399,18 @@ class AvailabilityEngine:
     # ─── HELPER: Parametro effettivo (override SubPeriod o base) ───
     @staticmethod
     def _get_effective_bool(activity: ActivityDB, field: str, target_date: date) -> bool:
-        """Ritorna il valore booleano effettivo, con override da SubPeriod se presente."""
         date_str = target_date.strftime("%Y-%m-%d")
         for sp in (activity.sub_periods or []):
             if date_str in (sp.dates or []):
                 override_val = getattr(sp, field, None)
-                if override_val is not None:
-                    return override_val
+                if override_val is not None: return override_val
         return getattr(activity, field, False)
 
     @staticmethod
     def _get_effective_int(activity: ActivityDB, field: str, target_date: date) -> int:
-        """Ritorna il valore intero effettivo, con override da SubPeriod se presente."""
         date_str = target_date.strftime("%Y-%m-%d")
         for sp in (activity.sub_periods or []):
             if date_str in (sp.dates or []):
                 override_val = getattr(sp, field, None)
-                if override_val is not None:
-                    return override_val
+                if override_val is not None: return override_val
         return getattr(activity, field, 0) or 0
