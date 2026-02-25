@@ -368,6 +368,10 @@ def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
         )
 
     booked_pax = calculate_booked_pax(ride)
+    
+    # Calcolo availability specifica per questo turno
+    avail_map = AvailabilityEngine.calculate_availability(db, ride.ride_date)
+    avail = avail_map.get(ride.id, {})
 
     return DailyRideDetailResponse(
         id=ride.id,
@@ -380,6 +384,10 @@ def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
         activity_name=ride.activity.name if ride.activity else "Sconosciuta",
         color_hex=ride.activity.color_hex if ride.activity else "#9E9E9E",
         booked_pax=booked_pax,
+        total_capacity=avail.get("total_capacity", 0),
+        arr_bonus_seats=avail.get("arr_bonus_seats", 0),
+        remaining_seats=avail.get("remaining_seats", 0),
+        engine_status=avail.get("status", "VERDE"),
         orders=ride.orders,
     )
 

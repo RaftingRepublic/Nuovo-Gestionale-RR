@@ -6,6 +6,7 @@
 
 **VITTORIE CONSEGUITE (Check-point Fase 6):**
 
+- [x] **Fase 6.E.5 (River Ledger)**: Implementazione completa ARR Cascade (AD->CL->FA) e integrazione endpoint dettaglio discesa.
 - [x] **Fase 6.A (Daily Board Onesta):** Estirpato l'hardcode "16 pax" dal Calendario Operativo (`PlanningPage.vue`). Il frontend ora legge i veri `booked_pax` (dalla tabella `orders` in Supabase) e degrada onestamente l'UI se la capacità commerciale massima è ignota.
 - [x] **Fase 6.B (Crew Builder - Blueprint):** Teorizzata l'architettura relazionale orizzontale. La tabella `ride_allocations` in Supabase utilizzerà la colonna `metadata` (JSONB) per legare le tuple `[Guida + Gommone + Passeggeri]`. Vietati i select multipli generici. (Rif: `PHASE_6_B_CREW_BUILDER.md`).
 - [x] **Fase 6.D (Il Sacco Risorse & Ricettario DB):** Sventrato il Costruttore di Flussi (`SettingsPage.vue`). Il "Footprint Logistico" (es. `min_guides`, `requires_van`, `requires_trailer`) viene ora configurato visivamente e salvato nativamente nel campo JSON `workflow_schema.logistics` della tabella `activities`, aggirando le migrazioni SQL. (Rif: `PHASE_6_D_DYNAMIC_YIELD.md`).
@@ -17,7 +18,7 @@
 
 **CANTIERE ATTIVO (Obiettivo Prossima Sessione):**
 
-- [ ] **Fase 6.E.5:** Ripristino della Logica ARR (Incroci Fiume/Eredità posti vuoti tra AD/CL/FA) per il recupero dei bonus seats e aggancio definitivo dell'Availability Engine alle API FastAPI.
+- [ ] **Fase 6.E.6:** (Nuovo obiettivo da definire)
 
 ---
 

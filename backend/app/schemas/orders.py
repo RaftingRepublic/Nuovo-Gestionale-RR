@@ -118,6 +118,12 @@ class DailyRideDetailResponse(BaseModel):
     color_hex: str = "#4CAF50"
     booked_pax: int = 0
 
+    # Campi calcolati dall'AvailabilityEngine
+    total_capacity: int = 0
+    arr_bonus_seats: int = 0
+    remaining_seats: int = 0
+    engine_status: str = "VERDE"
+
     # La "Matrioska": ordini con registrazioni annidate
     orders: List[OrderWithRegistrationsResponse] = []
 
