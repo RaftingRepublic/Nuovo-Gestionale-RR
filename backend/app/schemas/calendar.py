@@ -122,8 +122,10 @@ class DailyRideResponse(BaseModel):
     booked_pax: int = 0
 
     # Campi calcolati dall'AvailabilityEngine
-    total_capacity: int = 0
-    arr_bonus_seats: int = 0
+    # --- SENSORI MOTORE PREDITTIVO V6 ---
+    total_capacity: int | None = 0
+    arr_bonus_seats: int | None = 0
+    yield_warning: bool | None = False
     remaining_seats: int = 0
     engine_status: str = "VERDE"
 

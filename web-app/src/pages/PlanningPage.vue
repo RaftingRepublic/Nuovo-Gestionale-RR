@@ -71,16 +71,42 @@
                 <q-item-section>
                   <q-item-label class="text-weight-bold">{{ slot.activity_type }}</q-item-label>
                   <q-item-label caption>
-                    <span :style="{ color: slot.color_hex, fontWeight: 'bold' }">{{ slot.status_desc }}</span>
-                    <q-icon v-if="slot.is_overridden" name="lock" size="xs" color="grey-6" class="q-ml-xs" />
+                    <div class="row items-center q-gutter-x-xs q-mt-xs">
+                       <q-icon v-if="slot.engine_status === 'ROSSO'" name="warning" color="negative" size="sm" title="Blocco: Guide o Gommoni esauriti" />
+                       <q-icon v-if="slot.engine_status === 'GIALLO'" name="local_shipping" color="warning" size="sm" title="Yield Warning: Mancano sedili furgone (Eccezione di Sarre)" />
+                       <q-icon v-if="slot.engine_status === 'VERDE'" name="check_circle" color="positive" size="sm" />
+
+                       <div class="text-caption text-weight-bold" :class="{
+                          'text-negative': slot.engine_status === 'ROSSO',
+                          'text-warning': slot.engine_status === 'GIALLO',
+                          'text-primary': slot.engine_status === 'VERDE' || !slot.engine_status
+                       }">
+                          {{ slot.engine_status === 'ROSSO' ? 'Al Completo / Blocco' : (slot.engine_status === 'GIALLO' ? 'Attenzione: Spola' : 'Disponibile') }}
+                       </div>
+                       <q-icon v-if="slot.is_overridden" name="lock" size="xs" color="grey-6" class="q-ml-xs" />
+                    </div>
                   </q-item-label>
                 </q-item-section>
               </q-item>
               <q-separator />
               <q-card-section class="q-pa-sm text-center" :class="getSlotBgClass(slot)" v-show="viewFilter === 'tutto' || viewFilter === 'discese'">
-                <span class="text-h5 text-weight-bold" :style="{ color: slot.color_hex }">{{ slot.booked_pax || 0 }}</span>
-                <span v-if="slot.total_capacity" class="text-caption text-grey-6 q-ml-xs">/ {{ slot.total_capacity }} pax</span>
-                <span v-else class="text-caption text-grey-6 q-ml-xs">pax</span>
+                <div class="column items-center justify-center q-my-md">
+                   <div class="row items-baseline">
+                      <span class="text-h3 text-weight-bold" :class="(slot.engine_status === 'ROSSO' || slot.status_code === 'C') ? 'text-negative' : 'text-primary'">
+                         {{ slot.booked_pax || 0 }}
+                      </span>
+                      <span class="text-h5 text-grey-6 q-ml-sm">
+                         / {{ slot.total_capacity !== undefined ? slot.total_capacity : '?' }}
+                      </span>
+                      <span class="text-subtitle1 text-grey-8 q-ml-sm">pax</span>
+                   </div>
+
+                   <div style="min-height: 24px;" class="q-mt-sm">
+                      <q-badge v-if="slot.arr_bonus_seats > 0" color="info" outline title="Posti ereditati dal fiume (River Ledger)">
+                         🌊 +{{ slot.arr_bonus_seats }} ARR Bonus
+                      </q-badge>
+                   </div>
+                </div>
                 <q-linear-progress v-if="slot.total_capacity" :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity)" class="q-mt-xs" rounded />
               </q-card-section>
               <!-- Badge Risorse Assegnate — Visualizzazione Individuale -->
@@ -255,6 +281,15 @@ watch(viewMode, (newMode) => {
   viewFilter.value = newMode === 'MONTH' ? 'discese' : 'tutto'
 }, { immediate: true })
 
+// WATCHER REATTIVO (Gestisce SIA il cambio data SIA il caricamento iniziale)
+watch(selectedDate, async (newDate) => {
+  if (!newDate) return
+  if (viewMode.value === 'DETAIL') {
+    console.log('[PlanningPage] Watcher selectedDate -> loadSchedule()')
+    await loadSchedule()
+  }
+}, { immediate: true })
+
 // ═══════════════════════════════════════════════════════════
 // COMPUTED
 // ═══════════════════════════════════════════════════════════
@@ -268,7 +303,6 @@ const formatSelectedDate = computed(() => {
 // LIFECYCLE
 // ═══════════════════════════════════════════════════════════
 onMounted(async () => {
-  $q.loading.show({ message: 'Inizializzazione...' })
   try {
     await store.fetchCatalogs()
     console.log('[SQLite] Attività:', store.activities.length, '| Risorse Supabase:', store.resources.length)
@@ -283,10 +317,6 @@ onMounted(async () => {
     currentMonth.value = parseInt(m)
     await updateMonthOverview(currentYear.value, currentMonth.value)
 
-    if (viewMode.value === 'DETAIL') {
-      await loadSchedule()
-    }
-
     $q.notify({ type: 'positive', message: '🔄 Sincronizzazione completata', position: 'top', timeout: 2000 })
   } catch(e) {
     console.error('Error in PlanningPage mounted', e)
@@ -297,8 +327,6 @@ onMounted(async () => {
       timeout: 0,
       actions: [{ icon: 'close', color: 'white' }]
     })
-  } finally {
-    $q.loading.hide()
   }
 })
 
@@ -306,7 +334,6 @@ onMounted(async () => {
 // CALENDAR NAVIGATION
 // ═══════════════════════════════════════════════════════════
 async function updateMonthOverview(year, month) {
-  $q.loading.show({ message: 'Aggiornamento calendario...' })
   try {
     const data = await store.fetchMonthOverview(year, month)
     monthOverview.value = Array.isArray(data) ? data : []
@@ -315,8 +342,6 @@ async function updateMonthOverview(year, month) {
     console.error(e)
     monthOverview.value = []
     $q.notify({ type: 'negative', message: 'Errore caricamento calendario' })
-  } finally {
-    $q.loading.hide()
   }
 }
 
@@ -366,12 +391,10 @@ function nextDay() {
 }
 
 async function loadSchedule() {
-  $q.loading.show({ message: 'Caricamento giornata...' })
   try {
     const d = selectedDate.value.replace(/\//g, '-')
     await store.fetchDailySchedule(d)
   } catch(e) { console.error(e); $q.notify({ type: 'negative', message: 'Errore caricamento' }) }
-  finally { $q.loading.hide() }
 }
 
 function goToBoard() {

@@ -11,6 +11,8 @@ Guide disponibili (Safety Kayak Hard Floor + eccezioni)
 Overlap temporale (barche già in acqua a quell'ora)
 Matrice ARR (River Ledger): AD→CL (60min) → FA (30min) per trasporto e consumo posti vuoti in cascata """
 
+import re
+import logging
 import math
 import json
 from datetime import date, datetime, timedelta
@@ -299,6 +301,8 @@ class AvailabilityEngine:
             # Il miracolo matematico: I posti ARR si sommano alla capienza della flotta fisica
             total_capacity = (eval_data["max_boats_for_target"] * raft_capacity) + data["arr_bonus_seats"]
             remaining_seats = total_capacity - booked_pax
+            
+            print(f"\n🛠️ [DEBUG ENGINE] Turno {activity.name}: Guide={pool_guides}, Gommoni={pool_rafts}, Carrelli={pool_vans} -> CAPACITÀ FINALE={total_capacity}\n")
 
             overbooking_limit = AvailabilityEngine._get_effective_int(activity, "overbooking_limit", target_date)
             yellow_threshold = AvailabilityEngine._get_effective_int(activity, "yellow_threshold", target_date)
@@ -324,31 +328,64 @@ class AvailabilityEngine:
     # ─── HELPER FUNCTIONS ───
     @staticmethod
     def _count_available_rafts(db: Session, date_str: str) -> int:
-        fleets = db.query(FleetDB).filter(FleetDB.category == "RAFT", FleetDB.is_active == True).all()
-        total = sum(f.total_quantity for f in fleets)
-        for fleet in fleets:
-            exceptions = db.query(ResourceExceptionDB).filter(
-                ResourceExceptionDB.resource_id == fleet.id,
-                ResourceExceptionDB.resource_type == "FLEET",
-                ResourceExceptionDB.is_available == False,
-            ).all()
-            for exc in exceptions:
-                if date_str in (exc.dates or []): total -= 1
-        return max(0, total)
+        """Patch Immortality: Mezzi fisici ignorano contratti. Solo is_active + Manutenzione."""
+        try:
+            fleets = db.query(FleetDB).filter(FleetDB.category == "RAFT", FleetDB.is_active == True).all()
+            total = 0
+            for f in fleets:
+                # FIX TRAPPOLA QUANTITÀ: Estrazione sicura del numero anche da stringhe sporche
+                raw_qty = getattr(f, "total_quantity", None)
+                quantity = 1 # Fallback garantito: 1 mezzo fisico
+                if raw_qty:
+                    match = re.search(r'\d+', str(raw_qty))
+                    if match:
+                        quantity = int(match.group())
+                
+                # Sottraiamo solo se c'è un'eccezione di NON disponibilità per questa data
+                unavail = db.query(ResourceExceptionDB).filter(
+                    ResourceExceptionDB.resource_id == str(f.id),
+                    ResourceExceptionDB.resource_type == "FLEET",
+                    ResourceExceptionDB.is_available == False
+                ).all()
+                for exc in unavail:
+                    if exc.dates and date_str in exc.dates:
+                        quantity -= 1
+                total += max(0, quantity)
+            return int(total)
+        except Exception as e:
+            logging.error(f"🔴 ERRORE ENGINE (Mezzi - RAFT): {e}")
+            print(f"🔴 ERRORE ENGINE (Mezzi - RAFT): {e}")
+            return 0
 
     @staticmethod
     def _count_available_vans(db: Session, date_str: str) -> int:
-        fleets = db.query(FleetDB).filter(FleetDB.category == "VAN", FleetDB.is_active == True).all()
-        total = sum(f.total_quantity for f in fleets)
-        for fleet in fleets:
-            exceptions = db.query(ResourceExceptionDB).filter(
-                ResourceExceptionDB.resource_id == fleet.id,
-                ResourceExceptionDB.resource_type == "FLEET",
-                ResourceExceptionDB.is_available == False,
-            ).all()
-            for exc in exceptions:
-                if date_str in (exc.dates or []): total -= 1
-        return max(0, total)
+        """Patch Immortality: Mezzi fisici ignorano contratti. Solo is_active + Manutenzione."""
+        try:
+            fleets = db.query(FleetDB).filter(FleetDB.category == "VAN", FleetDB.is_active == True).all()
+            total = 0
+            for f in fleets:
+                # FIX TRAPPOLA QUANTITÀ: Estrazione sicura del numero anche da stringhe sporche
+                raw_qty = getattr(f, "total_quantity", None)
+                quantity = 1 # Fallback garantito: 1 mezzo fisico
+                if raw_qty:
+                    match = re.search(r'\d+', str(raw_qty))
+                    if match:
+                        quantity = int(match.group())
+                
+                unavail = db.query(ResourceExceptionDB).filter(
+                    ResourceExceptionDB.resource_id == str(f.id),
+                    ResourceExceptionDB.resource_type == "FLEET",
+                    ResourceExceptionDB.is_available == False
+                ).all()
+                for exc in unavail:
+                    if exc.dates and date_str in exc.dates:
+                        quantity -= 1
+                total += max(0, quantity)
+            return int(total)
+        except Exception as e:
+            logging.error(f"🔴 ERRORE ENGINE (Mezzi - VAN): {e}")
+            print(f"🔴 ERRORE ENGINE (Mezzi - VAN): {e}")
+            return 0
 
     @staticmethod
     def _count_active_guides(db: Session, target_date: date, date_str: str) -> int:

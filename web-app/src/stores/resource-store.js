@@ -255,52 +255,81 @@ export const useResourceStore = defineStore('resource', {
       this.activityRules = this.activityRules.filter(r => r.id !== id)
     },
 
-    // --- DAILY SCHEDULE via Supabase ---
+    // --- DAILY SCHEDULE (Hydration Pattern) ---
     async fetchDailySchedule(dateStr) {
       this.loading = true
       try {
-        const { data, error } = await supabase
+        // STEP A (La Verità Fisica): Ripristino fetch Supabase con join ordini e allocazioni
+        const { data: supaRides, error } = await supabase
           .from('rides')
           .select('*, orders(*), ride_allocations(*, resources(*))')
           .eq('date', dateStr)
           .order('time')
-        if (error) console.error('[Supabase] fetchDailySchedule error (non bloccante):', error)
+        if (error) throw error
 
-        const mappedRides = (data || []).map(ride => {
-          const orders = ride.orders || []
-          const allocs = ride.ride_allocations || []
+        // STEP B (Il Motore Matematico): Fetch calcoli predittivi da FastAPI
+        const res = await api.get('/calendar/daily-rides', { params: { date: dateStr } })
+        console.log("🔴 DEBUG AVAILABILITY ENGINE - Payload API:", res.data);
+        const engineRides = res.data || []
+
+        // STEP C (L'Idratazione Client-Side): Merge Verità Fisica + Intelligenza Motore
+        const mappedRides = (supaRides || []).map(supaRide => {
+          const orders = supaRide.orders || []
+          const allocs = supaRide.ride_allocations || []
+
+          // Calcolo bookedPax reale dai registri fisici
           const bookedPax = orders.reduce((sum, o) => sum + (o.actual_pax || o.pax || 0), 0)
-          // Decorazione da SQLite (Single Source of Truth per code/color) — NO FK activities
-          const act = (this.activities || []).find(a => String(a.id) === String(ride.activity_id)) || {}
-          const cap = ride.total_capacity || act.default_capacity || null
-          const engStatus = cap ? (bookedPax >= cap ? 'ROSSO' : bookedPax >= cap * 0.75 ? 'GIALLO' : 'VERDE') : 'VERDE'
+
+          const act = (this.activities || []).find(a => String(a.id) === String(supaRide.activity_id)) || {}
+
+          // Trova i calcoli del motore predittivo (FastAPI)
+          const engineData = engineRides.find(e => String(e.id) === String(supaRide.id)) || {}
+
+          // IDRATAZIONE: Capacità dal motore o fallback a Supabase se API fallisce
+          let engineCap = engineData.total_capacity;
+          let finalCapacity = (engineCap !== null && engineCap !== undefined && !isNaN(engineCap))
+              ? Number(engineCap)
+              : Number(supaRide.total_capacity || 0);
+
+          // KILL-SWITCH LATO CLIENT (Autodifesa da Falso Verde): La Realtà batte la Predizione
+          let safeStatus = engineData.engine_status || engineData.status || 'VERDE';
+          if (bookedPax > finalCapacity) {
+              safeStatus = 'ROSSO'; // Overbooking matematico innegabile
+          } else if (finalCapacity === 0 && bookedPax > 0) {
+              safeStatus = 'ROSSO'; // Zero posti calcolati ma gente prenotata
+          } else if (finalCapacity === 0 && bookedPax === 0) {
+              safeStatus = 'GIALLO'; // Turno vuoto e senza risorse allocate
+          }
 
           return {
-            id: ride.id,
-            time: ride.time,
-            activity_type: act.name || ride.activity_type || 'Sconosciuta',
-            activity_name: act.name || ride.activity_name || 'Sconosciuta',
-            activity_id: ride.activity_id,
-            activity_code: act.code || ride.activity_code || 'RA',
-            activity_class: act.activity_class || 'RAFTING',
-            color_hex: act.color_hex || act.color || ride.color_hex || '#607d8b',
-            status: ride.status || 'Disponibile',
-            is_overridden: ride.is_overridden || false,
-            notes: ride.notes || '',
-            booked_pax: bookedPax,
-            total_capacity: cap,
-            arr_bonus_seats: 0,
-            remaining_seats: cap ? cap - bookedPax : null,
-            engine_status: engStatus,
-            cap_rafts_pax: cap,
-            cap_guides_pax: cap,
-            avail_guides: '—',
-            avail_rafts: '—',
-            avail_vans: '—',
+            ...supaRide, // Mantiene id reali, note, ecc. di Supabase
+            id: supaRide.id,
+            time: supaRide.time,
+            activity_type: supaRide.activity_name || act.name || 'Sconosciuta',
+            activity_name: supaRide.activity_name || act.name || 'Sconosciuta',
+            color_hex: supaRide.color_hex || act.color_hex || '#607d8b',
+
+            booked_pax: bookedPax, // Verità fisica prioritaria
+            // --- INIEZIONE SENSORI MOTORE PREDITTIVO V6 ---
+            total_capacity: finalCapacity,
+            arr_bonus_seats: engineData.arr_bonus_seats || 0,
+            yield_warning: engineData.yield_warning || false,
+            remaining_seats: engineData.remaining_seats !== undefined ? engineData.remaining_seats : Math.max(0, finalCapacity - bookedPax),
+
+            engine_status: safeStatus,
+            status: safeStatus, // Retrocompatibilità UI
+            status_code: safeStatus === 'ROSSO' ? 'C' : (safeStatus === 'GIALLO' ? 'B' : 'A'),
+
+            status_desc: safeStatus === 'ROSSO' ? 'Al Completo / Blocco' : (safeStatus === 'GIALLO' ? 'Attenzione: Spola / Senza Risorse' : 'Disponibile'),
             duration_hours: act.duration_hours || 2,
-            status_desc: _engineStatusDesc(engStatus),
-            assigned_staff: ride.assigned_staff || [],
-            assigned_fleet: ride.assigned_fleet || [],
+
+            // Risorse (Verità Fisica)
+            guides: allocs.filter(a => a && a.resources && a.resources.type === 'guide').map(a => a.resources),
+            drivers: allocs.filter(a => a && a.resources && a.resources.type === 'driver').map(a => a.resources),
+            rafts: allocs.filter(a => a && a.resources && a.resources.type === 'raft').map(a => a.resources),
+            vans: allocs.filter(a => a && a.resources && a.resources.type === 'van').map(a => a.resources),
+            trailers: allocs.filter(a => a && a.resources && a.resources.type === 'trailer').map(a => a.resources),
+
             orders: orders.map(o => ({
               id: o.id,
               ride_id: o.ride_id,
@@ -320,11 +349,7 @@ export const useResourceStore = defineStore('resource', {
               discount_applied: o.discount_applied || 0,
               registrations: [],
             })),
-            guides: allocs.filter(a => a && a.resources && a.resources.type === 'guide').map(a => a.resources),
-            drivers: allocs.filter(a => a && a.resources && a.resources.type === 'driver').map(a => a.resources),
-            rafts: allocs.filter(a => a && a.resources && a.resources.type === 'raft').map(a => a.resources),
-            vans: allocs.filter(a => a && a.resources && a.resources.type === 'van').map(a => a.resources),
-            trailers: allocs.filter(a => a && a.resources && a.resources.type === 'trailer').map(a => a.resources),
+
             isGhost: false,
             date: dateStr,
           }
@@ -756,9 +781,3 @@ export const useResourceStore = defineStore('resource', {
     }
   }
 })
-
-function _engineStatusDesc(engineStatus) {
-  if (engineStatus === 'ROSSO') return 'Pieno / Chiuso'
-  if (engineStatus === 'GIALLO') return 'Quasi Pieno'
-  return 'Disponibile'
-}

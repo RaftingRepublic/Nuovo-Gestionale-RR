@@ -89,10 +89,11 @@
             <div class="ride-brick-top">
               <div
                 class="ride-brick-body"
-                :style="{ backgroundColor: ride.color_hex || '#90a4ae' }"
+                :class="getRideColorClass(ride)"
+                :style="getRideBodyStyle(ride)"
               >
-                <template v-if="!ride.isGhost && ride.pax > 0">
-                  {{ ride.activity_code }}x{{ ride.pax }} | {{ formatTime(ride.time) }}
+                <template v-if="!ride.isGhost && (ride.pax > 0 || ride.booked_pax > 0)">
+                  {{ ride.activity_code }}x{{ ride.pax || ride.booked_pax }} | {{ formatTime(ride.time) }}
                 </template>
                 <template v-else>
                   {{ formatTime(ride.time) }} {{ ride.title || ride.activity_code || '—' }}
@@ -142,18 +143,18 @@
           </div>
         </div>
 
-        <!-- FOOTER: Potenza di Fuoco — badge colorati -->
+        <!-- FOOTER: Potenza di Fuoco — badge colorati (Date-Aware) -->
         <div
           v-show="viewFilter === 'staff' || viewFilter === 'tutto'"
           class="slots-footer"
         >
           <span
-            v-for="(item, idx) in dailyResourcesSummary"
+            v-for="(item, idx) in getDailyResourcesSummary(day.date)"
             :key="idx"
             class="power-badge"
             :style="getBadgeStyle(item.type)"
           >{{ item.text }}</span>
-          <span v-if="dailyResourcesSummary.length === 0" class="text-caption text-grey">—</span>
+          <span v-if="getDailyResourcesSummary(day.date).length === 0" class="text-caption text-grey">—</span>
         </div>
 
       </div>
@@ -217,27 +218,54 @@ const days = computed(() => {
    return props.monthData
 })
 
-// ── Potenza di Fuoco: riepilogo organico attivo ──
-const dailyResourcesSummary = computed(() => {
+// ── Potenza di Fuoco: riepilogo organico attivo (Date-Aware) ──
+function getDailyResourcesSummary(dateStr) {
   const summary = []
+  if (!dateStr) return summary
+
+  const targetDate = new Date(dateStr)
+  targetDate.setHours(0, 0, 0, 0)
+  const targetTime = targetDate.getTime()
+
+  // Staff filtrato per contratto attivo nella data specifica
+  const staffList = store?.staffList || []
+  const activeStaff = staffList.filter(s => {
+    if (s.is_active === 0 || s.is_active === false) return false
+
+    // Escludiamo gli EXTRA dalla potenza di fuoco di base mensile (lavorano a chiamata)
+    if (s.contract_type === 'EXTRA') return false
+
+    // Se è FISSO, controlla rigorosamente che la data cada dentro i periodi di contratto
+    if (s.contract_type === 'FISSO' && s.contract_periods && s.contract_periods.length > 0) {
+      let periods = []
+      try {
+        periods = typeof s.contract_periods === 'string' ? JSON.parse(s.contract_periods) : s.contract_periods
+      } catch { periods = [] }
+
+      return periods.some(cp => {
+        if (!cp.start || !cp.end) return false
+        const start = new Date(cp.start).getTime()
+        const end = new Date(cp.end).getTime()
+        return targetTime >= start && targetTime <= end
+      })
+    }
+    return false
+  })
 
   // — Staff per brevetto primario —
   let raf4 = 0, raf3 = 0, hyd = 0, nc = 0, nOnly = 0
-  const activeStaff = (store.staffList || []).filter(s => s.is_active !== 0 && s.is_active !== false)
   activeStaff.forEach(s => {
     let roles = []
     try {
       roles = typeof s.roles === 'string' ? JSON.parse(s.roles) : (Array.isArray(s.roles) ? s.roles : [])
     } catch { roles = [] }
 
-    // Brevetto primario (esclusione gerarchica)
     if (roles.includes('RAF4')) raf4++
     else if (roles.includes('RAF3')) raf3++
     else if (roles.includes('HYD') || roles.includes('SH')) hyd++
 
-    // Patenti (indipendenti dal brevetto)
     if (roles.includes('N') && roles.includes('C')) nc++
-    else if (roles.includes('N') && !roles.includes('C')) nOnly++
+    else if (roles.includes('N')) nOnly++
   })
 
   if (raf4) summary.push({ text: `${raf4} RAF4`, type: 'guide' })
@@ -246,22 +274,8 @@ const dailyResourcesSummary = computed(() => {
   if (nc) summary.push({ text: `${nc} NC`, type: 'driver' })
   if (nOnly) summary.push({ text: `${nOnly} N`, type: 'driver' })
 
-  // — Flotta per categoria —
-  let vans = 0, trailers = 0, rafts = 0
-  const activeFleet = (store.fleetList || []).filter(f => f.is_active !== 0 && f.is_active !== false)
-  activeFleet.forEach(f => {
-    const cat = (f.category || f.resource_type || f.type || '').toUpperCase()
-    if (cat === 'VAN') vans++
-    else if (cat === 'TRAILER') trailers++
-    else if (cat === 'RAFT') rafts++
-  })
-
-  if (vans) summary.push({ text: `${vans} FURG`, type: 'van' })
-  if (trailers) summary.push({ text: `${trailers} CARR`, type: 'trailer' })
-  if (rafts) summary.push({ text: `${rafts} GOMM`, type: 'raft' })
-
   return summary
-})
+}
 
 // ── Colori badge per categoria ──
 function getBadgeStyle(type) {
@@ -273,6 +287,56 @@ function getBadgeStyle(type) {
     trailer: { backgroundColor: '#efebe9', color: '#4e342e' },
   }
   return styles[type] || { backgroundColor: '#e0e0e0', color: '#333' }
+}
+
+// ── Classi colore per mattoncino (Priorità Motore + Kill-Switch) ──
+// RIPRISTINO SENIOR:
+// RIPRISTINO SENIOR:
+function getRideColorClass(ride) {
+  // 1. I Ghost (slot vuoti/potenziali) restano neutri e passivi
+  if (ride.isGhost) {
+    return 'bg-grey-2 text-grey-7 border-grey-3'
+  }
+
+  // 2. Controllo Staff/Base Chiusa (Logica difensiva)
+  // Se non c'è staff assegnato per la giornata, segnalalo visivamente ma elegantemente
+  const dailyStaff = typeof getDailyResourcesSummary === 'function'
+    ? getDailyResourcesSummary(ride.date)
+    : []
+  const isBaseClosed = (!dailyStaff || dailyStaff.length === 0)
+
+  // Normalizzazione status (gestisce sia codici legacy che nuovi)
+  const status = ride.engine_status || ride.status_code || ride.status
+
+  // 3. Allarmi Critici (ROSSO o Base Chiusa)
+  if (isBaseClosed || status === 'ROSSO' || status === 'C') {
+    // Sfondo rosso chiarissimo, testo rosso scuro. Molto più leggibile.
+    return 'bg-red-1 text-negative border-negative'
+  }
+
+  // 4. Warning / Loop Navette (GIALLO)
+  if (status === 'GIALLO' || status === 'B') {
+    return 'bg-orange-1 text-warning border-warning'
+  }
+
+  // 5. Turno Confermato / Normale (Fallback Supabase)
+  // Se ci sono pax paganti, è attivo.
+  const pax = ride.pax || ride.booked_pax || 0
+  if (pax > 0) {
+    return 'bg-blue-1 text-primary border-primary'
+  }
+
+  // 6. Default Assoluto: Disponibile vuoto (Bianco pulito)
+  return 'bg-white text-dark'
+}
+
+function getRideBodyStyle(ride) {
+  if (ride.isGhost) return {}
+  // Eleganza Senior: solo una sottile linea laterale col colore dell'attività
+  return {
+    borderLeft: `3px solid ${ride.color_hex || '#607d8b'}`,
+    borderRadius: '4px'
+  }
 }
 
 // ── Filtro per vista mensile ──
@@ -296,6 +360,10 @@ function getRidesForDay(day) {
 // ── Semaforo di stato ──
 function getStatusColor(ride) {
   if (ride.isGhost) return '#4CAF50'
+
+  const status = ride.engine_status || ride.status || (ride.status_code === 'C' ? 'ROSSO' : (ride.status_code === 'B' ? 'GIALLO' : 'VERDE'))
+  if (status === 'ROSSO') return '#f44336'
+  if (status === 'GIALLO') return '#FF9800'
 
   const pax = ride.pax || ride.booked_pax || 0
   if (pax === 0) return '#4CAF50'

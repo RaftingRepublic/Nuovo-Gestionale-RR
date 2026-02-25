@@ -46,10 +46,39 @@
                 </q-badge>
              </div>
 
-             <div class="row items-center justify-between q-mt-xs">
-                <div class="text-caption text-weight-medium">PAX: {{ ride.booked_pax || 0 }} / {{ ride.total_capacity || 'N/A' }}</div>
-                <q-btn outline dense size="sm" icon="edit" label="Assegna" color="primary" @click="openAssignmentPanel(ride)" />
-             </div>
+         <div class="row items-center justify-between q-mt-xs">
+            <div class="row items-center q-gutter-x-sm">
+               <q-icon
+                  v-if="ride.status === 'ROSSO'"
+                  name="warning"
+                  color="negative"
+                  size="sm"
+                  title="Blocco: Guide o Gommoni esauriti"
+               />
+               <q-icon
+                  v-if="ride.status === 'GIALLO'"
+                  name="local_shipping"
+                  color="warning"
+                  size="sm"
+                  title="Yield Warning: Mancano sedili furgone (Eccezione di Sarre)"
+               />
+               <q-icon
+                  v-if="ride.status === 'VERDE'"
+                  name="check_circle"
+                  color="positive"
+                  size="sm"
+               />
+
+               <div class="text-caption text-weight-medium">
+                  PAX: {{ ride.booked_pax ?? 0 }} / {{ ride.total_capacity ?? 0 }}
+               </div>
+
+               <q-badge v-if="ride.arr_bonus_seats > 0" color="info" outline title="Posti ereditati dal fiume">
+                  🌊 +{{ ride.arr_bonus_seats }} ARR
+               </q-badge>
+            </div>
+            <q-btn outline dense size="sm" icon="edit" label="Assegna" color="primary" @click="openAssignmentPanel(ride)" />
+         </div>
           </div>
 
           <!-- COLONNA 2: ACQUA (col-md-5) -->

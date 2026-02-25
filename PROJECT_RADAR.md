@@ -16,9 +16,14 @@
 
 - [x] **Fase 6.E.4 (Caduta dei Mock, Sensori Flotta e Ratio Logistici Reali):** Implementata l'estrazione EAV difensiva dal Pannello Variabili (calcolo posti netti dei van). Implementato sensore \_count_available_vans da FleetDB. Integrata la logica non-lineare della 'Regola del Safety Kayak' (Hard Floor Tributo) per il calcolo delle barche varabili e il blocco semaforo.
 
+- [x] **Fase 6.E.6 (Patch Immortality & Kill-Switch):** Blindata l'affidabilità del sistema. Implementata logica Date-Aware per lo staff mensile e Hard-Floor matematico lato client per prevenire falsi positivi di disponibilità. Corretto il bug del conteggio flotta (bypass contract logic).
+- [x] **Fase 6.E (Availability Engine / Dashboard):** SISTEMA COMPLETATO.
+
 **CANTIERE ATTIVO (Obiettivo Prossima Sessione):**
 
-- [ ] **Fase 6.E.6:** (Nuovo obiettivo da definire)
+- [x] **[COMPLETATO]** Cablaggio sensori V6 (Pydantic -> FastAPI -> Pinia). Hydration Leak risolto.
+- [ ] **[BLOCKER PROSSIMA SESSIONE]** Risolvere l'anomalia "Zero Assoluto" sui turni popolati. Sincronizzare e popolare l'anagrafica Staff/Flotta nel DB SQLite locale per permettere all'Availability Engine di calcolare correttamente gli Hard Limits.
+- [ ] **Fase 6.F (CRM & River Ledger Evolution):** Implementazione Modulo Cassa, gestione anagrafiche avanzate e tracciamento pagamenti integrato nel River Ledger.
 
 ---
 
