@@ -94,7 +94,7 @@
               <q-item-section>
                 <q-item-label class="text-weight-bold text-body1">{{ order.customer_name || 'Senza nome' }}</q-item-label>
                 <q-item-label caption>
-                  <span class="text-weight-medium">{{ getEffectivePax(order) }} pax</span> · € {{ order.price_total?.toFixed(2) }}
+                  <span class="text-weight-medium">{{ getEffectivePax(order) }} pax</span> · € {{ order.price_total?.toFixed(2) || '0.00' }}
                   <span v-if="order.discount_applied > 0" class="text-green-8"> (-{{ (order.discount_applied * 100).toFixed(0) }}%)</span>
                 </q-item-label>
               </q-item-section>
@@ -172,9 +172,9 @@
                   <div class="row q-col-gutter-sm items-center wrap">
                     <div class="col-3">
                       <q-input
-                        :model-value="order._actual_pax != null ? order._actual_pax : order.total_pax"
+                        :model-value="order._actual_pax != null ? order._actual_pax : (order.pax || order.total_pax)"
                         @update:model-value="val => onPaxChange(order, Number(val))"
-                        type="number" :label="'Pax effettivi (di ' + order.total_pax + ')'" dense outlined class="bg-white"
+                        type="number" :label="'Pax effettivi (di ' + (order.pax || order.total_pax || 0) + ')'" dense outlined class="bg-white"
                         hide-bottom-space
                       />
                     </div>
@@ -199,28 +199,37 @@
                 <div>
                   <div class="text-subtitle2 text-blue-grey-8 q-mb-sm"><q-icon name="account_balance" class="q-mr-xs" />Libro Mastro — Transazioni</div>
                   <div class="row q-gutter-sm q-mb-md wrap items-center">
-                    <q-chip color="blue-1" text-color="blue-9" icon="euro" size="md" class="text-weight-bold">Totale: € {{ order.price_total?.toFixed(2) || '0.00' }}</q-chip>
-                    <q-chip color="green-1" text-color="green-9" icon="check_circle" size="md" class="text-weight-bold">Pagato: € {{ (order.paid_amount || 0).toFixed(2) }}</q-chip>
-                    <q-chip :color="(order.price_total || 0) - (order.paid_amount || 0) > 0 ? 'red-1' : 'grey-2'" :text-color="(order.price_total || 0) - (order.paid_amount || 0) > 0 ? 'red-9' : 'grey-6'" icon="pending" size="md" class="text-weight-bold">Rimane: € {{ ((order.price_total || 0) - (order.paid_amount || 0)).toFixed(2) }}</q-chip>
-                    <span v-if="(order.price_total || 0) - (order.paid_amount || 0) > 0" class="text-caption text-grey-8 q-ml-sm">
-                      (€ {{ (((order.price_total || 0) - (order.paid_amount || 0)) / (order._actual_pax || order.total_pax || 1)).toFixed(2) }} / pax)
+                    <q-chip color="blue-1" text-color="blue-9" icon="euro" size="md" class="text-weight-bold">Totale: € {{ (order.price_total || 0).toFixed(2) }}</q-chip>
+                    <q-chip color="green-1" text-color="green-9" icon="check_circle" size="md" class="text-weight-bold">Pagato: € {{ (order.price_paid || 0).toFixed(2) }}</q-chip>
+                    <q-chip :color="(order.price_total || 0) - (order.price_paid || 0) > 0 ? 'red-1' : 'grey-2'" :text-color="(order.price_total || 0) - (order.price_paid || 0) > 0 ? 'red-9' : 'grey-6'" icon="pending" size="md" class="text-weight-bold">Rimane: € {{ ((order.price_total || 0) - (order.price_paid || 0)).toFixed(2) }}</q-chip>
+                    <span v-if="(order.price_total || 0) - (order.price_paid || 0) > 0" class="text-caption text-grey-8 q-ml-sm">
+                      (€ {{ (((order.price_total || 0) - (order.price_paid || 0)) / (order._actual_pax || order.pax || order.total_pax || 1)).toFixed(2) }} / pax)
                     </span>
                   </div>
-                  <q-list bordered dense class="rounded-borders bg-white q-mb-sm" v-if="order.paid_amount > 0">
+                  <!-- Transazioni reali (iterazione dinamica dal backend) -->
+                  <q-list bordered dense class="rounded-borders bg-white q-mb-sm" v-if="order.transactions && order.transactions.length > 0">
+                    <q-item dense v-for="trx in order.transactions" :key="trx.id">
+                      <q-item-section avatar><q-icon name="payment" :color="trx.method === 'CASH' ? 'green' : (trx.method === 'SUMUP' ? 'blue' : 'orange')" /></q-item-section>
+                      <q-item-section>€ {{ Number(trx.amount).toFixed(2) }} — {{ trx.method }} <span class="text-caption text-grey-6">{{ trx.type }}</span></q-item-section>
+                      <q-item-section side class="text-caption text-grey">{{ trx.note || '' }}</q-item-section>
+                    </q-item>
+                  </q-list>
+                  <!-- Fallback difensivo: se non ci sono transactions ma price_paid > 0 -->
+                  <q-list bordered dense class="rounded-borders bg-white q-mb-sm" v-else-if="(order.price_paid || 0) > 0">
                     <q-item dense>
                       <q-item-section avatar><q-icon name="payment" color="green" /></q-item-section>
-                      <q-item-section>€ {{ (order.paid_amount || 0).toFixed(2) }} — SUMUP</q-item-section>
-                      <q-item-section side class="text-caption text-grey">{{ localRide?.ride_date }}</q-item-section>
+                      <q-item-section>€ {{ (order.price_paid || 0).toFixed(2) }} — Somma Versata</q-item-section>
                     </q-item>
                   </q-list>
                   <div v-else class="text-caption text-grey-4 q-mb-sm">Nessun pagamento registrato</div>
-                  <div class="row q-col-gutter-sm items-end wrap">
-                    <div class="col-3"><q-input model-value="" label="Euro (€)" dense outlined type="number" prefix="€" class="bg-white" /></div>
+                  <!-- Form PAGA — cablato con v-model e submitPayment -->
+                  <div class="row q-col-gutter-sm items-end wrap q-mt-sm">
+                    <div class="col-3"><q-input v-model.number="getPaymentDraft(order.id).amount" label="Euro (€)" dense outlined type="number" prefix="€" class="bg-white" /></div>
                     <div class="col-3">
-                      <q-select model-value="CASH" :options="['CASH', 'SUMUP', 'BONIFICO', 'ALTRO']" label="Metodo" dense outlined class="bg-white" />
+                      <q-select v-model="getPaymentDraft(order.id).method" :options="['CASH', 'SUMUP', 'BONIFICO', 'ALTRO']" label="Metodo" dense outlined class="bg-white" />
                     </div>
-                    <div class="col-3"><q-input model-value="" label="Note" dense outlined class="bg-white" /></div>
-                    <div class="col-auto"><q-btn unelevated color="green-8" icon="add" label="PAGA" size="sm" /></div>
+                    <div class="col-3"><q-input v-model="getPaymentDraft(order.id).note" label="Note" dense outlined class="bg-white" /></div>
+                    <div class="col-auto"><q-btn unelevated color="green-8" icon="add" label="PAGA" size="sm" @click="submitPayment(order)" :disable="!getPaymentDraft(order.id).amount || getPaymentDraft(order.id).amount <= 0" /></div>
                   </div>
                 </div>
 
@@ -424,11 +433,66 @@ function onBookingSuccess () {
     emit('refresh')
 }
 
-// Ride state locale
-const localRide = ref(null)
+// ═══ RIDE STATE — Singola Fonte di Verità reattiva (Pinia) ═══
 const rideLoading = ref(false)
 const currentSlotId = ref(null)
 const currentSlotData = computed(() => store.dailySchedule.find(s => s.id === currentSlotId.value) || null)
+
+// Lookup prezzo dal catalogo SQLite (store.activities)
+function _getUnitPrice (activityId) {
+  const act = (store.activities || []).find(a => String(a.id) === String(activityId))
+  return act ? (act.price || 0) : 0
+}
+
+// Computed corazzata: pesca SEMPRE la versione fresca da Pinia + prezzo reale
+const localRide = computed(() => {
+  if (!props.ride) return null
+
+  let baseRide = props.ride
+
+  // Se il ride ha un ID valido, cerca la versione fresca nello store
+  if (props.ride.id && store.dailySchedule.length > 0) {
+    // Cerca prima per ID diretto
+    let freshRide = store.dailySchedule.find(r => r.id === props.ride.id)
+
+    // Fallback: cerca per Firma Operativa (activity + time) — gestisce ghost→real ID change
+    if (!freshRide) {
+      const targetName = props.ride.activity_type || props.ride.activity_name || ''
+      const targetTime = String(props.ride.time || '').substring(0, 5)
+      if (targetName && targetTime) {
+        freshRide = store.dailySchedule.find(r =>
+          (r.activity_type === targetName || r.activity_name === targetName) &&
+          String(r.time || '').substring(0, 5) === targetTime
+        )
+      }
+    }
+
+    if (freshRide) baseRide = freshRide
+  }
+
+  return {
+    id: baseRide.id,
+    activity_id: baseRide.activity_id || '',
+    activity_name: baseRide.activity_type || baseRide.activity_name || baseRide.title || 'Turno',
+    ride_date: baseRide.ride_date || props.ride?.ride_date || '',
+    ride_time: baseRide.time || '',
+    status: baseRide.engine_status || baseRide.status || 'VERDE',
+    booked_pax: baseRide.booked_pax || 0,
+    max_pax: baseRide.total_capacity || 0,
+    total_capacity: baseRide.total_capacity,
+    remaining_seats: baseRide.remaining_seats,
+    arr_bonus_seats: baseRide.arr_bonus_seats || 0,
+    orders: baseRide.orders || [],
+    assigned_staff: baseRide.assigned_staff || [],
+    assigned_fleet: baseRide.assigned_fleet || [],
+    color_hex: baseRide.color_hex || '#1976D2',
+    notes: baseRide.notes || '',
+    is_overridden: baseRide.is_overridden || false,
+    _unit_price: _getUnitPrice(baseRide.activity_id),
+    manager: baseRide.manager || baseRide.gestore || '',
+    activity_type: baseRide.activity_type || '',
+  }
+})
 
 // Header dinamico modale
 const rideHeaderBgClass = computed(() => {
@@ -443,6 +507,43 @@ const rideHeaderBgClass = computed(() => {
 // Order State
 const selectedOrder = ref(null)
 const confirmingOrderId = ref(null)
+
+// ═══ LIBRO MASTRO — Draft Pagamento Reattivo ═══
+const paymentDrafts = ref({})
+
+function getPaymentDraft (orderId) {
+  if (!paymentDrafts.value[orderId]) {
+    paymentDrafts.value[orderId] = { amount: null, method: 'CASH', note: '' }
+  }
+  return paymentDrafts.value[orderId]
+}
+
+async function submitPayment (order) {
+  const draft = getPaymentDraft(order.id)
+  if (!draft.amount || Number(draft.amount) <= 0) {
+    $q.notify({ type: 'warning', message: 'Inserisci un importo valido' })
+    return
+  }
+  try {
+    const payload = {
+      amount: Number(draft.amount),
+      method: draft.method,
+      type: 'SALDO',
+      note: draft.note || null
+    }
+    await api.post(`/orders/${order.id}/transactions`, payload)
+    $q.notify({ type: 'positive', message: `✅ Pagamento di €${draft.amount} registrato`, icon: 'check_circle' })
+    // Reset draft
+    draft.amount = null
+    draft.note = ''
+    // Rigenera la modale e il calendario
+    emit('refresh')
+  } catch (err) {
+    console.error('[submitPayment] Errore:', err)
+    const detail = err?.response?.data?.detail || err.message || 'Errore comunicazione server'
+    $q.notify({ type: 'negative', message: typeof detail === 'object' ? JSON.stringify(detail) : detail })
+  }
+}
 
 // Participants Dialog State
 const showParticipantsDialog = ref(false)
@@ -471,35 +572,13 @@ const orderStatusOptions = [
 
 
 
-// Pre-popola quando il dialog si apre
+// Pre-popola currentSlotId e resetta tab quando il dialog si apre
 watch(() => props.ride, (slot) => {
   if (!slot) return
   currentSlotId.value = slot.id
   activeTab.value = 'existing'
-
-  const localSlot = store.dailySchedule.find(r => r.id === slot.id) || slot
-  localRide.value = {
-    id: localSlot.id,
-    activity_id: localSlot.activity_id || slot.activity_id || '',
-    activity_name: localSlot.activity_type || localSlot.title || 'Turno',
-    ride_date: localSlot.ride_date || '',
-    ride_time: localSlot.time || '',
-    status: localSlot.engine_status || localSlot.status || 'VERDE',
-    booked_pax: localSlot.booked_pax || 0,
-    max_pax: localSlot.total_capacity || 16,
-    orders: localSlot.orders || [],
-    assigned_staff: localSlot.assigned_staff || [],
-    assigned_fleet: localSlot.assigned_fleet || [],
-    color_hex: localSlot.color_hex || '#1976D2',
-    notes: localSlot.notes || '',
-    is_overridden: localSlot.is_overridden || false,
-    _unit_price: localSlot.price || localSlot._unit_price || slot.price || 0,
-    // Preserve extra fields for business rules
-    manager: localSlot.manager || localSlot.gestore || '',
-    activity_type: localSlot.activity_type || '',
-  }
   rideLoading.value = false
-}, { deep: false })
+})
 
 // ═══════════════════════════════════════════════════════════
 // Override / Semaforo — Supabase diretto
@@ -522,10 +601,7 @@ async function setOverride(status) {
       localSlot.engine_status = status === 'A' ? 'VERDE' : status === 'B' ? 'GIALLO' : status === 'C' ? 'ROSSO' : 'BLU'
       localSlot.status_desc = status === 'A' ? 'Disponibile' : status === 'B' ? 'Quasi Pieno' : status === 'C' ? 'Pieno / Chiuso' : 'Fuori Stagione'
     }
-    if (localRide.value && localRide.value.id === rideId) {
-      localRide.value.status = status
-      localRide.value.is_overridden = true
-    }
+    // localRide è un computed: le mutazioni avvengono sullo store (sopra) e si propagano automaticamente
 
     $q.notify({ type: 'positive', message: 'Stato forzato ☁️' })
     emit('refresh')
@@ -555,9 +631,7 @@ async function clearOverride() {
       localSlot.status_desc = pax >= max ? 'Pieno / Chiuso' : pax >= max * 0.75 ? 'Quasi Pieno' : 'Disponibile'
       localSlot.status = localSlot.engine_status === 'ROSSO' ? 'C' : localSlot.engine_status === 'GIALLO' ? 'B' : 'A'
     }
-    if (localRide.value && localRide.value.id === rideId) {
-      localRide.value.is_overridden = false
-    }
+    // localRide è un computed: le mutazioni avvengono sullo store (sopra) e si propagano automaticamente
 
     $q.notify({ type: 'positive', message: 'Semaforo automatico ripristinato ☁️' })
     emit('refresh')
@@ -768,7 +842,7 @@ function deleteCustomRideLocally() {
     persistent: true,
   }).onOk(() => {
     isOpen.value = false
-    localRide.value = null
+    // localRide è un computed: la chiusura del dialog (isOpen=false) + splice dallo store sono sufficienti
     const idx = store.dailySchedule.findIndex(r => r.id === ride.id)
     if (idx !== -1) store.dailySchedule.splice(idx, 1)
     $q.notify({ type: 'positive', message: 'Turno extra eliminato', icon: 'delete' })

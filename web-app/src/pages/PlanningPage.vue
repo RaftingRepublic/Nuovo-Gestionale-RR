@@ -507,7 +507,21 @@ async function onFiraftRegistered() {
 async function onRideDialogRefresh() {
   await reloadCalendarData()
   if (showRideDialog.value && rideDialogSlot.value) {
-    const freshSlot = store.dailySchedule.find(s => s.id === rideDialogSlot.value.id)
+    // Cerca per ID diretto
+    let freshSlot = store.dailySchedule.find(s => s.id === rideDialogSlot.value.id)
+
+    // Fallback: Firma Operativa (activity + time) — gestisce ghost→real ID change post-booking
+    if (!freshSlot) {
+      const targetName = rideDialogSlot.value.activity_type || rideDialogSlot.value.activity_name || ''
+      const targetTime = String(rideDialogSlot.value.time || '').substring(0, 5)
+      if (targetName && targetTime) {
+        freshSlot = store.dailySchedule.find(s =>
+          (s.activity_type === targetName || s.activity_name === targetName) &&
+          String(s.time || '').substring(0, 5) === targetTime
+        )
+      }
+    }
+
     if (freshSlot) rideDialogSlot.value = freshSlot
   }
 }

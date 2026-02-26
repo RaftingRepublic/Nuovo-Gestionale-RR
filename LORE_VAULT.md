@@ -74,6 +74,10 @@ Ghost Slots Dinamici: Creazione di slot virtuali nel calendario basati sui defau
 
 ☠️ Le vecchie interfacce "Segreteria (POS)", "Timeline Operativa" e "Lavagna Operativa" sono fossili geologici. Dichiarate morte e rimosse dal frontend visivo (sidebar). Le loro rotte possono restare per backward-compatibility ma NON devono avere alcuna voce nel menù.
 
+☠️ TabOrdiniEsistenti Mockup (RideDialog.vue): Incenerito l'HTML statico del Libro Mastro. I campi `paid_amount` e `total_pax` (dialetto ORM locale SQLAlchemy) sono morti e sepolti, sostituiti definitivamente da `price_paid` e `pax` (chiavi fisiche Supabase). La lista transazioni è ora iterata dinamicamente da `order.transactions[]`, non più una riga hardcoded "SUMUP". Il bottone PAGA è vivo con `v-model` + `submitPayment()`.
+
+☠️ Dati Transazionali in SQLite: Dichiarati obsoleti per i dati operativi. La cassa e la segreteria (Ordini e Transazioni) DEVONO vivere solo nel cloud (Supabase). SQLite resta ad uso esclusivo del Motore Predittivo (Availability Engine, Yield Engine) e del Catalogo BPMN (activities, workflow_schema, staff, fleet). Il router `desk.py` che scrive ordini in SQLite è marcato per sventramento (CODICE ROSSO).
+
 \[ARCHITETTURA UX E DEBITO GEOLOGICO]
 
 Il Re Supremo è il Calendario: La direzione operativa ha decretato che l'unica interfaccia valida per unificare Segreteria e Logistica è il Calendario Operativo.

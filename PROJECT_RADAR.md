@@ -27,8 +27,14 @@
 - [x] TATTICA IMMINENTE 1: Amputati i ruderi geologici (Segreteria POS, Timeline, Lavagna) dal menù laterale frontend. Le rotte restano per backward-compatibility.
 - [x] TATTICA IMMINENTE 2: Creato DeskBookingForm.vue (estratto da DeskDashboardPage). Innestato a Tabs nella RideDialog.vue (Omni-Board). CRM Silente attivo via POST /orders/desk. BUILD VERIFICATA ✅.
 - [x] Emorragia Supabase "column orders.ride_date does not exist" curata con Inner Join PostgREST in calendar.py.
-- [ ] Fix Omni-Board 1: Passaggio corretto del Prezzo Unitario (unitPrice) per il calcolo del Totale nel Ledger.
-- [ ] Fix Omni-Board 2: Reattività dell'evento emit('refresh') per mostrare immediatamente il nuovo ordine nel tab Ordini Esistenti.
+- [x] Fix Omni-Board 1: Passaggio corretto del Prezzo Unitario (unitPrice) per il calcolo del Totale nel Ledger. `localRide` convertito in `computed` reattivo con lookup `_getUnitPrice()` dal catalogo `store.activities`.
+- [x] Fix Omni-Board 2: Reattività dell'evento emit('refresh') per mostrare immediatamente il nuovo ordine nel tab Ordini Esistenti. Distrutto il watcher snapshot, innestata Firma Operativa (activity+time) per transizione ghost→real.
+- [x] Rianimazione Libro Mastro UI: Campi `paid_amount`→`price_paid`, `total_pax`→`pax` (chiavi fisiche Supabase). Lista transazioni iterata dinamicamente. Bottone PAGA cablato con `submitPayment()` → `POST /orders/{id}/transactions`.
+
+**PROSSIMI PASSI (Priorità Critica):**
+
+- [ ] **[CODICE ROSSO] RISOLUZIONE SPLIT-BRAIN DESK POS:** Sventrare il router `desk.py`. Amputare SQLAlchemy per la creazione ordini (`POST /desk`) e le transazioni (`POST /{order_id}/transactions`). Deviare il flusso per scrivere nativamente e unicamente su Supabase via REST/httpx, chiudendo il Cerchio della Morte (ordini creati con UUID-A in SQLite ma letti con UUID-B da Supabase → 404 sul pagamento).
+- [ ] Fix Allucinazione UI PlanningPage: Il denominatore delle card orario mostra la capacità TOTALE del motore (es. 48 pax) anziché quella RESIDUA. Valutare se il design voluto sia "booked / capacity" (attuale) o "booked / remaining".
 
 ---
 
