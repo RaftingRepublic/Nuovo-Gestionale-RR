@@ -17,13 +17,14 @@
 - [x] **Fase 6.E.4 (Caduta dei Mock, Sensori Flotta e Ratio Logistici Reali):** Implementata l'estrazione EAV difensiva dal Pannello Variabili (calcolo posti netti dei van). Implementato sensore \_count_available_vans da FleetDB. Integrata la logica non-lineare della 'Regola del Safety Kayak' (Hard Floor Tributo) per il calcolo delle barche varabili e il blocco semaforo.
 
 - [x] **Fase 6.E.6 (Patch Immortality & Kill-Switch):** Blindata l'affidabilità del sistema. Implementata logica Date-Aware per lo staff mensile e Hard-Floor matematico lato client per prevenire falsi positivi di disponibilità. Corretto il bug del conteggio flotta (bypass contract logic).
+- [x] **Fase 6.E.7 (Risoluzione Split-Brain & Pax Map Injection):** Disinnescato il bug critico dell'Overbooking ("Zero Assoluto") causato dall'isolamento dell'ORM locale. Implementata la "Sync Sonda" nel router FastAPI (`calendar.py`) tramite `httpx` per estrarre i veri `booked_pax` da Supabase. I dati vengono ora iniettati dinamicamente come `external_pax_map` nell'Availability Engine (Dependency Injection), costringendo il Time-Array Slicer a calcolare il Fondo del Sacco sui reali paganti e a rispettare il Teorema del Sacco sui turni paralleli.
 - [x] **Fase 6.E (Availability Engine / Dashboard):** SISTEMA COMPLETATO.
 
 **CANTIERE ATTIVO (Obiettivo Prossima Sessione):**
 
-- [x] **[COMPLETATO]** Cablaggio sensori V6 (Pydantic -> FastAPI -> Pinia). Hydration Leak risolto.
-- [ ] **[BLOCKER PROSSIMA SESSIONE]** Risolvere l'anomalia "Zero Assoluto" sui turni popolati. Sincronizzare e popolare l'anagrafica Staff/Flotta nel DB SQLite locale per permettere all'Availability Engine di calcolare correttamente gli Hard Limits.
-- [ ] **Fase 6.F (CRM & River Ledger Evolution):** Implementazione Modulo Cassa, gestione anagrafiche avanzate e tracciamento pagamenti integrato nel River Ledger.
+- [x] **[COMPLETATO]** Risolvere l'anomalia "Zero Assoluto" sui turni popolati e chiusura del Blocker architetturale Split-Brain.
+- [ ] **Fase 6.F (CRM & Modulo Cassa):** Innesco gestione anagrafiche avanzate, tracciamento pagamenti e spacca-conto nel Libro Mastro.
+- [ ] **Docs-as-Code (Lore Vault):** Consolidamento della memoria storica dell'architettura tramite file markdown root per prevenire l'amnesia stateless delle IA future.
 
 ---
 
