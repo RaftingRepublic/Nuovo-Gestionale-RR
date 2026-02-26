@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date, time, datetime
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ─── TRANSAZIONE ──────────────────────────────────────────
@@ -45,6 +45,12 @@ class DeskOrderCreate(BaseModel):
     Le transazioni vengono registrate inline per gestire pagamenti misti
     (caparra bonifico + saldo POS/Cash + Voucher).
     """
+    @field_validator('date', mode='before')
+    @classmethod
+    def fix_date_format(cls, value):
+        if isinstance(value, str):
+            return value.replace('/', '-')
+        return value
     activity_id: str
     date: date
     time: time

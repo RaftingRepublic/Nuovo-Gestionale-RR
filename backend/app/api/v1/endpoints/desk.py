@@ -16,9 +16,10 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 
 from app.db.database import get_db
-from app.models.calendar import ActivityDB, DailyRideDB, OrderDB, TransactionDB
+from app.models.calendar import ActivityDB, DailyRideDB, OrderDB, TransactionDB, CustomerDB
 from app.models.registration import RegistrationDB
 from app.schemas.desk import (
     DeskOrderCreate, DeskOrderResponse, DeskOrderUpdate,
@@ -103,6 +104,27 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
         total_amount = base_price + extras_total + payload.adjustments
 
         # ─── 4. CREAZIONE ORDINE ─────────────────────────
+        # --- INIZIO CRM SILENTE ---
+        db_customer = None
+        if payload.booker_email or payload.booker_phone:
+            conditions = []
+            if payload.booker_email:
+                conditions.append(CustomerDB.email == payload.booker_email)
+            if payload.booker_phone:
+                conditions.append(CustomerDB.phone == payload.booker_phone)
+            
+            db_customer = db.query(CustomerDB).filter(or_(*conditions)).first()
+            
+        if not db_customer and (payload.booker_name or payload.booker_email or payload.booker_phone):
+            db_customer = CustomerDB(
+                full_name=payload.booker_name,
+                email=payload.booker_email,
+                phone=payload.booker_phone
+            )
+            db.add(db_customer)
+            db.flush()  # Alloca l'UUID nel DB senza chiudere la transazione complessiva
+        # --- FINE CRM SILENTE ---
+
         new_order = OrderDB(
             ride_id=ride.id,
             total_pax=payload.pax,
@@ -121,6 +143,7 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
             source="DESK",
             notes=payload.notes,
             order_status="IN_ATTESA",  # Aggiornato sotto se saldato
+            customer_id=db_customer.id if db_customer else None
         )
         db.add(new_order)
         db.flush()

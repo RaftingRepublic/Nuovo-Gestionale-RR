@@ -114,6 +114,20 @@ class DailyRideDB(Base):
     assigned_fleet = relationship("FleetDB", secondary=ride_fleet_link, lazy="joined")
 
 # ==========================================
+# 2.5 ANAGRAFICHE CLIENTI (CRM)
+# ==========================================
+class CustomerDB(Base):
+    __tablename__ = "customers"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
+    full_name = Column(String(100), nullable=False)
+    email = Column(String(255), index=True, nullable=True)
+    phone = Column(String(50), index=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    orders = relationship("OrderDB", back_populates="customer")
+
+# ==========================================
 # 3. PRENOTAZIONE COMMERCIALE (Il "Carrello")
 # ==========================================
 class OrderDB(Base):
@@ -147,6 +161,9 @@ class OrderDB(Base):
     adjustments = Column(Float, default=0.0, comment="Penali no-show (+) o sconti (-)")
     extras = Column(JSON, default=list, comment='Es. [{"name":"Foto","price":15}]')
     source = Column(String(20), default="WEB", comment="WEB, DESK, PARTNER")
+    
+    customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True)
+    customer = relationship("CustomerDB", back_populates="orders")
 
     ride = relationship("DailyRideDB", back_populates="orders")
     
