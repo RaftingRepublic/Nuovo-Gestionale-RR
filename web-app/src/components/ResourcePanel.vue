@@ -456,7 +456,7 @@ function getStaffRoles(name, roleFilter) {
   return (staff.roles || []).filter(r => roleFilter.includes(r))
 }
 
-// Colori ruoli (coerente con ResourcesPage)
+// Colori ruoli
 function roleColor(r) {
   if (r === 'RAF4' || r === 'RAF3') return 'teal'
   if (r === 'SK' || r === 'HYD' || r === 'SH') return 'cyan-8'

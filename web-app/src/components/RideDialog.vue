@@ -24,7 +24,6 @@
           <div class="column items-end q-gutter-sm">
             <q-btn flat round dense icon="close" color="white" v-close-popup />
             <div class="row q-gutter-xs no-wrap">
-              <q-btn unelevated dense color="blue-7" text-color="white" icon="add" label="NUOVA PRENOTAZIONE" size="sm" @click.stop="emit('edit-order', null, localRide)" />
               <q-btn unelevated dense color="red-7" text-color="white" icon="delete" label="CANCELLA ORARIO" size="sm"
                 v-if="String(localRide?.id || '').startsWith('custom')"
                 @click.stop="deleteCustomRideLocally()" />
@@ -43,13 +42,21 @@
 
       <q-separator />
 
+      <!-- ═══ TABS OMNI-BOARD ═══ -->
+      <q-tabs v-model="activeTab" class="text-primary bg-white col-auto" dense align="left" active-color="primary" indicator-color="primary" narrow-indicator>
+        <q-tab name="existing" icon="receipt_long" label="ORDINI ESISTENTI" />
+        <q-tab name="new" icon="add_circle" label="NUOVA PRENOTAZIONE" />
+      </q-tabs>
+      <q-separator />
+
       <!-- Loading -->
       <div v-if="rideLoading" class="flex flex-center q-pa-xl col">
         <q-spinner size="3em" color="primary" />
       </div>
 
-      <!-- Corpo: Ordini a Fisarmonica -->
-      <q-card-section v-else-if="localRide" class="col scroll q-pa-none" style="overflow-x: hidden; min-height: 0;">
+      <!-- ═══ TAB PANELS ═══ -->
+      <q-tab-panels v-model="activeTab" animated v-else-if="localRide" class="col scroll q-pa-none" style="overflow-x: hidden; min-height: 0;">
+        <q-tab-panel name="existing" class="q-pa-none">
 
         <!-- Info Disponibilità (Engine Dashboard) -->
         <q-card-section class="q-pb-none" v-if="localRide && localRide.total_capacity !== undefined">
@@ -280,7 +287,17 @@
             </q-card>
           </q-expansion-item>
         </q-list>
-      </q-card-section>
+        </q-tab-panel>
+        <q-tab-panel name="new" class="q-pa-md">
+          <DeskBookingForm
+            :activity-id="localRide?.activity_id || currentSlotData?.activity_id"
+            :date="localRide?.ride_date"
+            :time="localRide?.ride_time"
+            :unit-price="localRide?._unit_price || currentSlotData?.price || 0"
+            @success="onBookingSuccess"
+          />
+        </q-tab-panel>
+      </q-tab-panels>
     </q-card>
   </q-dialog>
 
@@ -379,6 +396,7 @@ import { supabase } from 'src/supabase'
 import { api } from 'boot/axios'
 import { useCheckin } from 'src/composables/useCheckin'
 import QrDialog from 'src/components/QrDialog.vue'
+import DeskBookingForm from 'src/components/DeskBookingForm.vue'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -397,6 +415,14 @@ const isOpen = computed({
   get: () => props.modelValue,
   set: (val) => emit('update:modelValue', val)
 })
+
+// ═══ TABS OMNI-BOARD ═══
+const activeTab = ref('existing')
+
+function onBookingSuccess () {
+    activeTab.value = 'existing'
+    emit('refresh')
+}
 
 // Ride state locale
 const localRide = ref(null)
@@ -449,10 +475,12 @@ const orderStatusOptions = [
 watch(() => props.ride, (slot) => {
   if (!slot) return
   currentSlotId.value = slot.id
+  activeTab.value = 'existing'
 
   const localSlot = store.dailySchedule.find(r => r.id === slot.id) || slot
   localRide.value = {
     id: localSlot.id,
+    activity_id: localSlot.activity_id || slot.activity_id || '',
     activity_name: localSlot.activity_type || localSlot.title || 'Turno',
     ride_date: localSlot.ride_date || '',
     ride_time: localSlot.time || '',
@@ -465,6 +493,7 @@ watch(() => props.ride, (slot) => {
     color_hex: localSlot.color_hex || '#1976D2',
     notes: localSlot.notes || '',
     is_overridden: localSlot.is_overridden || false,
+    _unit_price: localSlot.price || localSlot._unit_price || slot.price || 0,
     // Preserve extra fields for business rules
     manager: localSlot.manager || localSlot.gestore || '',
     activity_type: localSlot.activity_type || '',

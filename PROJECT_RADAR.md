@@ -24,9 +24,11 @@
 
 - [x] Fix 422 Date Format (Backend Pydantic tollera e converte le date dal frontend).
 - [x] Allineamento Split-Brain SQLite (Patch colonna customer_id applicata su orders locale).
-- [ ] TATTICA IMMINENTE 1: Amputare i ruderi geologici (Segreteria, Timeline, Lavagna) dal menù laterale frontend.
-- [ ] TATTICA IMMINENTE 2: Intercettare la modale del Calendario Operativo, analizzare il suo vero payload di rete (F12) e innestarvi il CRM Silente per salvare correttamente in customers.
-- [ ] Analizzare e curare l'emorragia in background "column orders.ride_date does not exist" in Supabase (Sensore Sonda Logistica).
+- [x] TATTICA IMMINENTE 1: Amputati i ruderi geologici (Segreteria POS, Timeline, Lavagna) dal menù laterale frontend. Le rotte restano per backward-compatibility.
+- [x] TATTICA IMMINENTE 2: Creato DeskBookingForm.vue (estratto da DeskDashboardPage). Innestato a Tabs nella RideDialog.vue (Omni-Board). CRM Silente attivo via POST /orders/desk. BUILD VERIFICATA ✅.
+- [x] Emorragia Supabase "column orders.ride_date does not exist" curata con Inner Join PostgREST in calendar.py.
+- [ ] Fix Omni-Board 1: Passaggio corretto del Prezzo Unitario (unitPrice) per il calcolo del Totale nel Ledger.
+- [ ] Fix Omni-Board 2: Reattività dell'evento emit('refresh') per mostrare immediatamente il nuovo ordine nel tab Ordini Esistenti.
 
 ---
 
@@ -53,4 +55,4 @@ Una volta blindato il Motore Logistico, si sceglierà la prossima direttrice:
 - [ ] Opzione C: Flusso Prenotazioni CRM (Anagrafiche, Pagamenti).
 
 - [x] TATTICA IMMINENTE 1 (Compartimento #1): Amputazione ruderi geologici completata. `ReservationsPage` (Prenotazioni), `BookingDialog` e `YieldSimulatorDialog` sono stati fisicamente eliminati e rimossi da router e layout.
-- [ ] TATTICA IMMINENTE 1.5 (Compartimento #2): Analizzare e amputare file obsoleti `ResourcesPage.vue`, `ResourcePanel.vue` e la relativa voce in sidebar "Staff & Risorse".
+- [x] TATTICA IMMINENTE 1.5 (Compartimento #2): Abortita amputazione (Falso Positivo UI). `ResourcesPage.vue` è un organo CRUD vitale. Emorragia Supabase su `calendar.py` curata tramite Inner Join PostgREST (`rides!inner(date)`).

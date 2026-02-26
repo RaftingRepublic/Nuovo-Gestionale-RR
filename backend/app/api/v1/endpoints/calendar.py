@@ -197,7 +197,8 @@ def _fetch_supabase_pax(dates: set) -> dict:
     }
     
     dates_str = ",".join([d.isoformat() for d in dates])
-    url = f"{_SUPABASE_URL}/rest/v1/orders?select=ride_id,pax&ride_date=in.({dates_str})"
+    # Inner Join PostgREST: filtra orders attraverso la relazione rides.date
+    url = f"{_SUPABASE_URL}/rest/v1/orders?select=ride_id,pax,rides!inner(date)&rides.date=in.({dates_str})"
     
     pax_map = defaultdict(int)
     try:
@@ -205,8 +206,11 @@ def _fetch_supabase_pax(dates: set) -> dict:
             resp = client.get(url, headers=headers)
             if resp.status_code == 200:
                 for row in resp.json():
-                    rid = str(row.get("ride_id"))
-                    pax_map[rid] += int(row.get("pax", 0))
+                    rid = str(row.get("ride_id", ""))
+                    if not rid:
+                        continue
+                    raw_pax = row.get("pax")
+                    pax_map[rid] += int(raw_pax) if raw_pax is not None else 0
             else:
                 print(f"⚠️ Errore Sonda Supabase: {resp.status_code} - {resp.text}")
     except Exception as e:
