@@ -5,6 +5,8 @@ Espone i dati SQL (Attività, Discese) al Frontend con query ottimizzate.
 Sostituisce le vecchie logiche basate su file JSON.
 """
 
+import httpx
+from collections import defaultdict
 from datetime import date
 from typing import List, Optional
 
@@ -175,6 +177,43 @@ def _ensure_theoretical_rides(db: Session, target_date: date) -> None:
 
 # ──────────────────────────────────────────────────────────
 # GET /daily-rides — Discese con Engine calcolato
+_SUPABASE_URL = "https://tttyeluyutbpczbslgwi.supabase.co"
+_SUPABASE_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dHllbHV5dXRicGN6YnNsZ3dpIiwi"
+    "cm9sZSI6ImFub24iLCJpYXQiOjE3NzE3Nzg5NTIsImV4cCI6MjA4NzM1NDk1Mn0."
+    "kdcJtU_LHkZv20MFxDQZGkn2iz4ZBuZC3dQjLxWoaTs"
+)
+
+def _fetch_supabase_pax(dates: set) -> dict:
+    """Sonda HTTP sincrona per estrarre i pax reali da Supabase (Split-Brain Fix)."""
+    if not dates:
+        return {}
+    
+    headers = {
+        "apikey": _SUPABASE_KEY,
+        "Authorization": f"Bearer {_SUPABASE_KEY}",
+        "Accept": "application/json",
+    }
+    
+    dates_str = ",".join([d.isoformat() for d in dates])
+    url = f"{_SUPABASE_URL}/rest/v1/orders?select=ride_id,pax&ride_date=in.({dates_str})"
+    
+    pax_map = defaultdict(int)
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 200:
+                for row in resp.json():
+                    rid = str(row.get("ride_id"))
+                    pax_map[rid] += int(row.get("pax", 0))
+            else:
+                print(f"⚠️ Errore Sonda Supabase: {resp.status_code} - {resp.text}")
+    except Exception as e:
+        print(f"🔥 FALLIMENTO CRITICO SONDA: {e}")
+        
+    return dict(pax_map)
+
 # ──────────────────────────────────────────────────────────
 @router.get("/daily-rides", response_model=List[DailyRideResponse])
 def list_daily_rides(
@@ -238,9 +277,13 @@ def list_daily_rides(
     for r in rides:
         dates_seen.add(r.ride_date)
 
+    # 🔴 INIEZIONE DELLA VERITÀ: Sonda Supabase
+    real_pax_map = _fetch_supabase_pax(dates_seen)
+
     availability_map = {}
     for d in dates_seen:
-        day_avail = AvailabilityEngine.calculate_availability(db, d)
+        # Passiamo la mappa all'Engine come external_pax_map
+        day_avail = AvailabilityEngine.calculate_availability(db, d, external_pax_map=real_pax_map)
         availability_map.update(day_avail)
 
     result: List[DailyRideResponse] = []

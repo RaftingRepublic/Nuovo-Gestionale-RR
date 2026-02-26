@@ -1,0 +1,11 @@
+﻿--- TEST STAFF (Primi 3) ---
+Nome: Miriam, Attivo: True, Contratti: [{'start': '2026-05-01', 'end': '2026-09-30'}]
+Nome: Tony, Attivo: True, Contratti: [{'start': '2026-07-15', 'end': '2026-08-31'}]
+Nome: Stefano, Attivo: True, Contratti: []
+--- TEST FLOTTA (Primi 3 Raft, Primi 3 Van) ---
+Raft: Flotta Gommoni, Qty: 10, CapLegacy: 8, CapV5: 0, Attivo: False
+Raft: L1, Qty: 1, CapLegacy: 8, CapV5: 8, Attivo: True
+Raft: L2, Qty: 1, CapLegacy: 8, CapV5: 8, Attivo: True
+Van: Flotta Furgoni, Qty: 2, CapLegacy: 9, CapV5: 0, Attivo: False
+Van: Gnu, Qty: 1, CapLegacy: 8, CapV5: 8, Attivo: True
+Van: Sprinter, Qty: 1, CapLegacy: 8, CapV5: 8, Attivo: True

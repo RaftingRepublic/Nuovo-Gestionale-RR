@@ -199,7 +199,7 @@ class AvailabilityEngine:
         }
 
     @staticmethod
-    def calculate_availability(db: Session, target_date: date) -> Dict[str, Dict[str, Any]]:
+    def calculate_availability(db: Session, target_date: date, external_pax_map: dict = None) -> Dict[str, Dict[str, Any]]:
         date_str = target_date.strftime("%Y-%m-%d")
         settings = AvailabilityEngine._get_global_settings(db)
         raft_capacity = settings.get("raft_capacity", 8)
@@ -231,7 +231,13 @@ class AvailabilityEngine:
             if not activity: continue
 
             T = datetime.combine(target_date, ride.ride_time)
-            booked_pax = AvailabilityEngine._calc_booked_pax(ride, raft_capacity)
+            
+            # 🔴 OVERRIDE DELLA VERITÀ (Pax Map Injection da Supabase)
+            # Usiamo 'is not None' perché un dict vuoto {} è un'informazione valida (zero pax nel cloud).
+            if external_pax_map is not None:
+                booked_pax = external_pax_map.get(str(ride.id), 0)
+            else:
+                booked_pax = AvailabilityEngine._calc_booked_pax(ride, raft_capacity)
             
             node = AvailabilityEngine._get_arr_node(activity)
             allow_arr = AvailabilityEngine._get_effective_bool(activity, "allow_intersections", target_date)

@@ -273,17 +273,57 @@ export const useResourceStore = defineStore('resource', {
         const engineRides = res.data || []
 
         // STEP C (L'Idratazione Client-Side): Merge Verità Fisica + Intelligenza Motore
-        const mappedRides = (supaRides || []).map(supaRide => {
-          const orders = supaRide.orders || []
-          const allocs = supaRide.ride_allocations || []
+        
+        // FIX DOPPIO SPLIT-BRAIN & GHOST SLOTS: Creiamo un bacino unificato
+        const combinedRides = [];
+        const normalizeTime = (t) => t ? String(t).substring(0, 5) : '';
+        
+        // Helper per trovare il nome attività sicuro bypassando gli UUID
+        const getActivityName = (rideObj, storeActivities) => {
+            if (rideObj.activity_name) return rideObj.activity_name;
+            const act = (storeActivities || []).find(a => String(a.id) === String(rideObj.activity_id));
+            return act ? act.name : 'Sconosciuta';
+        };
+
+        (supaRides || []).forEach(sr => combinedRides.push(sr));
+
+        // Iniezione Ghost Slots (Motore Predittivo)
+        (engineRides || []).forEach(er => {
+            const erName = getActivityName(er, this.activities);
+            const exists = combinedRides.find(sr => {
+                const srName = getActivityName(sr, this.activities);
+                return srName === erName && normalizeTime(sr.time) === normalizeTime(er.ride_time);
+            });
+            
+            if (!exists) {
+                combinedRides.push({
+                    id: er.id, // ID temporaneo SQLite per i Ghost Slots
+                    activity_id: er.activity_id,
+                    time: er.ride_time,
+                    activity_name: erName,
+                    color_hex: er.color_hex,
+                    is_ghost: true,
+                    orders: [],
+                    ride_allocations: []
+                });
+            }
+        });
+
+        const mappedRides = combinedRides.map(supaRide => {
+          const orders = supaRide.orders || [];
+          const allocs = supaRide.ride_allocations || [];
 
           // Calcolo bookedPax reale dai registri fisici
-          const bookedPax = orders.reduce((sum, o) => sum + (o.actual_pax || o.pax || 0), 0)
+          const bookedPax = orders.reduce((sum, o) => sum + (o.actual_pax || o.pax || 0), 0);
 
-          const act = (this.activities || []).find(a => String(a.id) === String(supaRide.activity_id)) || {}
+          const act = (this.activities || []).find(a => String(a.id) === String(supaRide.activity_id)) || {};
+          const currentActName = getActivityName(supaRide, this.activities);
 
-          // Trova i calcoli del motore predittivo (FastAPI)
-          const engineData = engineRides.find(e => String(e.id) === String(supaRide.id)) || {}
+          // Trova i calcoli del motore predittivo tramite Firma Operativa (Attività + Orario) bypassando TUTTI gli UUID
+          const engineData = engineRides.find(e => 
+              getActivityName(e, this.activities) === currentActName && 
+              normalizeTime(e.ride_time) === normalizeTime(supaRide.time)
+          ) || {};
 
           // IDRATAZIONE: Capacità dal motore o fallback a Supabase se API fallisce
           let engineCap = engineData.total_capacity;
@@ -305,13 +345,13 @@ export const useResourceStore = defineStore('resource', {
             ...supaRide, // Mantiene id reali, note, ecc. di Supabase
             id: supaRide.id,
             time: supaRide.time,
-            activity_type: supaRide.activity_name || act.name || 'Sconosciuta',
-            activity_name: supaRide.activity_name || act.name || 'Sconosciuta',
-            color_hex: supaRide.color_hex || act.color_hex || '#607d8b',
+            activity_type: currentActName,
+            activity_name: currentActName,
+            color_hex: engineData.color_hex || supaRide.color_hex || act.color_hex || '#607d8b',
 
             booked_pax: bookedPax, // Verità fisica prioritaria
             // --- INIEZIONE SENSORI MOTORE PREDITTIVO V6 ---
-            total_capacity: finalCapacity,
+            total_capacity: finalCapacity, 
             arr_bonus_seats: engineData.arr_bonus_seats || 0,
             yield_warning: engineData.yield_warning || false,
             remaining_seats: engineData.remaining_seats !== undefined ? engineData.remaining_seats : Math.max(0, finalCapacity - bookedPax),
@@ -328,32 +368,9 @@ export const useResourceStore = defineStore('resource', {
             drivers: allocs.filter(a => a && a.resources && a.resources.type === 'driver').map(a => a.resources),
             rafts: allocs.filter(a => a && a.resources && a.resources.type === 'raft').map(a => a.resources),
             vans: allocs.filter(a => a && a.resources && a.resources.type === 'van').map(a => a.resources),
-            trailers: allocs.filter(a => a && a.resources && a.resources.type === 'trailer').map(a => a.resources),
-
-            orders: orders.map(o => ({
-              id: o.id,
-              ride_id: o.ride_id,
-              order_status: o.status || 'CONFERMATO',
-              total_pax: o.pax || 1,
-              _actual_pax: o.actual_pax || o.pax || 1,
-              price_total: o.total_price || 0,
-              paid_amount: o.paid_amount || 0,
-              payment_type: o.payment_type || 'CASH',
-              customer_name: o.customer_name || 'Senza nome',
-              customer_surname: o.customer_surname || '',
-              customer_email: o.customer_email || '',
-              customer_phone: o.customer_phone || '',
-              language: o.language || 'IT',
-              is_exclusive_raft: o.is_exclusive_raft || false,
-              notes: o.notes || '',
-              discount_applied: o.discount_applied || 0,
-              registrations: [],
-            })),
-
-            isGhost: false,
-            date: dateStr,
-          }
-        })
+            trailers: allocs.filter(a => a && a.resources && a.resources.type === 'trailer').map(a => a.resources)
+          };
+        });
 
         // Ghost Skeleton DINAMICO: genera slot vuoti dagli orari configurati nelle attività SQLite
         // NESSUN ORARIO HARDCODATO — tutto viene da this.activities (default_times + season_start/season_end)
