@@ -22,9 +22,11 @@
 
 **CANTIERE ATTIVO (Obiettivo Prossima Sessione):**
 
-- [x] **[COMPLETATO]** Risolvere l'anomalia "Zero Assoluto" sui turni popolati e chiusura del Blocker architetturale Split-Brain.
-- [ ] **Fase 6.F (CRM & Modulo Cassa):** Innesco gestione anagrafiche avanzate, tracciamento pagamenti e spacca-conto nel Libro Mastro.
-- [ ] **Docs-as-Code (Lore Vault):** Consolidamento della memoria storica dell'architettura tramite file markdown root per prevenire l'amnesia stateless delle IA future.
+- [x] Fix 422 Date Format (Backend Pydantic tollera e converte le date dal frontend).
+- [x] Allineamento Split-Brain SQLite (Patch colonna customer_id applicata su orders locale).
+- [ ] TATTICA IMMINENTE 1: Amputare i ruderi geologici (Segreteria, Timeline, Lavagna) dal menù laterale frontend.
+- [ ] TATTICA IMMINENTE 2: Intercettare la modale del Calendario Operativo, analizzare il suo vero payload di rete (F12) e innestarvi il CRM Silente per salvare correttamente in customers.
+- [ ] Analizzare e curare l'emorragia in background "column orders.ride_date does not exist" in Supabase (Sensore Sonda Logistica).
 
 ---
 
@@ -49,3 +51,6 @@ Una volta blindato il Motore Logistico, si sceglierà la prossima direttrice:
 - [ ] Opzione A: Timeline View (Visualizzazione grafica a Gantt nidificata Discese/Flussi/Blocchi) integrata come nuova rotta in Quasar.
 - [ ] Opzione B: Modulo Presenze Giornaliere Staff.
 - [ ] Opzione C: Flusso Prenotazioni CRM (Anagrafiche, Pagamenti).
+
+- [x] TATTICA IMMINENTE 1 (Compartimento #1): Amputazione ruderi geologici completata. `ReservationsPage` (Prenotazioni), `BookingDialog` e `YieldSimulatorDialog` sono stati fisicamente eliminati e rimossi da router e layout.
+- [ ] TATTICA IMMINENTE 1.5 (Compartimento #2): Analizzare e amputare file obsoleti `ResourcesPage.vue`, `ResourcePanel.vue` e la relativa voce in sidebar "Staff & Risorse".

@@ -13,10 +13,7 @@
           <q-btn :color="viewFilter === 'tutto' ? 'primary' : 'white'" :text-color="viewFilter === 'tutto' ? 'white' : 'grey-8'" label="TUTTO" @click="viewFilter = 'tutto'" size="sm" />
         </q-btn-group>
         <q-btn color="blue-grey" icon="tune" label="Configura Stagione" outline @click="seasonDialog.isOpen = true" />
-        <q-btn color="deep-purple" icon="calculate" label="Simulatore" unelevated @click="yieldSimOpen = true">
-          <q-tooltip>Motore Matematico Yield</q-tooltip>
-        </q-btn>
-        <q-btn color="primary" icon="add" label="Nuova Prenotazione" unelevated @click="openBookingForm(null, null)" />
+
       </div>
     </div>
 
@@ -178,14 +175,6 @@
 
     <ResourcePanel v-model="resourcePanelOpen" :ride="activeResourceSlot" @saved="onResourcePanelSaved" />
 
-    <BookingDialog
-      v-model="bookingDialogOpen"
-      :ride-context="bookingRideContext"
-      :edit-order="bookingEditOrder"
-      :selected-date="selectedDate"
-      @saved="onBookingSaved"
-    />
-
     <FiraftDialog
       v-model="firaftModalOpen"
       :order="activeFiraftOrder"
@@ -196,16 +185,10 @@
     <RideDialog
       v-model="showRideDialog"
       :ride="rideDialogSlot"
-      @edit-order="(order, ride) => openBookingForm(order, ride)"
       @delete-order="deleteOrderLocally"
       @open-resources="openResourcePanel"
       @open-firaft="openFiraftModal"
       @refresh="onRideDialogRefresh"
-    />
-
-    <YieldSimulatorDialog
-      v-model="yieldSimOpen"
-      :initial-date="selectedDate"
     />
 
   </q-page>
@@ -220,11 +203,9 @@ import { supabase } from 'src/supabase'
 import CalendarComponent from 'components/CalendarComponent.vue'
 import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import ResourcePanel from 'components/ResourcePanel.vue'
-import BookingDialog from 'components/BookingDialog.vue'
 import FiraftDialog from 'components/FiraftDialog.vue'
 import RideDialog from 'components/RideDialog.vue'
 import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
-import YieldSimulatorDialog from 'components/YieldSimulatorDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -232,19 +213,12 @@ const store = useResourceStore()
 const $q = useQuasar()
 const seasonDialog = ref(null)
 const selectedDate = ref(route.query.date ? String(route.query.date).replace(/-/g, '/') : new Date().toISOString().split('T')[0].replace(/-/g, '/'))
-const yieldSimOpen = ref(false)
-
 // Ambiente determinato dalla rotta
 const isSegreteria = computed(() => route.path.includes('segreteria'))
 
 // ═══════════════════════════════════════════════════════════
 // CHILD COMPONENT STATE — Variabili di apertura modali
 // ═══════════════════════════════════════════════════════════
-
-// Booking Dialog
-const bookingDialogOpen = ref(false)
-const bookingRideContext = ref(null)
-const bookingEditOrder = ref(null)
 
 // Resource Panel
 const resourcePanelOpen = ref(false)
@@ -416,29 +390,11 @@ function openRideDialog(slot) {
 // QUICK-BOOK — Click su Ghost Slot dal calendario mensile
 // ═══════════════════════════════════════════════════════════
 function onQuickBookFromMonth(ride, dateStr) {
-  // Costruisci un contextRide con i dati del ghost per pre-popolare il BookingDialog
-  const contextRide = {
-    id: ride.id,
-    activity_id: ride.activity_id || null,
-    activity_name: ride.title || ride.activity_code || '',
-    time: ride.time ? String(ride.time).substring(0, 5) : '',
-    ride_date: dateStr,
-    date: dateStr,
-    isGhost: true,
-  }
-  openBookingForm(null, contextRide)
-}
-
-// ═══════════════════════════════════════════════════════════
-// BOOKING DIALOG — Apertura
-// ═══════════════════════════════════════════════════════════
-function openBookingForm(order, contextRide) {
-  if (order instanceof Event || (order && typeof order === 'object' && order.type === 'click')) order = null
-  if (contextRide instanceof Event || (contextRide && typeof contextRide === 'object' && contextRide.type === 'click')) contextRide = null
-
-  bookingEditOrder.value = order || null
-  bookingRideContext.value = contextRide || rideDialogSlot.value || null
-  bookingDialogOpen.value = true
+  // TODO: FASE 6.F — Il booking ora avviene direttamente nel RideDialog
+  // Apri il giorno e poi il RideDialog per lo slot corrispondente
+  selectedDate.value = dateStr.replace(/-/g, '/')
+  viewMode.value = 'DETAIL'
+  loadSchedule()
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -527,13 +483,7 @@ async function onSeasonConfigSaved() {
   await reloadCalendarData()    // Rigenera la UI del calendario
 }
 
-async function onBookingSaved() {
-  await reloadCalendarData()
-  if (showRideDialog.value && rideDialogSlot.value) {
-    const freshSlot = store.dailySchedule.find(s => s.id === rideDialogSlot.value.id)
-    if (freshSlot) rideDialogSlot.value = freshSlot
-  }
-}
+
 
 async function onResourcePanelSaved() {
   const dateStr = selectedDate.value.replace(/\//g, '-')

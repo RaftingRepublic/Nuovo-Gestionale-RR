@@ -30,9 +30,6 @@ const routes = [
       // Archivio Consensi / Registrazioni  ← PONTE Strada A → Strada B
       { path: 'registrazioni', component: () => import('pages/admin/RegistrationsPage.vue') },
 
-      // Gestione Prenotazioni
-      { path: 'prenotazioni', component: () => import('pages/ReservationsPage.vue') },
-
       // Gestione Risorse (Staff, Flotta, Slot)
       { path: 'risorse', component: () => import('pages/ResourcesPage.vue') },
 
