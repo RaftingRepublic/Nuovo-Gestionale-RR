@@ -27,6 +27,9 @@
               <q-btn unelevated dense color="red-7" text-color="white" icon="delete" label="CANCELLA ORARIO" size="sm"
                 v-if="String(localRide?.id || '').startsWith('custom')"
                 @click.stop="deleteCustomRideLocally()" />
+              <q-btn unelevated dense color="red-5" text-color="white" icon="block" label="CHIUDI TURNO" size="sm"
+                v-if="localRide?.booked_pax === 0 && !String(localRide?.id || '').startsWith('custom') && !String(localRide?.id || '').startsWith('ghost')"
+                @click.stop="confirmCloseRide()" />
             </div>
             <!-- Semaforo Manuale -->
             <q-btn-group outline class="semaphore-group">
@@ -46,6 +49,7 @@
       <q-tabs v-model="activeTab" class="text-primary bg-white col-auto" dense align="left" active-color="primary" indicator-color="primary" narrow-indicator>
         <q-tab name="existing" icon="receipt_long" label="ORDINI ESISTENTI" />
         <q-tab name="new" icon="add_circle" label="NUOVA PRENOTAZIONE" />
+        <q-tab name="crew" icon="sailing" label="EQUIPAGGI" />
       </q-tabs>
       <q-separator />
 
@@ -306,6 +310,12 @@
             @success="onBookingSuccess"
           />
         </q-tab-panel>
+        <q-tab-panel name="crew" class="q-pa-md">
+          <CrewBuilderPanel
+            :ride="localRide"
+            :orders="localRide?.orders || []"
+          />
+        </q-tab-panel>
       </q-tab-panels>
     </q-card>
   </q-dialog>
@@ -406,6 +416,7 @@ import { api } from 'boot/axios'
 import { useCheckin } from 'src/composables/useCheckin'
 import QrDialog from 'src/components/QrDialog.vue'
 import DeskBookingForm from 'src/components/DeskBookingForm.vue'
+import CrewBuilderPanel from 'src/components/CrewBuilderPanel.vue'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -581,19 +592,37 @@ watch(() => props.ride, (slot) => {
 })
 
 // ═══════════════════════════════════════════════════════════
-// Override / Semaforo — Supabase diretto
+// Override / Semaforo — Dual-Write: Supabase + SQLite
 // ═══════════════════════════════════════════════════════════
 async function setOverride(status) {
   const rideId = currentSlotId.value
   if (!rideId || String(rideId).startsWith('ghost')) return
 
   try {
+    // 1. Supabase (cloud)
     const { error } = await supabase.from('rides').update({
       status: status,
       is_overridden: true
     }).eq('id', rideId)
     if (error) throw error
 
+    // 2. SQLite (backend locale) — Dual-Write
+    try {
+      const sqlResp = await fetch(`/api/v1/calendar/daily-rides/${rideId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: status })
+      })
+      if (sqlResp.ok) {
+        console.log(`✅ [DUAL-WRITE] Semaforo ${status} → Supabase OK, SQLite OK (ride: ${rideId})`)
+      } else {
+        console.warn(`⚠️ [DUAL-WRITE] SQLite risposta ${sqlResp.status} per ride ${rideId}`)
+      }
+    } catch (sqliteErr) {
+      console.warn('[setOverride] SQLite dual-write fallito:', sqliteErr)
+    }
+
+    // 3. Update store locale
     const localSlot = store.dailySchedule.find(r => r.id === rideId)
     if (localSlot) {
       localSlot.status = status
@@ -601,9 +630,8 @@ async function setOverride(status) {
       localSlot.engine_status = status === 'A' ? 'VERDE' : status === 'B' ? 'GIALLO' : status === 'C' ? 'ROSSO' : 'BLU'
       localSlot.status_desc = status === 'A' ? 'Disponibile' : status === 'B' ? 'Quasi Pieno' : status === 'C' ? 'Pieno / Chiuso' : 'Fuori Stagione'
     }
-    // localRide è un computed: le mutazioni avvengono sullo store (sopra) e si propagano automaticamente
 
-    $q.notify({ type: 'positive', message: 'Stato forzato ☁️' })
+    $q.notify({ type: 'positive', message: 'Stato forzato ☁️🗄️' })
     emit('refresh')
   } catch (e) {
     console.error('[setOverride] Errore Supabase:', e)
@@ -616,12 +644,30 @@ async function clearOverride() {
   if (!rideId || String(rideId).startsWith('ghost')) return
 
   try {
+    // 1. Supabase (cloud)
     const { error } = await supabase.from('rides').update({
       status: 'Disponibile',
       is_overridden: false
     }).eq('id', rideId)
     if (error) throw error
 
+    // 2. SQLite (backend locale) — Dual-Write AUTO
+    try {
+      const sqlResp = await fetch(`/api/v1/calendar/daily-rides/${rideId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'AUTO' })
+      })
+      if (sqlResp.ok) {
+        console.log(`✅ [DUAL-WRITE] Semaforo AUTO → Supabase OK, SQLite OK (ride: ${rideId})`)
+      } else {
+        console.warn(`⚠️ [DUAL-WRITE] SQLite risposta ${sqlResp.status} per ride ${rideId}`)
+      }
+    } catch (sqliteErr) {
+      console.warn('[clearOverride] SQLite dual-write fallito:', sqliteErr)
+    }
+
+    // 3. Update store locale
     const localSlot = store.dailySchedule.find(r => r.id === rideId)
     if (localSlot) {
       localSlot.is_overridden = false
@@ -631,14 +677,47 @@ async function clearOverride() {
       localSlot.status_desc = pax >= max ? 'Pieno / Chiuso' : pax >= max * 0.75 ? 'Quasi Pieno' : 'Disponibile'
       localSlot.status = localSlot.engine_status === 'ROSSO' ? 'C' : localSlot.engine_status === 'GIALLO' ? 'B' : 'A'
     }
-    // localRide è un computed: le mutazioni avvengono sullo store (sopra) e si propagano automaticamente
 
-    $q.notify({ type: 'positive', message: 'Semaforo automatico ripristinato ☁️' })
+    $q.notify({ type: 'positive', message: 'Semaforo automatico ripristinato ☁️🗄️' })
     emit('refresh')
   } catch (e) {
     console.error('[clearOverride] Errore Supabase:', e)
     $q.notify({ type: 'negative', message: 'Errore reset: ' + (e.message || e) })
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+// KILL-SWITCH — Chiudi turno vuoto (da RideDialog)
+// ═══════════════════════════════════════════════════════════
+async function confirmCloseRide() {
+  const rideId = currentSlotId.value
+  if (!rideId) return
+
+  $q.dialog({
+    title: 'Chiudi Turno',
+    message: `Confermi la chiusura del turno "${localRide.value?.activity_name}" alle ${localRide.value?.ride_time}? Il turno scomparirà dal calendario e dalla timeline.`,
+    cancel: 'Annulla',
+    ok: { label: 'Chiudi Turno', color: 'negative', icon: 'block' },
+    persistent: true,
+  }).onOk(async () => {
+    try {
+      const resp = await fetch('/api/v1/calendar/daily-rides/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ride_id: rideId }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json()
+        throw new Error(err.detail || 'Errore chiusura turno')
+      }
+      $q.notify({ type: 'positive', message: 'Turno chiuso ✅', icon: 'check' })
+      isOpen.value = false // Chiudi il dialog
+      emit('refresh')
+    } catch (e) {
+      console.error(e)
+      $q.notify({ type: 'negative', message: e.message || 'Errore chiusura turno' })
+    }
+  })
 }
 
 // ═══════════════════════════════════════════════════════════

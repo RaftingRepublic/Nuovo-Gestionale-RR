@@ -256,7 +256,7 @@
             <q-select
               v-model="formStaff.roles"
               :options="roleOptions"
-              label="Ruoli"
+              label="Ruoli Professionali"
               outlined dense
               multiple
               use-chips
@@ -308,7 +308,7 @@
 
           <!-- STAFF: Ruoli -->
           <template v-if="activeCategory === 'STAFF'">
-            <q-select v-model="editForm.roles" :options="roleOptions" multiple use-chips outlined dense emit-value map-options label="Ruoli" />
+            <q-select v-model="editForm.roles" :options="roleOptions" multiple use-chips outlined dense emit-value map-options label="Ruoli Professionali" />
             <q-select v-model="editForm.contract_type" :options="['FISSO','EXTRA']" outlined dense label="Tipo Contratto" />
           </template>
 

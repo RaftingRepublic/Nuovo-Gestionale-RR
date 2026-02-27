@@ -12,7 +12,10 @@ export const useResourceStore = defineStore('resource', {
     activities: [],    // Catalogo attività da SQLite (Single Source of Truth: code, color_hex, activity_class)
     resources: [],     // Catalogo risorse Supabase (bridge UUID per ride_allocations)
     loading: false,
-    selectedResourceId: null
+    selectedResourceId: null,
+    timelineData: [],
+    selectedDate: new Date().toISOString().split('T')[0],  // YYYY-MM-DD (centralizzato per sync Planning↔Timeline)
+    timelineViewMode: 'DISC'  // 'DISC' = Vista Discese (pista=ride) | 'ROLE' = Vista Ruoli (pista=tag ruolo)
   }),
 
   getters: {
@@ -262,7 +265,7 @@ export const useResourceStore = defineStore('resource', {
         // STEP A (La Verità Fisica): Ripristino fetch Supabase con join ordini e allocazioni
         const { data: supaRides, error } = await supabase
           .from('rides')
-          .select('*, orders(*), ride_allocations(*, resources(*))')
+          .select('*, orders(*), ride_allocations(id, resource_id, resource_type, metadata)')
           .eq('date', dateStr)
           .order('time')
         if (error) throw error
@@ -273,11 +276,11 @@ export const useResourceStore = defineStore('resource', {
         const engineRides = res.data || []
 
         // STEP C (L'Idratazione Client-Side): Merge Verità Fisica + Intelligenza Motore
-        
+
         // FIX DOPPIO SPLIT-BRAIN & GHOST SLOTS: Creiamo un bacino unificato
         const combinedRides = [];
         const normalizeTime = (t) => t ? String(t).substring(0, 5) : '';
-        
+
         // Helper per trovare il nome attività sicuro bypassando gli UUID
         const getActivityName = (rideObj, storeActivities) => {
             if (rideObj.activity_name) return rideObj.activity_name;
@@ -294,7 +297,7 @@ export const useResourceStore = defineStore('resource', {
                 const srName = getActivityName(sr, this.activities);
                 return srName === erName && normalizeTime(sr.time) === normalizeTime(er.ride_time);
             });
-            
+
             if (!exists) {
                 combinedRides.push({
                     id: er.id, // ID temporaneo SQLite per i Ghost Slots
@@ -320,8 +323,8 @@ export const useResourceStore = defineStore('resource', {
           const currentActName = getActivityName(supaRide, this.activities);
 
           // Trova i calcoli del motore predittivo tramite Firma Operativa (Attività + Orario) bypassando TUTTI gli UUID
-          const engineData = engineRides.find(e => 
-              getActivityName(e, this.activities) === currentActName && 
+          const engineData = engineRides.find(e =>
+              getActivityName(e, this.activities) === currentActName &&
               normalizeTime(e.ride_time) === normalizeTime(supaRide.time)
           ) || {};
 
@@ -331,14 +334,20 @@ export const useResourceStore = defineStore('resource', {
               ? Number(engineCap)
               : Number(supaRide.total_capacity || 0);
 
+          // Override flag: se il turno è stato forzato manualmente, il motore ha già restituito lo status corretto
+          const isOverridden = engineData.is_overridden || supaRide.is_overridden || false;
+
           // KILL-SWITCH LATO CLIENT (Autodifesa da Falso Verde): La Realtà batte la Predizione
+          // MA: se is_overridden, l'utente ha la sovranità assoluta → NON toccare lo status
           let safeStatus = engineData.engine_status || engineData.status || 'VERDE';
-          if (bookedPax > finalCapacity) {
-              safeStatus = 'ROSSO'; // Overbooking matematico innegabile
-          } else if (finalCapacity === 0 && bookedPax > 0) {
-              safeStatus = 'ROSSO'; // Zero posti calcolati ma gente prenotata
-          } else if (finalCapacity === 0 && bookedPax === 0) {
-              safeStatus = 'GIALLO'; // Turno vuoto e senza risorse allocate
+          if (!isOverridden) {
+            if (bookedPax > finalCapacity) {
+                safeStatus = 'ROSSO'; // Overbooking matematico innegabile
+            } else if (finalCapacity === 0 && bookedPax > 0) {
+                safeStatus = 'ROSSO'; // Zero posti calcolati ma gente prenotata
+            } else if (finalCapacity === 0 && bookedPax === 0) {
+                safeStatus = 'GIALLO'; // Turno vuoto e senza risorse allocate
+            }
           }
 
           return {
@@ -351,24 +360,27 @@ export const useResourceStore = defineStore('resource', {
 
             booked_pax: bookedPax, // Verità fisica prioritaria
             // --- INIEZIONE SENSORI MOTORE PREDITTIVO V6 ---
-            total_capacity: finalCapacity, 
+            total_capacity: isOverridden ? (supaRide.total_capacity || finalCapacity) : finalCapacity,
             arr_bonus_seats: engineData.arr_bonus_seats || 0,
             yield_warning: engineData.yield_warning || false,
             remaining_seats: engineData.remaining_seats !== undefined ? engineData.remaining_seats : Math.max(0, finalCapacity - bookedPax),
 
             engine_status: safeStatus,
+            is_overridden: isOverridden,
             status: safeStatus, // Retrocompatibilità UI
-            status_code: safeStatus === 'ROSSO' ? 'C' : (safeStatus === 'GIALLO' ? 'B' : 'A'),
+            status_code: safeStatus === 'ROSSO' ? 'C' : (safeStatus === 'GIALLO' ? 'B' : (safeStatus === 'BLU' ? 'D' : 'A')),
 
-            status_desc: safeStatus === 'ROSSO' ? 'Al Completo / Blocco' : (safeStatus === 'GIALLO' ? 'Attenzione: Spola / Senza Risorse' : 'Disponibile'),
+            status_desc: safeStatus === 'ROSSO' ? 'Al Completo / Blocco' : (safeStatus === 'GIALLO' ? 'Attenzione: Spola / Senza Risorse' : (safeStatus === 'BLU' ? 'Fuori Stagione' : 'Disponibile')),
             duration_hours: act.duration_hours || 2,
 
             // Risorse (Verità Fisica)
-            guides: allocs.filter(a => a && a.resources && a.resources.type === 'guide').map(a => a.resources),
-            drivers: allocs.filter(a => a && a.resources && a.resources.type === 'driver').map(a => a.resources),
-            rafts: allocs.filter(a => a && a.resources && a.resources.type === 'raft').map(a => a.resources),
-            vans: allocs.filter(a => a && a.resources && a.resources.type === 'van').map(a => a.resources),
-            trailers: allocs.filter(a => a && a.resources && a.resources.type === 'trailer').map(a => a.resources)
+            // Post-amputazione FK: ride_allocations non ha più join con resources.
+            // I campi crudi sono: resource_id, resource_type, metadata.
+            guides: allocs.filter(a => a && a.resource_type === 'guide').map(a => ({ id: a.resource_id, name: a.resource_id })),
+            drivers: allocs.filter(a => a && a.resource_type === 'driver').map(a => ({ id: a.resource_id, name: a.resource_id })),
+            rafts: allocs.filter(a => a && a.resource_type === 'raft').map(a => ({ id: a.resource_id, name: a.resource_id })),
+            vans: allocs.filter(a => a && a.resource_type === 'van').map(a => ({ id: a.resource_id, name: a.resource_id })),
+            trailers: allocs.filter(a => a && a.resource_type === 'trailer').map(a => ({ id: a.resource_id, name: a.resource_id }))
           };
         });
 
@@ -473,7 +485,7 @@ export const useResourceStore = defineStore('resource', {
 
         const { data, error } = await supabase
           .from('rides')
-          .select('id, date, time, activity_id, orders(pax, actual_pax), ride_allocations(resource_id,resources(name,type))')
+          .select('id, date, time, activity_id, orders(pax, actual_pax), ride_allocations(resource_id, resource_type, metadata)')
           .gte('date', startDate)
           .lte('date', endDate)
           .order('time')
@@ -516,8 +528,8 @@ export const useResourceStore = defineStore('resource', {
                 isGhost: false,
                 allocations: Array.isArray(r.ride_allocations)
                   ? r.ride_allocations
-                      .filter(a => a && a.resources)
-                      .map(a => ({ resource_name: a.resources.name, resource_type: a.resources.type }))
+                      .filter(a => a && a.resource_id)
+                      .map(a => ({ resource_name: a.resource_id, resource_type: a.resource_type || '' }))
                   : []
               }
             })
@@ -794,6 +806,49 @@ export const useResourceStore = defineStore('resource', {
       } catch (e) {
         console.error('[Supabase Error] fetchParticipantsForOrder:', e)
         return []
+      }
+    },
+
+    // --- DATA CENTRALIZZATA (Sync Planning ↔ Timeline) ---
+    async setSelectedDate(newDate) {
+      // Normalizza a YYYY-MM-DD (accetta sia YYYY/MM/DD che YYYY-MM-DD)
+      const clean = String(newDate).replace(/\//g, '-')
+      if (clean === this.selectedDate) return  // Evita fetch duplicati
+      this.selectedDate = clean
+      console.log('[Store] setSelectedDate →', clean)
+      await this.fetchDailySchedule(clean)
+    },
+
+    // --- TIMELINE GANTT (Mattoncini BPMN dal Motore Predittivo) ---
+    async fetchTimelineData(dateStr) {
+      try {
+        this.loading = true
+        const cleanDate = String(dateStr).replace(/\//g, '-')
+
+        // 1. Fetch dal Motore Predittivo (include workflow_schema, capacity, status)
+        const resp = await fetch(`/api/v1/calendar/daily-rides?date=${cleanDate}`)
+        if (!resp.ok) throw new Error(`Backend ${resp.status}`)
+        const engineRides = await resp.json()
+
+        // 2. Arricchisci con dati catalogo (colore, workflow flows)
+        const enriched = (engineRides || []).map(ride => {
+          const act = this.activities.find(a => String(a.id) === String(ride.activity_id))
+          return {
+            ...ride,
+            color_hex: act?.color_hex || ride.color_hex || '#1976D2',
+            activity_name: act?.name || ride.activity_name || '',
+            workflow_schema: act?.workflow_schema || ride.workflow_schema || null,
+          }
+        })
+
+        this.timelineData = enriched
+        return enriched
+      } catch (e) {
+        console.error('[Timeline] fetchTimelineData error:', e)
+        this.timelineData = []
+        return []
+      } finally {
+        this.loading = false
       }
     }
   }

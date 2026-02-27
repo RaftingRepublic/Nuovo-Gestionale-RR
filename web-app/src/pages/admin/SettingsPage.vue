@@ -230,9 +230,9 @@
 
               <q-separator />
 
-              <!-- Blocchi orizzontali -->
+              <!-- Blocchi orizzontali — Drag & Drop reorder -->
               <q-card-section>
-                <div class="row q-gutter-sm wrap items-center">
+                <div class="row q-gutter-sm wrap items-center blocks-container">
                   <template
                     v-for="(block, bIdx) in flow.blocks"
                     :key="block.id"
@@ -240,31 +240,48 @@
                     <!-- Giustificazione: q-space prima del primo blocco ancorato a 'end' -->
                     <q-space v-if="block.anchor === 'end' && (bIdx === 0 || flow.blocks[bIdx - 1].anchor !== 'end')" />
                     <div
-                      class="cursor-pointer"
-                      @click="openFlowBlockDialog(fIdx, bIdx)"
-                    >
-                    <q-chip
-                      :style="{
-                        backgroundColor: block.color || '#607d8b',
-                        color: '#fff',
-                        border: '2px solid transparent'
+                      class="block-chip-wrapper"
+                      :class="{
+                        'drag-over-left': dragState.overFlowIdx === fIdx && dragState.overBlockIdx === bIdx && dragState.dropSide === 'left',
+                        'drag-over-right': dragState.overFlowIdx === fIdx && dragState.overBlockIdx === bIdx && dragState.dropSide === 'right',
+                        'dragging-source': dragState.sourceFlowIdx === fIdx && dragState.sourceBlockIdx === bIdx,
                       }"
-                      text-color="white"
-                      :icon="block.allocation_rule === 'fixed' ? 'lock' : 'extension'"
-                      clickable
-                      square
-                      size="md"
+                      draggable="true"
+                      @dragstart="onDragStart($event, fIdx, bIdx)"
+                      @dragover="onDragOver($event, fIdx, bIdx)"
+                      @dragleave="onDragLeave"
+                      @drop="onDrop($event, fIdx, bIdx)"
+                      @dragend="onDragEnd"
                     >
-                      <strong class="q-mr-xs">{{ block.code || '?' }}</strong>
-                      {{ block.name || 'Blocco' }}
-                      <q-badge color="white" text-color="grey-8" class="q-ml-sm" floating>
-                        {{ block.duration_min || 0 }}'
-                      </q-badge>
-                      <q-tooltip>
-                        {{ block.allocation_rule === 'fixed' ? '🔒 Fisso' : '📐 Proporzionale' }}
-                        · Ancora: {{ block.anchor === 'end' ? 'Fine ←' : 'Inizio →' }}
-                      </q-tooltip>
-                    </q-chip>
+                      <q-icon name="drag_indicator" size="14px" color="white" class="drag-handle" />
+                      <div
+                        class="cursor-pointer"
+                        @click="openFlowBlockDialog(fIdx, bIdx)"
+                      >
+                      <q-chip
+                        :style="{
+                          backgroundColor: block.color || '#607d8b',
+                          color: '#fff',
+                          border: '2px solid transparent'
+                        }"
+                        text-color="white"
+                        :icon="block.allocation_rule === 'fixed' ? 'lock' : 'extension'"
+                        clickable
+                        square
+                        size="md"
+                      >
+                        <strong class="q-mr-xs">{{ block.code || '?' }}</strong>
+                        {{ block.name || 'Blocco' }}
+                        <q-badge color="white" text-color="grey-8" class="q-ml-sm" floating>
+                          {{ block.duration_min || 0 }}'
+                        </q-badge>
+                        <q-tooltip>
+                          {{ block.allocation_rule === 'fixed' ? '🔒 Fisso' : '📐 Proporzionale' }}
+                          · Ancora: {{ block.anchor === 'end' ? 'Fine ←' : 'Inizio →' }}
+                          · Trascina per riordinare
+                        </q-tooltip>
+                      </q-chip>
+                    </div>
                   </div>
                   </template>
 
@@ -458,9 +475,9 @@
             multiple use-chips use-input
             outlined dense
             new-value-mode="add"
-            :options="resourceSuggestions"
-            label="Risorse Collegate"
-            hint="Seleziona o digita nuovi tag"
+            :options="roleSuggestions"
+            label="Ruoli Richiesti (Tags)"
+            hint="Tag ruolo: RAF4, VAN, RAFT…"
           />
 
           <!-- Regola Allocazione (SEMPRE visibile) -->
@@ -509,7 +526,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { useResourceStore } from 'stores/resource-store'
 import { api } from 'src/boot/axios'
@@ -517,6 +534,84 @@ import { api } from 'src/boot/axios'
 const $q = useQuasar()
 const store = useResourceStore()
 const saving = ref(false)
+
+// ═══════════════════════════════════════════════════════════
+// DRAG & DROP — Riordinamento blocchi nei flussi
+// ═══════════════════════════════════════════════════════════
+const dragState = reactive({
+  sourceFlowIdx: null,
+  sourceBlockIdx: null,
+  overFlowIdx: null,
+  overBlockIdx: null,
+  dropSide: null,  // 'left' | 'right'
+})
+
+function onDragStart(event, fIdx, bIdx) {
+  dragState.sourceFlowIdx = fIdx
+  dragState.sourceBlockIdx = bIdx
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', `${fIdx}:${bIdx}`)
+}
+
+function onDragOver(event, fIdx, bIdx) {
+  // Solo blocchi dello stesso flusso
+  if (dragState.sourceFlowIdx !== fIdx) return
+  if (dragState.sourceBlockIdx === bIdx) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+
+  // Calcola la metà del target per indicare inserimento a sinistra o destra
+  const rect = event.currentTarget.getBoundingClientRect()
+  const midX = rect.left + rect.width / 2
+  dragState.overFlowIdx = fIdx
+  dragState.overBlockIdx = bIdx
+  dragState.dropSide = event.clientX < midX ? 'left' : 'right'
+}
+
+function onDragLeave() {
+  dragState.overFlowIdx = null
+  dragState.overBlockIdx = null
+  dragState.dropSide = null
+}
+
+function onDrop(event, fIdx, bIdx) {
+  event.preventDefault()
+  if (dragState.sourceFlowIdx !== fIdx) return
+
+  const srcIdx = dragState.sourceBlockIdx
+  if (srcIdx === null || srcIdx === bIdx) { _resetDrag(); return }
+
+  const flow = schema.value.flows[fIdx]
+  if (!flow) { _resetDrag(); return }
+
+  // Rimuovi il blocco dalla posizione originale
+  const [movedBlock] = flow.blocks.splice(srcIdx, 1)
+
+  // Calcola la posizione target (adjustata dopo rimozione)
+  let targetIdx = bIdx
+  if (srcIdx < bIdx) targetIdx--  // Compensazione per rimozione precedente
+  if (dragState.dropSide === 'right') targetIdx++
+
+  // Clamp nei limiti
+  targetIdx = Math.max(0, Math.min(targetIdx, flow.blocks.length))
+
+  flow.blocks.splice(targetIdx, 0, movedBlock)
+
+  console.log(`[DnD] Blocco "${movedBlock.name}" spostato: ${srcIdx} → ${targetIdx} in flusso ${fIdx}`)
+  _resetDrag()
+}
+
+function onDragEnd() {
+  _resetDrag()
+}
+
+function _resetDrag() {
+  dragState.sourceFlowIdx = null
+  dragState.sourceBlockIdx = null
+  dragState.overFlowIdx = null
+  dragState.overBlockIdx = null
+  dragState.dropSide = null
+}
 
 // ═══════════════════════════════════════════════════════════
 // TASK 1: LIBRERIA MATTONCINI (LocalStorage)
@@ -535,7 +630,7 @@ watch(blockTemplates, (val) => {
 // ═══════════════════════════════════════════════════════════
 // COSTANTI E SUGGERIMENTI
 // ═══════════════════════════════════════════════════════════
-const resourceSuggestions = ['RAF4', 'RAF3', 'HYD', 'SK', 'CB', 'SH', 'VAN', 'RAFT', 'TRAILER', 'N', 'NC', 'C']
+const roleSuggestions = ['RAF4', 'RAF3', 'HYD', 'SK', 'CB', 'SH', 'VAN', 'RAFT', 'TRAILER', 'N', 'NC', 'C']
 
 const anchorOptions = [
   { label: 'Offset da Inizio →', value: 'start' },
@@ -596,10 +691,58 @@ watch(selectedActivity, (act) => {
       }
     }
     schema.value = cloned
+
+    // ─── AUTO-HARVESTING: Inietta blocchi sconosciuti nella Libreria ───
+    _autoHarvestBlocks(cloned)
   } else {
     schema.value = { flows: [], logistics: { min_guides: 1, requires_van: false, requires_trailer: false } };
   }
 }, { immediate: true })
+
+/**
+ * Auto-Harvesting: scansiona i blocchi di una ricetta e aggiunge alla libreria
+ * quelli non già presenti (confronto per name + duration_min).
+ * Esclude i blocchi-spaziatore ("spazio vuoto").
+ */
+function _autoHarvestBlocks(workflowSchema) {
+  if (!workflowSchema?.flows) return
+  let harvested = 0
+
+  for (const flow of workflowSchema.flows) {
+    for (const block of (flow.blocks || [])) {
+      const bName = (block.name || '').trim()
+      if (!bName || bName.toLowerCase().includes('spazio vuoto')) continue
+
+      // Controlla se esiste già nella libreria (unicità: name + duration)
+      const exists = blockTemplates.value.some(t =>
+        t.name === bName && t.duration_min === (block.duration_min || block.duration || 0)
+      )
+      if (!exists) {
+        blockTemplates.value.push({
+          id: genId('tpl'),
+          name: bName,
+          code: block.code || bName.substring(0, 4).toUpperCase(),
+          color: block.color || '#607d8b',
+          duration_min: block.duration_min || block.duration || 15,
+          resources: block.resources || [],
+          allocation_rule: block.allocation_rule || 'per_unit',
+        })
+        harvested++
+      }
+    }
+  }
+
+  if (harvested > 0) {
+    console.log(`[Auto-Harvest] ${harvested} nuovi mattoncini aggiunti alla libreria`)
+    $q.notify({
+      type: 'info',
+      message: `🧱 Auto-Harvest: ${harvested} mattoncini importati nella libreria`,
+      icon: 'widgets',
+      position: 'top',
+      timeout: 2500,
+    })
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 // TASK 4: DIALOG UNIFICATO
@@ -817,5 +960,39 @@ async function saveWorkflow() {
 .template-card:hover {
   box-shadow: 0 2px 12px rgba(0,0,0,0.12);
   transform: translateY(-1px);
+}
+
+/* ── Drag & Drop Blocchi ── */
+.block-chip-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  border-radius: 6px;
+  padding: 2px;
+}
+.block-chip-wrapper .drag-handle {
+  cursor: grab;
+  opacity: 0.5;
+  margin-right: 2px;
+  transition: opacity 0.2s;
+}
+.block-chip-wrapper:hover .drag-handle {
+  opacity: 1;
+}
+.block-chip-wrapper.dragging-source {
+  opacity: 0.35;
+  transform: scale(0.92);
+}
+.block-chip-wrapper.drag-over-left {
+  border-left: 3px solid #7c4dff;
+  padding-left: 0;
+}
+.block-chip-wrapper.drag-over-right {
+  border-right: 3px solid #7c4dff;
+  padding-right: 0;
+}
+.blocks-container {
+  min-height: 48px;
 }
 </style>

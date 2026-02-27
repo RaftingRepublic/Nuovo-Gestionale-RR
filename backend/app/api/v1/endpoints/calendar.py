@@ -5,6 +5,7 @@ Espone i dati SQL (Attività, Discese) al Frontend con query ottimizzate.
 Sostituisce le vecchie logiche basate su file JSON.
 """
 
+import os
 import httpx
 from collections import defaultdict
 from datetime import date
@@ -177,13 +178,11 @@ def _ensure_theoretical_rides(db: Session, target_date: date) -> None:
 
 # ──────────────────────────────────────────────────────────
 # GET /daily-rides — Discese con Engine calcolato
-_SUPABASE_URL = "https://tttyeluyutbpczbslgwi.supabase.co"
-_SUPABASE_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dHllbHV5dXRicGN6YnNsZ3dpIiwi"
-    "cm9sZSI6ImFub24iLCJpYXQiOjE3NzE3Nzg5NTIsImV4cCI6MjA4NzM1NDk1Mn0."
-    "kdcJtU_LHkZv20MFxDQZGkn2iz4ZBuZC3dQjLxWoaTs"
-)
+# ── Supabase Auth da .env (mai più hardcode) ──
+_raw_url = os.getenv("SUPABASE_URL", "")
+_raw_key = os.getenv("SUPABASE_KEY", "")
+_SUPABASE_URL = _raw_url.strip().strip("\"'")
+_SUPABASE_KEY = _raw_key.strip().strip("\"'")
 
 def _fetch_supabase_pax(dates: set) -> dict:
     """Sonda HTTP sincrona per estrarre i pax reali da Supabase (Split-Brain Fix)."""
@@ -263,6 +262,7 @@ def list_daily_rides(
             joinedload(DailyRideDB.assigned_staff),
             joinedload(DailyRideDB.assigned_fleet),
         )
+        .filter(DailyRideDB.status != "X")  # Escludi turni chiusi manualmente
         .order_by(DailyRideDB.ride_date, DailyRideDB.ride_time)
     )
 
@@ -319,6 +319,85 @@ def list_daily_rides(
 
     return result
 
+
+# ──────────────────────────────────────────────────────────
+# POST /daily-rides/close — Manual Kill-Switch Turno Vuoto
+# NOTA: Deve stare PRIMA di /daily-rides/{ride_id} per evitare routing collision
+# ──────────────────────────────────────────────────────────
+from pydantic import BaseModel as _PydanticBaseModel
+
+class CloseRideRequest(_PydanticBaseModel):
+    ride_id: str
+
+@router.post("/daily-rides/close")
+def close_ride(
+    payload: CloseRideRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Manual Kill-Switch: chiude un turno vuoto.
+    Imposta status='X' (CLOSED) e is_overridden=True.
+    Prerequisito: booked_pax deve essere 0.
+    """
+    ride = db.query(DailyRideDB).filter(DailyRideDB.id == payload.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Turno non trovato")
+
+    # Verifica booked_pax = 0
+    pax = calculate_booked_pax(ride)
+    if pax > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Impossibile chiudere: il turno ha {pax} pax prenotati"
+        )
+
+    ride.status = "X"
+    ride.is_overridden = True
+    ride.notes = (ride.notes or "") + " [CHIUSO MANUALMENTE]"
+    db.commit()
+
+    return {"status": "ok", "message": f"Turno {payload.ride_id} chiuso (status=X)"}
+
+
+# ──────────────────────────────────────────────────────────
+# PATCH /daily-rides/{ride_id}/status — Semaforo Manuale (Dual-Write SQLite)
+# ──────────────────────────────────────────────────────────
+class StatusUpdateRequest(_PydanticBaseModel):
+    status: str  # "A", "B", "C", "D" o "AUTO"
+
+@router.patch("/daily-rides/{ride_id}/status")
+def update_ride_status(
+    ride_id: str,
+    payload: StatusUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Aggiorna il semaforo del turno su SQLite.
+    Se status='AUTO' → is_overridden=False (torna al calcolo motore).
+    Altrimenti → status=<valore>, is_overridden=True.
+    """
+    ride = db.query(DailyRideDB).filter(DailyRideDB.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Turno non trovato")
+
+    if payload.status.upper() == "AUTO":
+        ride.is_overridden = False
+        # Ricalcolo semplificato basato su pax
+        pax = calculate_booked_pax(ride)
+        # Usa Engine light: se pax >= capacity → C, else A
+        ride.status = "A"  # Il motore sovrascriverà al prossimo ricalcolo
+    else:
+        ride.status = payload.status.upper()
+        ride.is_overridden = True
+
+    db.commit()
+
+    return {
+        "status": "ok",
+        "ride_id": ride_id,
+        "new_status": ride.status,
+        "is_overridden": ride.is_overridden
+    }
 
 # ──────────────────────────────────────────────────────────
 # GET /daily-rides/export-firaft — Export CSV per FIRAFT

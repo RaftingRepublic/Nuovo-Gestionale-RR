@@ -169,7 +169,7 @@ class AvailabilityEngine:
         yield_warning = False
         
         target_min_guides_abs = target_data["min_guides_absolute"]
-        target_vans_needed = math.ceil((target_data["booked_pax"] + 1) / van_net_seats) if target_data["requires_van"] else 0
+        target_vans_needed = math.ceil(target_data["booked_pax"] / van_net_seats) if target_data["requires_van"] and target_data["booked_pax"] > 0 else 0
 
         for block in target_data["timeline"]:
             start_m = max(0, min(1439, int(block["start"].hour * 60 + block["start"].minute)))
@@ -222,6 +222,9 @@ class AvailabilityEngine:
         results = {}
         if not rides: return results
 
+        # Mappa status DB → status Engine per override manuali
+        _STATUS_MAP = {"A": "VERDE", "B": "GIALLO", "C": "ROSSO", "D": "BLU"}
+
         # ─── RIVER LEDGER: Pass 1 Chronologico (Calcolo Matrice ARR & Consumi) ───
         rides_data = {}
         river_boats = [] # [{'arrive_CL': datetime, 'arrive_FA': datetime, 'empty_seats': int}]
@@ -229,6 +232,30 @@ class AvailabilityEngine:
         for ride in rides:
             activity = ride.activity
             if not activity: continue
+
+            # Skip turni chiusi manualmente (status X)
+            if ride.status == "X":
+                continue
+
+            # ── OVERRIDE BYPASS: se forzato manualmente, restituisci lo status salvato ──
+            if ride.is_overridden:
+                override_status = _STATUS_MAP.get(ride.status, "VERDE")
+                # Calcola comunque booked_pax per la UI
+                if external_pax_map is not None:
+                    booked_pax = external_pax_map.get(str(ride.id), 0)
+                else:
+                    booked_pax = AvailabilityEngine._calc_booked_pax(ride, raft_capacity)
+
+                results[ride.id] = {
+                    "status": override_status,
+                    "total_capacity": 0,  # Non calcolato
+                    "arr_bonus_seats": 0,
+                    "booked_pax": booked_pax,
+                    "remaining_seats": 0,
+                    "debug_yield_warning": False,
+                }
+                print(f"\n🔒 [ENGINE] Turno {activity.name} OVERRIDE → {override_status} (is_overridden=True)\n")
+                continue
 
             T = datetime.combine(target_date, ride.ride_time)
             

@@ -22,7 +22,15 @@
           <q-item-section>Calendario Operativo</q-item-section>
         </q-item>
 
+        <q-item clickable v-ripple to="/admin/timeline" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="view_timeline" /></q-item-section>
+          <q-item-section>Timeline Flussi (Gantt)</q-item-section>
+        </q-item>
 
+        <q-item clickable v-ripple to="/admin/board" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="dashboard" /></q-item-section>
+          <q-item-section>Lavagna Operativa</q-item-section>
+        </q-item>
         <q-separator class="q-my-md" />
         <q-item-label header class="text-weight-bold text-grey-8">Consensi &amp; Registrazioni</q-item-label>
 

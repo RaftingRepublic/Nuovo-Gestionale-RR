@@ -46,6 +46,7 @@
         <span class="text-h6 text-weight-bold text-uppercase q-mx-md">{{ formatSelectedDate }}</span>
         <q-btn round flat icon="chevron_right" @click="nextDay" color="primary" />
         <q-btn outline icon="view_column" label="Lavagna Operativa" color="primary" size="sm" class="q-ml-sm" @click="goToBoard" />
+        <q-btn outline icon="auto_graph" label="Timeline Flussi" color="indigo-7" size="sm" class="q-ml-xs" @click="router.push('/admin/timeline')" />
         <q-space />
         <q-btn outline icon="download" label="Export FIRAFT (CSV)" color="teal" size="sm" @click="exportFiraft" />
       </div>
@@ -84,6 +85,11 @@
                     </div>
                   </q-item-label>
                 </q-item-section>
+                <q-item-section side v-if="slot.booked_pax === 0">
+                  <q-btn flat round dense icon="delete_outline" color="red-4" size="sm" @click.stop="confirmCloseRide(slot)">
+                    <q-tooltip>Chiudi turno vuoto</q-tooltip>
+                  </q-btn>
+                </q-item-section>
               </q-item>
               <q-separator />
               <q-card-section class="q-pa-sm text-center" :class="getSlotBgClass(slot)" v-show="viewFilter === 'tutto' || viewFilter === 'discese'">
@@ -96,6 +102,27 @@
                          / {{ slot.total_capacity !== undefined ? slot.total_capacity : '?' }}
                       </span>
                       <span class="text-subtitle1 text-grey-8 q-ml-sm">pax</span>
+                   </div>
+
+                   <!-- Remaining Seats — Riga reattiva con icona Sarre -->
+                   <div class="row items-center justify-center q-mt-xs q-gutter-x-xs">
+                      <q-icon
+                        v-if="slot.engine_status === 'GIALLO'"
+                        name="warning"
+                        color="warning"
+                        size="18px"
+                        title="Eccezione di Sarre: sedili furgone insufficienti, spola necessaria"
+                      />
+                      <span
+                        class="text-caption text-weight-medium"
+                        :class="{
+                          'text-negative': getRemainingSeats(slot) <= 0,
+                          'text-warning': getRemainingSeats(slot) > 0 && getRemainingSeats(slot) <= 4,
+                          'text-positive': getRemainingSeats(slot) > 4
+                        }"
+                      >
+                        {{ getRemainingSeats(slot) >= 0 ? getRemainingSeats(slot) : 0 }} posti residui
+                      </span>
                    </div>
 
                    <div style="min-height: 24px;" class="q-mt-sm">
@@ -161,9 +188,13 @@
         </div>
       </div>
 
-      <!-- Contenuto SEGRETERIA -->
-      <div v-else class="col scroll">
-        <DeskDashboardPage :external-date="selectedDate ? selectedDate.replace(/\//g, '-') : null" :hide-calendar="true" />
+      <!-- Contenuto SEGRETERIA — Migrato nell'Omni-Board (RideDialog tabs) -->
+      <div v-else class="col scroll flex flex-center">
+        <div class="text-center text-grey-6 q-pa-xl">
+          <q-icon name="info" size="3em" class="q-mb-md" />
+          <div class="text-h6">La Segreteria è integrata nel Calendario Operativo</div>
+          <div class="text-subtitle2 q-mt-sm">Clicca su un turno per aprire la modale POS (tab "Nuova Prenotazione")</div>
+        </div>
       </div>
     </div>
 
@@ -205,14 +236,28 @@ import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import ResourcePanel from 'components/ResourcePanel.vue'
 import FiraftDialog from 'components/FiraftDialog.vue'
 import RideDialog from 'components/RideDialog.vue'
-import DeskDashboardPage from 'pages/DeskDashboardPage.vue'
+// [SPURGO SENTINA 27/02/2026] DeskDashboardPage eliminato — POS migrato in RideDialog tabs
 
 const route = useRoute()
 const router = useRouter()
 const store = useResourceStore()
 const $q = useQuasar()
 const seasonDialog = ref(null)
-const selectedDate = ref(route.query.date ? String(route.query.date).replace(/-/g, '/') : new Date().toISOString().split('T')[0].replace(/-/g, '/'))
+// selectedDate: computed bidirezionale ancorato allo store centralizzato
+// Formato interno PlanningPage: YYYY/MM/DD (compatibilità Quasar)
+// Formato store: YYYY-MM-DD
+const selectedDate = computed({
+  get: () => store.selectedDate.replace(/-/g, '/'),
+  set: (val) => {
+    const clean = String(val).replace(/\//g, '-')
+    store.selectedDate = clean  // set diretto (senza fetch) per navigazione calendario
+  }
+})
+
+// Inizializza lo store se c'è un query param
+if (route.query.date) {
+  store.selectedDate = String(route.query.date).replace(/\//g, '-')
+}
 // Ambiente determinato dalla rotta
 const isSegreteria = computed(() => route.path.includes('segreteria'))
 
@@ -255,11 +300,11 @@ watch(viewMode, (newMode) => {
   viewFilter.value = newMode === 'MONTH' ? 'discese' : 'tutto'
 }, { immediate: true })
 
-// WATCHER REATTIVO (Gestisce SIA il cambio data SIA il caricamento iniziale)
-watch(selectedDate, async (newDate) => {
+// WATCHER su store.selectedDate (centralizzato)
+watch(() => store.selectedDate, async (newDate) => {
   if (!newDate) return
   if (viewMode.value === 'DETAIL') {
-    console.log('[PlanningPage] Watcher selectedDate -> loadSchedule()')
+    console.log('[PlanningPage] Watcher store.selectedDate ->', newDate)
     await loadSchedule()
   }
 }, { immediate: true })
@@ -347,21 +392,21 @@ async function onRideClickFromMonth({ date, ride }) {
 // DAY NAVIGATION
 // ═══════════════════════════════════════════════════════════
 function prevDay() {
-  const current = new Date(selectedDate.value.replace(/\//g, '-'))
+  const current = new Date(store.selectedDate)
   const prev = qdate.subtractFromDate(current, { days: 1 })
-  selectedDate.value = qdate.formatDate(prev, 'YYYY/MM/DD')
+  const newDate = qdate.formatDate(prev, 'YYYY-MM-DD')
   currentYear.value = prev.getFullYear()
   currentMonth.value = prev.getMonth() + 1
-  loadSchedule()
+  store.setSelectedDate(newDate)  // Centralizzato: aggiorna store + fetch
 }
 
 function nextDay() {
-  const current = new Date(selectedDate.value.replace(/\//g, '-'))
+  const current = new Date(store.selectedDate)
   const next = qdate.addToDate(current, { days: 1 })
-  selectedDate.value = qdate.formatDate(next, 'YYYY/MM/DD')
+  const newDate = qdate.formatDate(next, 'YYYY-MM-DD')
   currentYear.value = next.getFullYear()
   currentMonth.value = next.getMonth() + 1
-  loadSchedule()
+  store.setSelectedDate(newDate)  // Centralizzato: aggiorna store + fetch
 }
 
 async function loadSchedule() {
@@ -374,6 +419,45 @@ async function loadSchedule() {
 function goToBoard() {
   const dateParams = selectedDate.value ? String(selectedDate.value).replace(/\//g, '-') : null
   if (dateParams) router.push({ path: '/admin/board', query: { date: dateParams } })
+}
+
+// ═══════════════════════════════════════════════════════════
+// KILL-SWITCH — Chiudi turno vuoto
+// ═══════════════════════════════════════════════════════════
+function confirmCloseRide(slot) {
+  $q.dialog({
+    title: 'Chiudi Turno',
+    message: `Confermi la chiusura del turno "${slot.activity_type}" alle ${slot.time?.slice(0,5)}? Il turno scomparirà dal calendario e dalla timeline.`,
+    cancel: 'Annulla',
+    ok: { label: 'Chiudi Turno', color: 'negative', icon: 'delete' },
+    persistent: true,
+  }).onOk(async () => {
+    try {
+      const resp = await fetch('/api/v1/calendar/daily-rides/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ride_id: slot.id }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json()
+        throw new Error(err.detail || 'Errore chiusura turno')
+      }
+
+      // Rimozione reattiva immediata dallo store (senza ricaricare la pagina)
+      const idx = store.dailySchedule.findIndex(r => r.id === slot.id)
+      if (idx !== -1) store.dailySchedule.splice(idx, 1)
+
+      console.log(`✅ [KILL-SWITCH] Turno ${slot.activity_type} ${slot.time} rimosso (ride: ${slot.id})`)
+      $q.notify({ type: 'positive', message: `Turno ${slot.activity_type} ${slot.time?.slice(0,5)} chiuso ✅`, icon: 'check' })
+
+      // Background sync per coerenza
+      const cleanDate = String(selectedDate.value).replace(/\//g, '-')
+      store.fetchDailySchedule(cleanDate) // Non await — async in background
+    } catch (e) {
+      console.error(e)
+      $q.notify({ type: 'negative', message: e.message || 'Errore chiusura turno' })
+    }
+  })
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -585,6 +669,17 @@ function getSlotBgClass(slot) {
   if (pax >= max) return 'bg-red-1'
   if (pax >= max - 4 && pax > 0) return 'bg-orange-1'
   return 'bg-green-1'
+}
+
+function getRemainingSeats(slot) {
+  // Preferisce il valore pre-calcolato dal Motore Predittivo (già include ARR bonus)
+  if (slot.remaining_seats !== undefined && slot.remaining_seats !== null) {
+    return Number(slot.remaining_seats)
+  }
+  // Fallback matematico client-side
+  const cap = Number(slot.total_capacity || 0)
+  const pax = Number(slot.booked_pax || 0)
+  return Math.max(0, cap - pax)
 }
 </script>
 

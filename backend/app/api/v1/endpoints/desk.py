@@ -1,3 +1,4 @@
+import os
 import httpx
 import uuid
 from typing import List
@@ -13,13 +14,11 @@ from app.schemas.desk import (
 
 router = APIRouter()
 
-_SUPABASE_URL = "https://tttyeluyutbpczbslgwi.supabase.co"
-_SUPABASE_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dHllbHV5dXRicGN6YnNsZ3dpIiwi"
-    "cm9sZSI6ImFub24iLCJpYXQiOjE3NzE3Nzg5NTIsImV4cCI6MjA4NzM1NDk1Mn0."
-    "kdcJtU_LHkZv20MFxDQZGkn2iz4ZBuZC3dQjLxWoaTs"
-)
+# ── Supabase Auth da .env (mai più hardcode) ──
+_raw_url = os.getenv("SUPABASE_URL", "")
+_raw_key = os.getenv("SUPABASE_KEY", "")
+_SUPABASE_URL = _raw_url.strip().strip("\"'")
+_SUPABASE_KEY = _raw_key.strip().strip("\"'")
 
 def _get_headers(is_write=False):
     headers = {

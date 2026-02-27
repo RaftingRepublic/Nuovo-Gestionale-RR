@@ -2,12 +2,27 @@
   <q-page class="q-pa-md">
     <!-- Intestazione e Controlli -->
     <div class="row items-center justify-between q-mb-md">
-      <div class="text-h5 text-weight-bold">
-        <q-icon name="view_timeline" class="q-mr-sm" color="primary" />
-        Timeline Operativa
+      <div class="row items-center q-gutter-sm">
+        <q-btn flat icon="arrow_back" label="Torna al Giorno" color="primary" @click="router.push({ path: '/admin/operativo', query: { date: store.selectedDate } })" />
+        <q-separator vertical />
+        <div class="text-h5 text-weight-bold">
+          <q-icon name="view_timeline" class="q-mr-sm" color="primary" />
+          Timeline Operativa
+        </div>
       </div>
-      <div>
-        <q-input v-model="selectedDate" mask="date" :rules="['date']" outlined dense label="Data">
+      <div class="row items-center q-gutter-sm">
+        <!-- Toggle Vista DISC / ROLE -->
+        <q-btn-toggle
+          v-model="store.timelineViewMode"
+          toggle-color="primary"
+          dense unelevated
+          :options="[
+            { label: 'Discese', value: 'DISC', icon: 'directions_boat' },
+            { label: 'Ruoli', value: 'ROLE', icon: 'badge' }
+          ]"
+          class="shadow-1"
+        />
+        <q-input v-model="selectedDate" mask="date" :rules="['date']" outlined dense label="Data" style="max-width: 180px;">
           <template v-slot:append>
             <q-icon name="event" class="cursor-pointer">
               <q-popup-proxy cover transition-show="scale" transition-hide="scale">
@@ -27,9 +42,7 @@
     <div class="timeline-container bg-white border-radius-sm shadow-2">
       <!-- Header Asse X (Ore) -->
       <div class="timeline-header row no-wrap relative-position">
-        <!-- Spazio vuoto allineato con la colonna delle label -->
         <div class="timeline-sidebar header-sidebar"></div>
-        <!-- Grid delle ore -->
         <div class="timeline-grid relative-position text-caption text-grey-6 z-top" style="flex-grow: 1;">
           <div
             v-for="hour in hoursScale"
@@ -44,106 +57,361 @@
 
       <q-separator />
 
-      <!-- Body Asse Y (Rides) -->
+      <!-- Barra Saturazione Risorse -->
+      <div v-if="!loading && activeRides.length > 0" class="saturation-bar-container row no-wrap relative-position" style="height: 18px;">
+        <div class="timeline-sidebar header-sidebar" style="height: 18px;">
+          <span class="text-caption text-grey-6 q-px-xs" style="font-size: 9px; line-height: 18px;">SAT%</span>
+        </div>
+        <div class="relative-position" style="flex-grow: 1; height: 18px; background: #f5f5f5;">
+          <div
+            v-for="(bucket, bIdx) in saturationBuckets"
+            :key="'sat-'+bIdx"
+            class="absolute"
+            :style="{
+              left: (bIdx / saturationBuckets.length * 100) + '%',
+              width: (100 / saturationBuckets.length) + '%',
+              height: '100%',
+              backgroundColor: bucket.pct <= 0 ? 'transparent' : bucket.pct < 70 ? '#4caf50' : bucket.pct < 90 ? '#ff9800' : '#f44336',
+              opacity: bucket.pct > 0 ? 0.7 : 0,
+              transition: 'background-color 0.3s'
+            }"
+          >
+            <q-tooltip class="bg-dark text-white text-caption" :delay="100">
+              {{ bucket.timeLabel }} — {{ bucket.pct }}% saturazione ({{ bucket.occupied }}/{{ bucket.pool }} ruoli)
+            </q-tooltip>
+          </div>
+        </div>
+      </div>
+
+      <!-- Body -->
       <div class="timeline-body">
         <div v-if="loading" class="q-pa-xl text-center text-grey-5">
           <q-spinner color="primary" size="2em" class="q-mb-sm"/>
           <div>Caricamento turni...</div>
         </div>
-        <div v-else-if="activeRides.length === 0" class="q-pa-xl text-center text-grey-5">
-          <q-icon name="info" size="32px" class="q-mb-sm" />
-          <div class="text-body1">Nessun turno reale schedulato in questa data.</div>
-        </div>
 
-        <div
-          v-for="ride in activeRides"
-          :key="ride.id"
-          class="timeline-row row no-wrap"
-        >
-          <!-- Colonna fissa a sinistra -->
-          <div class="timeline-sidebar column justify-center q-px-sm bg-grey-1 text-caption text-weight-bold">
-            <div class="text-primary">{{ String(ride.time).substring(0,5) }}</div>
-            <div class="ellipsis">{{ ride.activity_type || ride.activity_name }}</div>
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- VISTA DISCESE (DISC) — pista = ride                    -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <template v-else-if="store.timelineViewMode === 'DISC'">
+          <div v-if="activeRides.length === 0" class="q-pa-xl text-center text-grey-5">
+            <q-icon name="info" size="32px" class="q-mb-sm" />
+            <div class="text-body1">Nessun turno schedulato in questa data.</div>
           </div>
 
-          <!-- Pista del tempo -->
-          <div class="timeline-track relative-position">
-            <!-- Griglia di sfondo (righe verticali) -->
-            <div
-              v-for="hour in hoursScale"
-              :key="'grid-'+hour"
-              class="grid-line absolute-top-bottom"
-              :style="{ left: calcLeftPercent(hour + ':00') + '%' }"
-            ></div>
+          <div
+            v-for="ride in activeRides"
+            :key="ride.id"
+            class="timeline-row row no-wrap"
+          >
+            <div class="timeline-sidebar column justify-center q-px-sm bg-grey-1 text-caption text-weight-bold">
+              <div class="text-primary">{{ String(ride.time).substring(0,5) }}</div>
+              <div class="ellipsis">{{ ride.activity_type || ride.activity_name }}</div>
+            </div>
 
-            <!-- Mattoncini Spaziali BPMN V5 -->
-            <template v-if="!settingsLoading">
+            <div class="timeline-track relative-position">
+              <div v-for="hour in hoursScale" :key="'grid-'+hour" class="grid-line absolute-top-bottom" :style="{ left: calcLeftPercent(hour + ':00') + '%' }"></div>
+
+              <template v-if="!settingsLoading">
+                <div
+                  v-for="(block, idx) in getComputedBlocks(ride)"
+                  :key="idx"
+                  class="gantt-block absolute text-white row items-center shadow-1 overflow-hidden rounded-borders"
+                  :style="{
+                    left: calcLeftPercent(block.startMin) + '%',
+                    width: Math.max(0.5, calcWidthPercent(block.duration)) + '%',
+                    backgroundColor: block.color || getActivityColor(ride),
+                    top: getBlockTop(block) + '%',
+                    height: getBlockHeight(block) + '%',
+                    borderRadius: '3px',
+                    opacity: block.isEnd ? 0.9 : 1,
+                    backgroundImage: block.flowIndex > 0 ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.15) 4px, rgba(255,255,255,0.15) 8px)' : 'none',
+                    zIndex: 2,
+                    minWidth: '2px'
+                  }"
+                >
+                  <span class="ellipsis q-px-xs text-weight-bold" style="font-size: 9px; line-height: 1.2; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">
+                    {{ block.name }}
+                  </span>
+                  <q-tooltip class="bg-indigo-10 text-white text-caption shadow-4" :delay="200">
+                    <div class="text-weight-bold">{{ block.name }}</div>
+                    <div>Durata: {{ block.duration }} min</div>
+                    <div>Flusso: #{{ block.flowIndex }} ({{ block.flowName || '?' }})</div>
+                    <div v-if="block.resourceClasses && block.resourceClasses.length">
+                      Risorse: {{ block.resourceClasses.join(', ') }}
+                    </div>
+                  </q-tooltip>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- VISTA RUOLI (ROLE) — pista = tag ruolo con Multi-Lane  -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <template v-else>
+          <div v-if="roleTimelineRows.length === 0" class="q-pa-xl text-center text-grey-5">
+            <q-icon name="badge" size="32px" class="q-mb-sm" />
+            <div class="text-body1">Nessun ruolo assorbito nei turni di oggi.</div>
+          </div>
+
+          <div
+            v-for="row in roleTimelineRows"
+            :key="row.roleTag"
+            class="timeline-row row no-wrap"
+          >
+            <!-- Sidebar: codice ruolo + conteggio lanes -->
+            <div class="timeline-sidebar column justify-center q-px-sm text-caption text-weight-bold"
+                 :class="row.isFleet ? 'bg-orange-1' : 'bg-blue-1'"
+                 :style="{ minHeight: Math.max(60, row.lanesCount * 30) + 'px' }">
+              <div class="row items-center no-wrap">
+                <q-icon :name="row.isFleet ? 'local_shipping' : 'person'" size="16px"
+                        :color="row.isFleet ? 'orange-8' : 'primary'" class="q-mr-xs" />
+                <span class="text-weight-bold" style="font-size: 13px;">{{ row.roleTag }}</span>
+                <q-badge v-if="row.lanesCount > 1" color="red-5" text-color="white" class="q-ml-xs" style="font-size: 10px;">
+                  ×{{ row.lanesCount }}
+                </q-badge>
+              </div>
+              <div class="text-grey-6" style="font-size: 9px;">
+                {{ row.blocks.length }} impegni
+              </div>
+            </div>
+
+            <!-- Pista del tempo — altezza adattiva -->
+            <div class="timeline-track relative-position"
+                 :style="{ height: Math.max(60, row.lanesCount * 30) + 'px' }">
+              <div v-for="hour in hoursScale" :key="'rolegrid-'+hour" class="grid-line absolute-top-bottom" :style="{ left: calcLeftPercent(hour + ':00') + '%' }"></div>
+
               <div
-                v-for="(block, idx) in getComputedBlocks(ride)"
-                :key="idx"
-                class="absolute text-white row items-center justify-center shadow-1 overflow-hidden rounded-borders"
+                v-for="(block, bIdx) in row.blocks"
+                :key="bIdx"
+                class="gantt-block absolute text-white row items-center shadow-1 overflow-hidden rounded-borders"
                 :style="{
                   left: calcLeftPercent(block.startMin) + '%',
-                  width: calcWidthPercent(block.duration) + '%',
-                  backgroundColor: getActivityColor(ride),
-                  top: '10%',
-                  height: '80%',
-                  borderRadius: '4px',
-                  opacity: block.isEnd ? 0.85 : 1,
-                  backgroundImage: block.isEnd ? 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.2) 5px, rgba(255,255,255,0.2) 10px)' : 'none'
+                  width: Math.max(0.5, calcWidthPercent(block.duration)) + '%',
+                  backgroundColor: block.rideColor || '#607d8b',
+                  top: getRoleLaneTop(block.laneIndex, row.lanesCount) + '%',
+                  height: getRoleLaneHeight(row.lanesCount) + '%',
+                  borderRadius: '3px',
+                  zIndex: 2,
+                  minWidth: '2px'
                 }"
               >
-                <span class="ellipsis q-px-xs text-caption text-weight-bold" style="font-size: 10px; text-transform: lowercase;">
-                  {{ block.name }}
+                <span class="ellipsis q-px-xs text-weight-bold" style="font-size: 9px; line-height: 1.2; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">
+                  {{ block.rideName }} · {{ block.name }}
                 </span>
-
                 <q-tooltip class="bg-indigo-10 text-white text-caption shadow-4" :delay="200">
-                  <div class="text-weight-bold">{{ block.name }}</div>
-                  <div>Durata: {{ block.duration }} min</div>
-                  <div v-if="block.resourceClasses && block.resourceClasses.length">
-                    Risorse: {{ block.resourceClasses.join(', ') }}
-                  </div>
+                  <div class="text-weight-bold">{{ block.rideName }} — {{ block.name }}</div>
+                  <div>Orario turno: {{ block.rideTime }}</div>
+                  <div>Durata blocco: {{ block.duration }} min</div>
+                  <div>Corsia: {{ block.laneIndex + 1 }} / {{ row.lanesCount }}</div>
+                  <div>Ruoli assorbiti: {{ block.allRoleTags.join(', ') }}</div>
                 </q-tooltip>
               </div>
-            </template>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
   </q-page>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useResourceStore } from 'stores/resource-store'
 import { useSettingsStore } from 'stores/settings-store'
 
 const store = useResourceStore()
 const settingsStore = useSettingsStore()
+const router = useRouter()
 
-// Impostazioni Data
-const getTodayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-const selectedDate = ref(getTodayStr())
+// selectedDate: computed bidirezionale ancorato allo store centralizzato
+// Formato Quasar QDate: YYYY-MM-DD (stesso del store, nessuna conversione necessaria)
+const selectedDate = computed({
+  get: () => store.selectedDate,
+  set: (val) => {
+    if (val && val !== store.selectedDate) {
+      store.setSelectedDate(val)
+    }
+  }
+})
 
 const loading = computed(() => store.loading || settingsStore.loading)
 const settingsLoading = computed(() => settingsStore.loading)
 
-// Fetching automatico al variare della data
-watch(selectedDate, async (newVal) => {
+// Watcher su store.selectedDate (centralizzato — reagisce anche a cambi dalla PlanningPage)
+watch(() => store.selectedDate, async (newVal) => {
   if (newVal) {
     if (store.activities.length === 0) await store.fetchCatalogs()
     if (settingsStore.settings.length === 0) await settingsStore.fetchSettings()
-    const queryDate = String(newVal).replace(/\//g, '-')
-    await store.fetchDailySchedule(queryDate)
+    if (store.staffList.length === 0) await store.fetchStaff() // Pool per Barra Saturazione
+    const cleanDate = String(newVal).replace(/\//g, '-')
+    await store.fetchDailySchedule(cleanDate)
   }
 }, { immediate: true })
 
-// Solo turni reali
+// Turni per la Timeline DISC: include TUTTI i turni con attività nota
 const activeRides = computed(() => {
-  return (store.dailySchedule || []).filter(r => !r.isGhost)
+  return (store.dailySchedule || []).filter(r => {
+    const act = store.activities.find(a => String(a.id) === String(r.activity_id))
+    return !!act
+  })
+})
+
+// ═══════════════════════════════════════════════════════════
+// BARRA SATURAZIONE — Bucket da 5 minuti (08:00-20:00)
+// Per ogni bucket: conta i ruoli occupati / pool staff attivo
+// ═══════════════════════════════════════════════════════════
+const BUCKET_SIZE = 5 // minuti per bucket
+const BUCKET_COUNT = Math.ceil((1200 - 480) / BUCKET_SIZE) // 144 bucket
+
+const saturationBuckets = computed(() => {
+  const rides = activeRides.value
+  const buckets = []
+
+  // Pool: numero di staff attivi (guide), fallback a 6 se non caricati
+  const activeGuides = (store.staffList || []).filter(s => s.is_active)
+  const pool = Math.max(1, activeGuides.length || 6)
+
+  // Pre-calcola tutti i blocchi BPMN con i loro tag
+  const allBlocks = []
+  for (const ride of rides) {
+    const rideBlocks = getComputedBlocks(ride)
+    for (const b of rideBlocks) {
+      const tags = (b.resourceClasses || []).map(t => String(t).toUpperCase())
+      if (tags.length === 0) continue
+      allBlocks.push({
+        startMin: b.startMin,
+        endMin: b.startMin + b.duration,
+        tagCount: tags.length, // Numero di ruoli assorbiti simultaneamente
+      })
+    }
+  }
+
+  // Genera i bucket
+  for (let i = 0; i < BUCKET_COUNT; i++) {
+    const bucketStart = 480 + i * BUCKET_SIZE
+    const bucketEnd = bucketStart + BUCKET_SIZE
+    const hh = String(Math.floor(bucketStart / 60)).padStart(2, '0')
+    const mm = String(bucketStart % 60).padStart(2, '0')
+
+    // Conta quanti ruoli sono occupati in questo intervallo
+    let occupied = 0
+    for (const block of allBlocks) {
+      if (block.startMin < bucketEnd && block.endMin > bucketStart) {
+        occupied += block.tagCount
+      }
+    }
+
+    const pct = Math.min(100, Math.round((occupied / pool) * 100))
+
+    buckets.push({
+      timeLabel: `${hh}:${mm}`,
+      occupied,
+      pool,
+      pct,
+    })
+  }
+
+  return buckets
+})
+
+// ═══════════════════════════════════════════════════════════
+// ROLE PIVOT — Vista per Tag Ruolo con Multi-Lane Packing
+// Ogni riga = un tag ruolo. I blocchi sovrapposti vengono
+// impilati in sub-lanes verticali per mostrare la concorrenza.
+// ═══════════════════════════════════════════════════════════
+const FLEET_TAGS = new Set(['RAFT', 'VAN', 'TRAILER', 'N', 'NC', 'C'])
+
+/**
+ * Algoritmo Greedy Lane Packing:
+ * Ordina i blocchi per startMin. Per ogni blocco, trova la prima
+ * sub-lane dove non c'è sovrapposizione (laneEndMin <= block.startMin).
+ * Se nessuna lane è libera, crea una nuova sub-lane.
+ */
+function packBlocksIntoLanes(blocks) {
+  // Ordina per inizio temporale
+  const sorted = [...blocks].sort((a, b) => a.startMin - b.startMin)
+  const laneEnds = [] // laneEnds[i] = minuto di fine dell'ultimo blocco nella lane i
+
+  for (const block of sorted) {
+    let assigned = false
+    for (let i = 0; i < laneEnds.length; i++) {
+      if (laneEnds[i] <= block.startMin) {
+        // Questa lane è libera: assegna il blocco qui
+        block.laneIndex = i
+        laneEnds[i] = block.startMin + block.duration
+        assigned = true
+        break
+      }
+    }
+    if (!assigned) {
+      // Nessuna lane libera: crea una nuova sub-lane
+      block.laneIndex = laneEnds.length
+      laneEnds.push(block.startMin + block.duration)
+    }
+  }
+
+  return { blocks: sorted, lanesCount: Math.max(1, laneEnds.length) }
+}
+
+const roleTimelineRows = computed(() => {
+  const roleMap = {} // { tag: { roleTag, isFleet, blocks: [] } }
+  const rides = activeRides.value
+
+  for (const ride of rides) {
+    const rideBlocks = getComputedBlocks(ride)
+    const rideColor = getActivityColor(ride)
+    const rideName = ride.activity_type || ride.activity_name || ''
+    const rideTime = String(ride.time).substring(0, 5)
+
+    for (const b of rideBlocks) {
+      const tags = (b.resourceClasses || []).map(t => String(t).toUpperCase())
+      if (tags.length === 0) continue
+
+      const enrichedBlock = {
+        ...b,
+        rideColor,
+        rideName,
+        rideTime,
+        allRoleTags: tags,
+        laneIndex: 0, // Default, verrà sovrascritto dal packer
+      }
+
+      for (const tag of tags) {
+        if (!roleMap[tag]) {
+          roleMap[tag] = {
+            roleTag: tag,
+            isFleet: FLEET_TAGS.has(tag),
+            blocks: []
+          }
+        }
+        // Crea una copia per evitare conflitti di laneIndex tra ruoli diversi
+        roleMap[tag].blocks.push({ ...enrichedBlock })
+      }
+    }
+  }
+
+  // Applica lane packing a ogni gruppo di ruoli
+  const rows = Object.values(roleMap).map(row => {
+    const { blocks, lanesCount } = packBlocksIntoLanes(row.blocks)
+    return {
+      roleTag: row.roleTag,
+      isFleet: row.isFleet,
+      blocks,
+      lanesCount,
+    }
+  })
+
+  // Ordina: prima guide (non-fleet), poi fleet
+  rows.sort((a, b) => {
+    if (a.isFleet !== b.isFleet) return a.isFleet ? 1 : -1
+    return a.roleTag.localeCompare(b.roleTag)
+  })
+
+  return rows
 })
 
 // Motore Matematico di Rendering
@@ -154,15 +422,18 @@ const TOTAL_MIN = END_MIN - START_MIN // 720 minuti
 const hoursScale = Array.from({ length: 13 }, (_, i) => i + 8) // [8, 9, ..., 20]
 
 function timeToMinutes(timeStr) {
-  if (!timeStr) return 0
+  if (!timeStr && timeStr !== 0) return 0
+  // Se è già un numero (minuti grezzi), ritornalo direttamente
+  if (typeof timeStr === 'number') return timeStr
   const parts = String(timeStr).split(':')
   const h = parseInt(parts[0], 10) || 0
   const m = parseInt(parts[1], 10) || 0
   return h * 60 + m
 }
 
-function calcLeftPercent(timeStr) {
-  const mins = timeToMinutes(timeStr)
+function calcLeftPercent(timeOrMinutes) {
+  // Accetta sia "HH:MM" che numeri interi (minuti dall'inizio giornata)
+  const mins = (typeof timeOrMinutes === 'number') ? timeOrMinutes : timeToMinutes(timeOrMinutes)
   let offset = mins - START_MIN
   if (offset < 0) offset = 0
   if (offset > TOTAL_MIN) offset = TOTAL_MIN
@@ -179,6 +450,40 @@ function getActivityColor(ride) {
   return act?.color_hex || ride.color_hex || '#1976D2'
 }
 
+// Posizionamento verticale per flussi paralleli
+function getBlockTop(block) {
+  const total = block.totalFlows || 1
+  const idx = block.flowIndex || 0
+  if (total <= 1) return 5                    // Flusso singolo: 5% top
+  const gap = 4                               // Gap tra flussi in %
+  const usable = 100 - gap * (total - 1) - 4  // Spazio disponibile meno margini
+  const laneH = usable / total
+  return 2 + idx * (laneH + gap)
+}
+
+function getBlockHeight(block) {
+  const total = block.totalFlows || 1
+  if (total <= 1) return 90                   // Flusso singolo: 90% altezza
+  const gap = 4
+  const usable = 100 - gap * (total - 1) - 4
+  return usable / total
+}
+
+// Posizionamento verticale per sub-lanes nella Vista Ruoli
+function getRoleLaneTop(laneIndex, lanesCount) {
+  if (lanesCount <= 1) return 3
+  const gap = 2  // Gap tra sub-lanes in %
+  const usable = 100 - gap * (lanesCount - 1) - 4  // Margini 2% sopra e sotto
+  const laneH = usable / lanesCount
+  return 2 + laneIndex * (laneH + gap)
+}
+
+function getRoleLaneHeight(lanesCount) {
+  if (lanesCount <= 1) return 94
+  const gap = 2
+  const usable = 100 - gap * (lanesCount - 1) - 4
+  return usable / lanesCount
+}
 // Fase 6.A.2: Parser Matematico Bidirezionale BPMN
 function resolveDuration(durationVal) {
   if (durationVal === undefined || durationVal === null) return 15
@@ -207,22 +512,27 @@ function getComputedBlocks(ride) {
     try { schema = JSON.parse(schema) } catch { schema = null }
   }
 
-  // Fallback Monolitico
+  // Fallback Monolitico (attività senza workflow BPMN)
   if (!schema || !schema.flows || schema.flows.length === 0) {
     const defaultDur = act.duration_hours ? (parseFloat(act.duration_hours) * 60) : 120
     let fallbackEndMin = baseStartMin + defaultDur
     if (ride.end_time) fallbackEndMin = timeToMinutes(ride.end_time)
 
     return [{
-      name: 'Turno Singolo',
+      name: act.name || ride.activity_type || 'Turno Singolo',
       startMin: baseStartMin,
       duration: fallbackEndMin - baseStartMin,
       isEnd: false,
-      resourceClasses: []
+      resourceClasses: [],
+      flowIndex: 0,
+      totalFlows: 1,
+      flowName: 'Unico',
+      color: null
     }]
   }
 
   const blocksOutput = []
+  const totalFlows = schema.flows.length
 
   // Calcola durata totale teorica (se serve per stabilire sessionEndMin)
   const durH = parseFloat(act.duration_hours) || 2.0
@@ -231,8 +541,10 @@ function getComputedBlocks(ride) {
     sessionEndMin = timeToMinutes(ride.end_time)
   }
 
-  for (const flow of schema.flows) {
+  for (let fIdx = 0; fIdx < schema.flows.length; fIdx++) {
+    const flow = schema.flows[fIdx]
     const blocks = flow.blocks || []
+    const flowName = flow.name || `Flusso ${fIdx + 1}`
 
     // Divide le categorie
     const startBlocks = blocks.filter(b => b.anchor !== 'end')
@@ -242,12 +554,24 @@ function getComputedBlocks(ride) {
     let forwardCursor = baseStartMin
     for (const b of startBlocks) {
       const dur = resolveDuration(b.duration_min ?? b.duration)
+      const blockName = b.name || b.code || 'Blocco'
+
+      // Filtra i blocchi-spaziatore invisibili (es. "spazio vuoto")
+      if (blockName.toLowerCase().includes('spazio vuoto')) {
+        forwardCursor += dur
+        continue
+      }
+
       blocksOutput.push({
-        name: b.name || b.code || 'Blocco',
+        name: blockName,
         startMin: forwardCursor,
         duration: dur,
         isEnd: false,
-        resourceClasses: b.resources || []
+        resourceClasses: b.resources || [],
+        flowIndex: fIdx,
+        totalFlows: totalFlows,
+        flowName: flowName,
+        color: b.color || null
       })
       forwardCursor += dur
     }
@@ -259,12 +583,17 @@ function getComputedBlocks(ride) {
       const dur = resolveDuration(b.duration_min ?? b.duration)
       const startMin = backwardCursor - dur
       backwardCursor = startMin
+
       blocksOutput.push({
-        name: b.name || b.code || 'Blocco Navetta',
+        name: b.name || b.code || 'Navetta',
         startMin: startMin,
         duration: dur,
         isEnd: true,
-        resourceClasses: b.resources || []
+        resourceClasses: b.resources || [],
+        flowIndex: fIdx,
+        totalFlows: totalFlows,
+        flowName: flowName,
+        color: b.color || null
       })
     }
   }
@@ -301,17 +630,22 @@ function getComputedBlocks(ride) {
 }
 .timeline-track {
   flex-grow: 1;
-  height: 50px;
+  height: 60px;
   overflow: hidden;
-  min-width: 600px; /* minima larghezza per evitare collasso estremo */
+  min-width: 600px;
 }
 .grid-line {
   border-left: 1px dashed #e0e0e0;
   z-index: 0;
 }
-.dummy-block {
+.gantt-block {
   z-index: 2;
-  transition: all 0.3s ease;
-  overflow: hidden;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+.gantt-block:hover {
+  opacity: 1 !important;
+  transform: scaleY(1.08);
+  z-index: 3;
 }
 </style>

@@ -10,6 +10,11 @@ except ImportError:
     pass
 # ---------------------------
 
+# --- CARICAMENTO .env (CRITICO per SUPABASE_URL/KEY) ---
+from dotenv import load_dotenv
+load_dotenv()
+# -------------------------------------------------------
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -84,9 +89,9 @@ app.include_router(reservations.router, prefix="/api/v1/reservations", tags=["Re
 from app.api.v1.endpoints import calendar
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["Calendar"])
 
-# 6. Orders (Creazione Ordini, Logica Tetris, Ponte d'Oro)
+# 6. Orders LEGACY (Creazione Ordini via ORM locale — DEPRECATO, mantenuto per backward-compat)
 from app.api.v1.endpoints import orders
-app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
+app.include_router(orders.router, prefix="/api/v1/legacy-orders", tags=["Orders (Legacy)"])
 
 # 7. FiRaft (Gestione Tesseramento)
 from app.api.v1.endpoints import firaft
@@ -108,10 +113,15 @@ app.include_router(public.router, prefix="/api/v1/public", tags=["Public Check-i
 from app.api.v1.endpoints import availability
 app.include_router(availability.router, prefix="/api/v1/availability", tags=["Availability Engine"])
 
+# 12. Crew Builder (Fase 7 — Lavagna d'Imbarco)
+from app.api.v1.endpoints import crew
+app.include_router(crew.router, prefix="/api/v1/crew", tags=["Crew Builder"])
+
 # --- LOG AVVIO ---
 print("\n" + "="*60)
 print("🚀 BACKEND AVVIATO")
 print(f"   AI Vision: {'✅ Abilitato' if getattr(vision, 'AI_AVAILABLE', False) else '❌ Disabilitato (librerie non installate)'}")
 print(f"   Resources: {'✅ Caricato' if resources else '❌ Non caricato'}")
 print(f"   Public API: ✅ Check-in Digitale attivo")
+print(f"   Crew Builder: ✅ Endpoint attivo")
 print("="*60 + "\n")

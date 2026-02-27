@@ -2,7 +2,7 @@ LORE VAULT - RAFTING REPUBLIC
 
 Documento di Riferimento Supremo. Architettura, Lore e Scelte di Business consolidate.
 
-Aggiornato a: Chiusura Fase 6.G — Build Verificata
+Aggiornato a: Chiusura Fase 6.J — Build Verificata (27/02/2026 16:00)
 
 🔴 MAPPA DEGLI ORGANI VITALI (L'Architettura Definitiva)
 
@@ -16,7 +16,9 @@ Aggiornato a: Chiusura Fase 6.G — Build Verificata
 
 5. IL MOTORE PREDITTIVO (Backend): Time-Array Slicer a 1440 minuti in Python. Lavora su SQLite per la logica spaziale e usa la Sync Sonda per contare i pax reali da Supabase.
 
-6. IL CIMITERO: Le pagine "DeskDashboardPage" standalone, "ReservationsPage", "Timeline" e "Lavagna" sono obsolete/sepolte.
+6. LA TIMELINE FLUSSI (TimelinePage.vue — 27/02/2026): Vista Gantt con toggle Discese/Ruoli. La Vista Ruoli applica un algoritmo di Multi-Lane Packing per visualizzare sovrapposizioni temporali. Barra di Saturazione a 144 bucket (5 min ciascuno, 08:00-20:00) con colori verde/giallo/rosso. Navigazione bidirezionale con PlanningPage tramite bottoni "Timeline Flussi" e "Torna al Giorno" (preserva data via store centralizzato).
+
+7. IL CIMITERO: Le pagine "DeskDashboardPage" standalone, "ReservationsPage" e "Lavagna" sono obsolete/sepolte. La "Timeline" è stata RESUSCITATA il 27/02/2026 come Vista Ruoli integrata nel workflow operativo.
 
 VISIONE ARCHITETTURALE: L'OMNI-BOARD (Zero Context Switching)
 
@@ -27,6 +29,7 @@ LA FUSIONE ASSOLUTA (RideDialog come Hub): La modale del turno (RideDialog.vue) 
 - Tab "ORDINI ESISTENTI" (default): visualizzazione passeggeri, assegnazione risorse logistica, Libro Mastro, Drop-outs.
 - Tab "NUOVA PRENOTAZIONE": Il form POS completo della Segreteria (DeskBookingForm.vue), con Ledger Misto, Spacca-Conto, Extra e CRM Silente. Il form riceve in automatico activity_id, date, time e unitPrice dal turno cliccato. Zero context-switching dal Calendario.
 - DeskBookingForm.vue: componente estratto chirurgicamente da DeskDashboardPage.vue. Riceve le props dal ride cliccato, chiama POST /orders/desk (con CRM Silente backend già innestato), emette @success per ricaricare la vista.
+- Semaforo Manuale (RideDialog Header): Bottoni VERDE/BLU/GIALLO/ROSSO/AUTO con Dual-Write Supabase+SQLite. Bottone "CHIUDI TURNO" visibile se booked_pax=0.
 
 1\. DOGMI ARCHITETTURALI E LIMITI FISICI (PROTOCOLLO LVE)
 
@@ -38,9 +41,19 @@ SQLite (Locale): Catalogo deterministico. Single Source of Truth per activities,
 
 Supabase (Cloud PostgreSQL): Registro operativo per i dati caldi (rides, orders, ride_allocations).
 
-🚨 **Architettura Ibrida Desk POS (Scelta Consolidata 27/02/2026):** Risolto lo Split-Brain. Gli ordini, le transazioni (Libro Mastro) e gli Slot Fantasma vengono scritti ESCLUSIVAMENTE su Supabase via API PostgREST (`httpx`). Il Catalogo (`activities`) viene letto DA SQLITE LOCALE. I Turni (`rides`) subiscono un DUAL-WRITE per garantire l'integrità referenziale (stesso UUID in locale e in cloud). SQLAlchemy è DEPRECATO per la cassa.
+🚨 **Architettura Ibrida Desk POS (Scelta Consolidata 27/02/2026):** Risolto lo Split-Brain. Gli ordini, le transazioni (Libro Mastro) e gli Slot Fantasma vengono scritti ESCLUSIVAMENTE su Supabase via API PostgREST (`httpx`). Il Catalogo (`activities`) viene letto DA SQLITE LOCALE. I Turni (`rides`) subiscono un DUAL-WRITE per garantire l'integrità referenzionale (stesso UUID in locale e in cloud). SQLAlchemy è DEPRECATO per la cassa.
 
 No SQL Join per Logistica: Le policy coreografiche (guide minime, navetta, mezzi) sono un oggetto JSON (workflow_schema.logistics) in SQLite. La mappa dell'equipaggio (Guida + Gommone UUID + Passeggeri) sarà un JSONB nel metadata di ride_allocations in Supabase (Crew Builder Blueprint).
+
+🔴 DOGMA DDL SUPABASE: Qualsiasi alterazione strutturale alle tabelle in Cloud richiede TASSATIVAMENTE l'esecuzione del comando SQL NOTIFY pgrst, 'reload schema'; come ultima riga dello script per svuotare la cache API. Il Tech Lead ha storicamente allucinato questo passaggio causando l'errore PGRST204 e accusando il PM. Mai dare per scontato che l'istruzione sia presente: verificare sempre fisicamente la riga nello script.
+
+🔒 DOGMA DELL'OVERRIDE (27/02/2026): Se la colonna `is_overridden` è `True` nella tabella `daily_rides`, l'Availability Engine ha l'ordine tassativo di NON ricalcolare lo stato del turno, rispettando la scelta manuale della Segreteria. Il bypass avviene nel Pass 1 (`calculate_availability`): il motore restituisce direttamente lo status salvato nel DB (A→VERDE, B→GIALLO, C→ROSSO, D→BLU) e salta Pass 2. Il Kill-Switch client in `resource-store.js` rispetta il flag e non sovrascrive lo status forzato. Unica via per tornare al calcolo automatico: premere il bottone AUTO, che imposta `is_overridden=False`.
+
+🔴 **DOGMA 12 — CHIAVI LOGICHE CROSS-DATABASE (Regola Anti-FK Split-Brain, 27/02/2026):**
+
+Le chiavi esterne in Supabase che puntano a entità del Catalogo Locale (es. `resource_id` in `ride_allocations` verso `staff`/`fleet`) NON DEVONO avere vincoli fisici (`FOREIGN KEY` constraints). Devono essere **UUID liberi (Chiavi Logiche)**, validati solo a livello applicativo. Altrimenti il database cloud andrà in conflitto con SQLite, generando errori `409 Conflict` (`23503 foreign_key_violation`). Il vincolo `ride_allocations_resource_id_fkey` è stato amputato il 27/02/2026 dopo che il Crew Builder falliva silenziosamente al salvataggio. Regola aurea: se l'entità referenziata vive nell'altro database, il link è LOGICO, mai FISICO.
+
+⚠️ **COROLLARIO — Sindrome dell'Arto Fantasma (27/02/2026):** Se una Foreign Key fisica viene amputata in cloud per rispettare lo Split-Brain, TUTTE le query frontend PostgREST (es. `supabase.from('...').select('..., entita_esterna(*)')`) devono essere epurate dalle JOIN esplicite verso l'entità scollegata. Altrimenti Supabase restituirà un errore bloccante `PGRST200` (Bad Request) mandando in crash l'interfaccia. Primo caso: `resources(*)` amputato da `resource-store.js` nelle funzioni `fetchDailySchedule` e `fetchMonthOverview` (27/02/2026).
 
 2\. MOTORE PREDITTIVO V5 E REGOLE DI BUSINESS
 
@@ -56,13 +69,15 @@ Soft Limits (Giallo / Sarre): Furgoni su tratte brevi. L'assenza di sedili fisic
 
 Safety Kayak: Regola logica non lineare. Il floor minimo delle guide è calcolato come max(min_guides_absolute, needed_boats).
 
+🚫 Formula Furgoni Deterministica (27/02/2026): La capacità dei mezzi viene calcolata come `math.ceil(booked_pax / van_net_seats)`. È VIETATO l'uso di margini di sicurezza (`+1`) che alterano la percezione della disponibilità reale e generano falsi Yield Warning (Giallo Perenne). Il bug del "Passeggero Fantasma" è stato scoperto e corretto nella sessione del 27/02/2026.
+
 River Ledger (ARR Cascade): Posti vuoti galleggianti in discesa da monte (es. AD) diventano arr_bonus_seats a valle (es. CL, FA) prima di consumare nuova flotta ferma alla base.
 
 3\. DIFESA FRONTEND E SENSORI
 
 Sync Sonda (Bypass Split-Brain): FastAPI estrae i booked_pax reali dal cloud via HTTPX e li inietta nel Motore Predittivo locale come external_pax_map (Dependency Injection), disinnescando il bug "Zero Assoluto".
 
-Merge Difensivo (Pinia): resource-store.js funge da Hydration Node. Incrocia la Verità Fisica (Supabase) con l'Intelligenza Predittiva. Se ci sono 0 posti calcolati ma prenotazioni cloud forzate, scatta il SafeStatus ROSSO (Kill-switch anti-overbooking).
+Merge Difensivo (Pinia): resource-store.js funge da Hydration Node. Incrocia la Verità Fisica (Supabase) con l'Intelligenza Predittiva. Se ci sono 0 posti calcolati ma prenotazioni cloud forzate, scatta il SafeStatus ROSSO (Kill-switch anti-overbooking). Il kill-switch client è DISATTIVATO per i turni con `is_overridden=True`.
 
 Ghost Slots Dinamici: Creazione di slot virtuali nel calendario basati sui default_times SQLite.
 
@@ -99,3 +114,60 @@ ResourcesPage.vue è un'interfaccia CRUD vitale per popolare il database locale 
 \*\*\[CURA EMORRAGIA - Sync Sonda calendar.py]\*\*
 
 L'errore Supabase "column orders.ride_date does not exist" è stato curato nella funzione `_fetch_supabase_pax` (riga 200 di calendar.py). La query REST ora usa un Inner Join PostgREST (`rides!inner(date)`) per filtrare gli ordini per data attraverso la relazione `orders → rides`, anziché cercare una colonna inesistente `ride_date` nella tabella `orders`.
+
+**[SIGILLO FASE 6 — COMPLETATA (27/02/2026)]**
+
+**FASE 6 COMPLETATA (Logistica Fluidodinamica e POS Ibrido)**
+
+- Split-Brain POS polverizzato tramite architettura Ibrida (Dual-Write SQLite/Supabase) e Sync Sonda (httpx).
+- Motore Predittivo stabilizzato con Teorema del Sacco (Hard/Soft limits) ed Eccezione di Sarre.
+- Collisione di routing disinnescata (isolamento backend legacy).
+- Variabili logistiche operative idratate nativamente su system_settings (SQLite).
+- Spurgo Sentina completato: 9 file orfani inceneriti, fossile DeskDashboardPage.vue distrutto.
+- Timeline Flussi (Gantt) operativa con Vista Ruoli, Multi-Lane Packing e Barra Saturazione.
+- Drag & Drop blocchi BPMN innestato nel Costruttore di Flussi.
+
+**[SIGILLO FASE 7.A — COMPLETATA (27/02/2026)]**
+
+**FASE 7.A COMPLETATA (Scaffold Tubature Crew Builder)**
+
+- Implementata API Backend (GET/PUT `/api/v1/crew/allocations`) per gestire la "Busta Stagna" (metadata JSONB) via httpx su Supabase.
+- Interfaccia Scaffoldata: Creato `CrewBuilderPanel.vue` (layout a due colonne: Passeggeri vs Flotta) e innestato come tab "Equipaggi" nell'Omni-Board (`RideDialog.vue`).
+
+**[SIGILLO FASE 7.B — COMPLETATA (27/02/2026)]**
+
+**FASE 7.B COMPLETATA (Fondazione Busta Stagna)**
+
+- DDL Supabase: Script idempotente per `ride_allocations` (colonna `metadata` JSONB, indici `ride_id` e `resource_type`, RLS policy, NOTIFY pgrst). Da eseguire manualmente nel SQL Editor.
+- Nastro Trasportatore Pinia: Creato `crew-store.js` con state (`allocations`, `isLoading`), getter (`boatCount`, `assignedPax`, `unassignedPax`, `isEmpty`), e actions (`loadCrew(ride_id)` via GET, `saveCrew(ride_id, payload)` via PUT, `clearCrew()`). Comunicazione via Axios verso backend FastAPI.
+
+**[SIGILLO FASE 7.C — COMPLETATA (27/02/2026)]**
+
+**FASE 7.C COMPLETATA (Banchina d'Imbarco UI)**
+
+- `CrewBuilderPanel.vue` ricostruito con righe dinamiche [Gommone q-select] + [Guida q-select] + [Pax q-input]. Zona Banchina con contatori pax paganti/imbarcati/in attesa e allarme over-assegnazione. Pulsante "SIGILLA EQUIPAGGI". Cablato al crew-store con onMounted + watch reattivo.
+
+🔴 **DOGMA 10 — TETRIS UMANO (Manifesto d'Imbarco Nominale, 27/02/2026):**
+
+Nel Crew Builder, i passeggeri non sono MAI numeri anonimi. La Busta Stagna (`ride_allocations.metadata`) per i gommoni DEVE contenere un array `groups: [{ order_id: UUID, customer_name: string, pax: int }]`. Non si imbarcano numeri assoluti, si imbarcano **frazioni di ordini**. Il totale passeggeri di un gommone è sempre la somma derivata dei `pax` nel suo array `groups`. Un maxi-ordine (es. 40 pax) può essere frammentato su più gommoni mantenendo il nome del referente per l'appello sul molo.
+
+**[SIGILLO FASE 7.C.2 — COMPLETATA (27/02/2026)]**
+
+**FASE 7.C.2 COMPLETATA (Tetris Umano — Busta Stagna Nominale)**
+
+- Refactoring metadata gommone: rimosso `pax_count` anonimo, sostituito con `groups: [{ order_id, customer_name, pax }]`.
+- Zona Banchina: ordini con conteggio pax residui in tempo reale (`getRemainingPax`). Badge verde/arancione per ordini completati/in attesa.
+- Zona Fiume: ogni gommone mostra i gruppi imbarcati nominali con pax editabile. Select "Aggiungi Gruppo" filtra solo ordini con pax residui > 0.
+
+🔴 **DOGMA 11 — SWAP & REPLACE (Regola dell'Aggiornamento Massivo, 27/02/2026):**
+
+L'aggiornamento massivo di entità figlie e complesse (come gli equipaggi) si fa radendo al suolo i vecchi record (`DELETE` per `ride_id`) e bulk-inserendo i nuovi (`POST`). Zero orfani, zero lookup di differenza. Se devi aggiornare, distruggi e ricostruisci. Il vincolo FK `ON DELETE CASCADE` protegge l'integrità referenziale.
+
+**[SIGILLO FASE 7.D — COMPLETATA (27/02/2026)]**
+
+**FASE 7.D COMPLETATA (Allineamento Valvola Backend)**
+
+- Fix 422: Schemi Pydantic allineati al Tetris Umano (`CrewGroup`, `CrewMetadata`, `CrewAllocationItem`). PUT accetta `List[CrewAllocationItem]` direttamente.
+- Tecnica Swap & Replace implementata: DELETE vecchi crew_manifest per ride_id + bulk INSERT nuovi via httpx PostgREST.
+- GET restituisce `{ ride_id, allocations: [...] }` (array piatto). Store frontend allineato: `saveCrew` invia array diretto, `loadCrew` legge da `data.allocations`.
+- Rimosso dump errore raw dalla UI. Notifiche Quasar position=top per success/error.
