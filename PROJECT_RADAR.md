@@ -19,6 +19,9 @@
 - [x] **Fase 6.E.6 (Patch Immortality & Kill-Switch):** Blindata l'affidabilità del sistema. Implementata logica Date-Aware per lo staff mensile e Hard-Floor matematico lato client per prevenire falsi positivi di disponibilità. Corretto il bug del conteggio flotta (bypass contract logic).
 - [x] **Fase 6.E.7 (Risoluzione Split-Brain & Pax Map Injection):** Disinnescato il bug critico dell'Overbooking ("Zero Assoluto") causato dall'isolamento dell'ORM locale. Implementata la "Sync Sonda" nel router FastAPI (`calendar.py`) tramite `httpx` per estrarre i veri `booked_pax` da Supabase. I dati vengono ora iniettati dinamicamente come `external_pax_map` nell'Availability Engine (Dependency Injection), costringendo il Time-Array Slicer a calcolare il Fondo del Sacco sui reali paganti e a rispettare il Teorema del Sacco sui turni paralleli.
 - [x] **Fase 6.E (Availability Engine / Dashboard):** SISTEMA COMPLETATO.
+- [x] **[CODICE ROSSO] RISOLUZIONE SPLIT-BRAIN DESK POS:** Sventrato `desk.py`. Amputato SQLAlchemy per flussi commerciali e sostituito con iniezione HTTPX nativa verso Supabase.
+- [x] **Iniezione Architettura Ibrida POS:** Implementato Dual-Write su `POST /desk` per i turni (`DailyRideDB` locale per UI, `rides` in cloud per FK). Catalogo letto da SQLite locale.
+- [x] **Fondazione Relazionale Cloud:** Eseguito DDL in Supabase per fondare `transactions`, `registrations`, `customers` e allineare `orders` con chiavi esterne `ON DELETE CASCADE`.
 
 **CANTIERE ATTIVO (Obiettivo Prossima Sessione):**
 
@@ -33,7 +36,7 @@
 
 **PROSSIMI PASSI (Priorità Critica):**
 
-- [ ] **[CODICE ROSSO] RISOLUZIONE SPLIT-BRAIN DESK POS:** Sventrare il router `desk.py`. Amputare SQLAlchemy per la creazione ordini (`POST /desk`) e le transazioni (`POST /{order_id}/transactions`). Deviare il flusso per scrivere nativamente e unicamente su Supabase via REST/httpx, chiudendo il Cerchio della Morte (ordini creati con UUID-A in SQLite ma letti con UUID-B da Supabase → 404 sul pagamento).
+- [x] ~~**[CODICE ROSSO] RISOLUZIONE SPLIT-BRAIN DESK POS:**~~ ✅ COMPLETATO (27/02/2026). Sventrato `desk.py`, amputato SQLAlchemy, iniettato HTTPX nativo. Cerchio della Morte chiuso.
 - [ ] Fix Allucinazione UI PlanningPage: Il denominatore delle card orario mostra la capacità TOTALE del motore (es. 48 pax) anziché quella RESIDUA. Valutare se il design voluto sia "booked / capacity" (attuale) o "booked / remaining".
 
 ---

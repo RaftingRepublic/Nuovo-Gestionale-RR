@@ -38,6 +38,8 @@ SQLite (Locale): Catalogo deterministico. Single Source of Truth per activities,
 
 Supabase (Cloud PostgreSQL): Registro operativo per i dati caldi (rides, orders, ride_allocations).
 
+🚨 **Architettura Ibrida Desk POS (Scelta Consolidata 27/02/2026):** Risolto lo Split-Brain. Gli ordini, le transazioni (Libro Mastro) e gli Slot Fantasma vengono scritti ESCLUSIVAMENTE su Supabase via API PostgREST (`httpx`). Il Catalogo (`activities`) viene letto DA SQLITE LOCALE. I Turni (`rides`) subiscono un DUAL-WRITE per garantire l'integrità referenziale (stesso UUID in locale e in cloud). SQLAlchemy è DEPRECATO per la cassa.
+
 No SQL Join per Logistica: Le policy coreografiche (guide minime, navetta, mezzi) sono un oggetto JSON (workflow_schema.logistics) in SQLite. La mappa dell'equipaggio (Guida + Gommone UUID + Passeggeri) sarà un JSONB nel metadata di ride_allocations in Supabase (Crew Builder Blueprint).
 
 2\. MOTORE PREDITTIVO V5 E REGOLE DI BUSINESS
