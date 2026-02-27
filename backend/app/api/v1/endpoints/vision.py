@@ -2,13 +2,10 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from PIL import Image
 import io
 
-# --- IMPORT CONDIZIONALE AI ---
-try:
-    from app.services.local_vision_service import analyze_documents_locally
-    AI_AVAILABLE = True
-except ImportError as e:
-    AI_AVAILABLE = False
-    print(f"⚠️ AI Vision non disponibile: {e}")
+# --- AI LOCALE DEPRECATA (27/02/2026 Fase 8) ---
+# local_vision_service.py è stato incenerito. Il riconoscimento documenti
+# usa Azure OCR via registration.py /scan. Questo endpoint resta come stub.
+AI_AVAILABLE = False
 
 router = APIRouter()
 

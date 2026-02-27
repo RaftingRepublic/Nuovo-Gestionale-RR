@@ -1,704 +1,528 @@
 # SYSTEM SNAPSHOT REPORT — RAFTING REPUBLIC GESTIONALE
 
-**Data:** 27/02/2026 20:22 CET
-**Target:** Onboarding Tech Lead
-**Versione Backend:** 0.3.0 (FastAPI)
-**Fase Corrente:** 7 — Crew Builder (Lavagna d'Imbarco Digitale)
+**Data generazione:** 27/02/2026 21:52 CET
+**Fase corrente:** Fase 8 (Smaltimento Debito Tecnico)
+**Ultima build verificata:** 27/02/2026 21:46
+**Autore:** Antigravity System Agent
 
 ---
 
 ## INDICE
 
-1. [Visione d'Insieme](#1-visione-dinsieme)
-2. [Stack Tecnologico](#2-stack-tecnologico)
-3. [Architettura Ibrida Dual-Database](#3-architettura-ibrida-dual-database)
-4. [Schema Database Completo](#4-schema-database-completo)
-5. [Mappa API Endpoints](#5-mappa-api-endpoints)
-6. [Mappa File System](#6-mappa-file-system)
-7. [Motore Predittivo (Availability Engine)](#7-motore-predittivo)
-8. [Frontend Architecture](#8-frontend-architecture)
-9. [Pinia Stores](#9-pinia-stores)
-10. [Flussi Dati Critici](#10-flussi-dati-critici)
-11. [Moduli Operativi](#11-moduli-operativi)
-12. [Bug Pendenti](#12-bug-pendenti)
-13. [Debito Tecnico](#13-debito-tecnico)
-14. [Storico Fasi Completate](#14-storico-fasi-completate)
-15. [Deploy e Infrastruttura](#15-deploy-e-infrastruttura)
-16. [Dogmi Architetturali](#16-dogmi-architetturali)
+1. [Identità del Prodotto](#1-identità-del-prodotto)
+2. [Stack Tecnologico Completo](#2-stack-tecnologico-completo)
+3. [Architettura Ibrida — Dual Database](#3-architettura-ibrida--dual-database)
+4. [Mappa Completa del Database](#4-mappa-completa-del-database)
+5. [Backend — Routers, Modelli e Servizi](#5-backend--routers-modelli-e-servizi)
+6. [Frontend — Pagine, Componenti e Stores](#6-frontend--pagine-componenti-e-stores)
+7. [Flussi Dati Critici](#7-flussi-dati-critici)
+8. [Dogmi Architetturali Vigenti](#8-dogmi-architetturali-vigenti)
+9. [Bug Pendenti e Debito Tecnico](#9-bug-pendenti-e-debito-tecnico)
+10. [Storico Fasi Completate](#10-storico-fasi-completate)
+11. [Rischi e Avvertimenti per il Tech Lead](#11-rischi-e-avvertimenti-per-il-tech-lead)
 
 ---
 
-## 1. VISIONE D'INSIEME
+## 1. IDENTITÀ DEL PRODOTTO
 
-Rafting Republic Gestionale è un sistema gestionale operativo costruito per una società di rafting. Copre l'intero ciclo operativo giornaliero:
-
-- **Segreteria (POS):** Prenotazioni, pagamenti, CRM silente
-- **Logistica:** Allocazione guide/gommoni/furgoni, semaforo disponibilità, Crew Builder
-- **Check-in Digitale:** Kiosk pubblico via Magic Link, firma grafometrica, manleva PDF
-- **AI Vision:** OCR documenti identità (Azure Cognitive Services, solo cloud)
-- **Yield Management:** Motore predittivo a matrice 1440 minuti con Availability Engine
-
-La filosofia centrale è l'**Omni-Board**: il Calendario Operativo ([PlanningPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/PlanningPage.vue)) è l'unico hub. Tutto — prenotazioni, pagamenti, crew, logistica — collassa dentro la modale [RideDialog.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/RideDialog.vue) a schede. Zero context-switching.
+| Proprietà | Valore |
+|---|---|
+| **Nome** | Rafting Republic — Gestionale AI |
+| **Versione** | 2.0 (Migration & Compliance Edition) |
+| **Dominio** | gestionale.raftingrepublic.com |
+| **Purpose** | Gestionale operativo per azienda di rafting: prenotazioni, logistica turni, assegnazione equipaggi, check-in digitale, semaforo disponibilità, CRM silente |
+| **Utenti target** | Segreteria (desk POS), Logistica (crew builder), Clienti (kiosk check-in) |
+| **Status** | In produzione attiva. Fase 8 aperta (debito tecnico residuale). |
 
 ---
 
-## 2. STACK TECNOLOGICO
+## 2. STACK TECNOLOGICO COMPLETO
 
 ### Frontend
-| Componente | Versione/Dettaglio |
-|---|---|
-| Framework | Vue 3 (Composition API, `<script setup>`) |
-| UI Kit | Quasar Framework v2.18.6 |
-| State Management | Pinia (6 store) |
-| Bundler | Vite (via @quasar/app-vite 2.4.0) |
-| Cloud SDK | Supabase JS Client |
-| Firma Digitale | Canvas HTML5 nativo |
-| QR Code | API esterna qrserver |
+
+| Componente | Tecnologia | Versione / Note |
+|---|---|---|
+| Framework | Vue 3 | Composition API, `<script setup>` |
+| UI Kit | Quasar Framework | v2.18.6 |
+| State Management | Pinia | 6 stores attivi |
+| Bundler | Vite | via @quasar/app-vite 2.4.0 |
+| Cloud SDK | Supabase JS Client | Comunicazione diretta frontend→cloud |
+| Firma Digitale | Canvas HTML5 nativo | Touch-optimized per mobile |
+| QR Code | API esterna qrserver | Generazione Magic Link per Kiosk |
 
 ### Backend
-| Componente | Versione/Dettaglio |
-|---|---|
-| Framework | FastAPI (Python) |
-| ORM | SQLAlchemy (solo catalogo locale e Motore Predittivo) |
-| DB Locale | SQLite ([rafting.db](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/rafting.db), ~288 KB) |
-| DB Cloud | Supabase (PostgreSQL via PostgREST) |
-| HTTP Client | `httpx` (Sync Sonda, Dual-Write, comunicazione Supabase) |
-| WSGI Bridge | `a2wsgi` (deploy Passenger su Ergonet) |
-| AI Vision | Azure OCR (Cognitive Services — API REST, zero RAM locale) |
-| PDF | reportlab (certificati, manleve, consensi) |
 
-### Deploy (Produzione — Ergonet CloudLinux)
+| Componente | Tecnologia | Versione / Note |
+|---|---|---|
+| Framework | FastAPI | Python 3.10+ |
+| ORM | SQLAlchemy | Solo per catalogo locale e Motore Predittivo |
+| DB Locale | SQLite | File `rafting.db` |
+| DB Cloud | Supabase | PostgreSQL via PostgREST |
+| HTTP Client | httpx | Sync Sonda, Dual-Write, comunicazione Supabase |
+| WSGI Bridge | a2wsgi | Deploy Passenger su Ergonet |
+| AI Vision | Azure OCR | Cognitive Services — API REST cloud |
+| PDF Generation | reportlab | Certificati, manleve, consensi |
+
+### Deploy (Ergonet CloudLinux)
+
 | Vincolo | Dettaglio |
 |---|---|
-| RAM | Hard Limit 1 GB (LVE CloudLinux) |
-| Reverse Proxy | Apache + Passenger ([passenger_wsgi.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/passenger_wsgi.py)) |
-| Frontend | SPA statica servita da Apache |
-| AI | Vietati modelli locali. Solo API REST cloud (Azure OCR) |
-| Dominio | `gestionale.raftingrepublic.com` |
+| Hard Limit RAM | **1GB** (LVE). Vietati modelli AI locali |
+| Reverse Proxy | Apache + Passenger (`passenger_wsgi.py`) |
+| Frontend | SPA statica servita da Apache in `httpdocs/` |
+| Backend | Python venv + gunicorn + UvicornWorker su `127.0.0.1:8000` |
+| Nginx Proxy | `/api/*` → backend locale |
+| Azure OCR | API REST cloud, zero consumo RAM locale |
 
 ---
 
-## 3. ARCHITETTURA IBRIDA DUAL-DATABASE
+## 3. ARCHITETTURA IBRIDA — DUAL DATABASE
 
 > [!IMPORTANT]
-> **Regola Fondamentale:** Il Catalogo (configurazioni statiche) vive su SQLite. I Dati Transazionali (ordini, pagamenti, operations) vivono SOLO su Supabase.
+> Il sistema opera con un'architettura **Split-Brain Controllato**: due database separati con un bridge applicativo. Comprenderla è prerequisito fondamentale.
 
-```mermaid
-graph LR
-    subgraph "SQLite Locale (Catalogo)"
-        A[activities]
-        B[daily_rides]
-        C[staff]
-        D[fleet]
-        E[system_settings]
-        F[resource_exceptions]
-        G[registrations]
-        H[activity_sub_periods]
-    end
+### Regola Fondamentale
 
-    subgraph "Supabase Cloud (Dati Caldi)"
-        I[rides]
-        J[orders]
-        K[transactions]
-        L[registrations Cloud]
-        M[customers]
-        N[ride_allocations]
-    end
+- Il **Catalogo** (entità deterministiche) vive su **SQLite locale**.
+- I **Dati Transazionali** (dati caldi operativi) vivono **SOLO su Supabase** (PostgreSQL cloud).
+- I **Turni** (`rides`/`daily_rides`) esistono in **ENTRAMBI** i DB con lo **STESSO UUID** → **Dual-Write**.
 
-    B -- "Dual-Write (stesso UUID)" --> I
-    style B fill:#ff9800
-    style I fill:#ff9800
-```
+### Diagramma del Flusso Dati
 
-### Dual-Write Rule
-I turni (`rides` / `daily_rides`) esistono in ENTRAMBI i database con lo **stesso UUID**. Questa è la cerniera anti-Split-Brain. Ordini e Transazioni vivono SOLO su Supabase (via `httpx` PostgREST). Il Catalogo (activities, staff, fleet) vive SOLO su SQLite. **SQLAlchemy è DEPRECATO per i flussi commerciali.**
+| Operazione | SQLite | Supabase | Meccanismo |
+|---|---|---|---|
+| Catalogo attività, staff, fleet | ✅ WRITE/READ | ❌ | SQLAlchemy ORM |
+| Crea turno | ✅ WRITE | ✅ WRITE | **Dual-Write** (stesso UUID) |
+| Crea ordine POS | ❌ | ✅ WRITE | httpx → PostgREST |
+| Registra pagamento | ❌ | ✅ WRITE | httpx → PostgREST |
+| Salva equipaggio | ❌ | ✅ WRITE | httpx → PostgREST |
+| Calcola disponibilità | ✅ READ (Engine) | ✅ READ (Sync Sonda pax) | Engine locale + httpx |
+| Check-in consenso | ❌ | ✅ WRITE | httpx → PostgREST |
+| CRM Silente (clienti) | ❌ | ✅ UPSERT | httpx → PostgREST |
+
+### La Sync Sonda (Bypass Split-Brain)
+
+Il router [calendar.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py) usa `httpx` per estrarre i `booked_pax` reali da Supabase e li inietta nel Motore Predittivo locale come `external_pax_map` (Dependency Injection). Questo disinnsca il bug "Zero Assoluto" (ORM locale isolato dal cloud).
 
 ---
 
-## 4. SCHEMA DATABASE COMPLETO
+## 4. MAPPA COMPLETA DEL DATABASE
 
-### 4.A — SQLite Locale ([rafting.db](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/rafting.db))
+### 4.A — SQLite Locale (`rafting.db`) — 10 Tabelle
 
-#### Tabella: `activities`
-| Colonna | Tipo | Descrizione |
+| # | Tabella | Ruolo | Modello ORM | Stato |
+|---|---|---|---|---|
+| 1 | `activities` | Catalogo attività + `workflow_schema` (JSON BPMN) | [ActivityDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#23-54) | ✅ Attivo |
+| 2 | `activity_sub_periods` | Override stagionali (prezzo, orari, soglie per sottoperiodi) | [ActivitySubPeriodDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#59-75) | ✅ Attivo |
+| 3 | `daily_rides` | Turni materializzati + status semaforo + `is_overridden` | [DailyRideDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#94-115) | ✅ Attivo (Dual-Write con Supabase) |
+| 4 | `orders` | Mirror locale ordini (DEPRECATO per flussi commerciali) | [OrderDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#133-174) | ⚠️ Legacy — scrive solo SQLAlchemy, la cassa usa Supabase |
+| 5 | `transactions` | Locale (DEPRECATO) | [TransactionDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#178-191) | ⚠️ Legacy — cassa esclusivamente su Supabase |
+| 6 | `customers` | CRM locale (DEPRECATO) | [CustomerDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#119-129) | ⚠️ Legacy — CRM Silente su Supabase |
+| 7 | `staff` | Anagrafica guide/autisti, contratti, brevetti, ruoli | [StaffDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#195-207) | ✅ Attivo |
+| 8 | `fleet` | Mezzi: RAFT (capacity), VAN (has_tow_hitch), TRAILER (max_rafts) | [FleetDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#208-222) | ✅ Attivo |
+| 9 | `system_settings` | Variabili globali EAV (`raft_capacity`, `van_seats`, ecc.) | [SystemSettingDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#264-272) | ✅ Attivo |
+| 10 | `resource_exceptions` | Ferie, manutenzioni, disponibilità extra (diario calendario) | [ResourceExceptionDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#239-260) | ✅ Attivo |
+| 11 | `registrations` | Slot consenso Check-in (tabella RegistrationDB, modulo separato) | `RegistrationDB` | ✅ Attivo |
+
+### Tabelle M2M Dichiarate MORTE (da rimuovere in Fase 8)
+
+| Tabella | Stato | Note |
 |---|---|---|
-| id | String(36) PK | UUID |
-| code | String(20) UNIQUE | Es: FAMILY, CLASSICA |
-| name | String(100) | Nome attività |
-| price | Float | Prezzo base |
-| duration_hours | Float | Durata in ore |
-| color_hex | String(7) | Colore UI (es. #4CAF50) |
-| river_segments | String(100) | Tratti fiume (T1,T2) |
-| manager | String(50) | "Grape" (no FiRaft) / "Anatre" (sì FiRaft) |
-| season_start / season_end | Date | Periodo stagionale |
-| default_times | JSON | Orari base: ["09:00","14:00"] |
-| allow_intersections | Boolean | Consenti incroci fiume (ARR) |
-| activity_class | String(20) | RAFTING, HYDRO, KAYAK |
-| yellow_threshold | Integer | Soglia posti residui per giallo |
-| overbooking_limit | Integer | Posti extra vendibili |
-| workflow_schema | JSON | Schema BPMN: {"flows":[...], "logistics":{...}} |
-| is_active | Boolean | Attivazione |
+| `crew_assignments` | ☠️ MORTA, 0 righe | Sostituita da `ride_allocations` JSONB su Supabase |
+| `ride_staff_link` | ☠️ MORTA, 0 righe | Fossile Fase 6.B, mai popolata |
+| `ride_fleet_link` | ☠️ MORTA, 0 righe | Fossile Fase 6.B, mai popolata |
 
-#### Tabella: `activity_sub_periods`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | String(36) PK | UUID |
-| activity_id | String(36) FK → activities | Attività padre |
-| name | String(100) | Es: "Weekend Settembre" |
-| dates | JSON | Array piatto ["2026-08-01",...] |
-| override_price | Float | Prezzo override per questo periodo |
-| override_times | JSON | Orari override |
-| is_closed | Boolean | Attività chiusa in queste date |
-| allow_intersections | Boolean | Override ARR |
-| yellow_threshold / overbooking_limit | Integer | Override soglie |
+### Colonne Critiche `daily_rides`
 
-#### Tabella: `daily_rides`
-| Colonna | Tipo | Descrizione |
+| Colonna | Tipo | Significato |
 |---|---|---|
-| id | String(36) PK | UUID (condiviso con Supabase `rides`) |
-| activity_id | String(36) FK → activities | Attività |
-| ride_date | Date | Data turno |
-| ride_time | Time | Ora partenza |
-| status | String(1) | A=Verde, B=Giallo, C=Rosso, D=Blu, X=Chiuso |
-| is_overridden | Boolean | Se True, Engine non ricalcola (Dogma Override) |
-| notes | Text | Note operative |
+| [id](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#94-115) | UUID (String 36) | PK condivisa tra SQLite e Supabase |
+| `activity_id` | FK → `activities.id` | Tipo attività |
+| `ride_date` | Date | Data turno |
+| `ride_time` | Time | Ora turno |
+| `status` | String(1) | A=Verde, B=Giallo, C=Rosso, D=Blu, X=Chiuso |
+| `is_overridden` | Boolean | Se True → Engine NON ricalcola (Dogma Override) |
+| `notes` | Text | Appunti operativi |
 
-#### Tabella: `staff`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | String(36) PK | UUID |
-| name | String(100) | Nome |
-| contract_type | String(20) | FISSO o EXTRA |
-| is_guide / is_driver | Boolean | Capacità operative |
-| roles | JSON | Multi-ruolo: ["RAF4","SK","NC"] |
-| contract_periods | JSON | Periodi contratto |
-| is_active | Boolean | Attivazione |
+### Colonne Critiche `staff`
 
-#### Tabella: `fleet`
-| Colonna | Tipo | Descrizione |
+| Colonna | Tipo | Significato |
 |---|---|---|
-| id | String(36) PK | UUID |
-| name | String(100) | Nome mezzo |
-| category | String(20) | RAFT, VAN, TRAILER |
-| total_quantity | Integer | Quantità (legacy) |
-| capacity_per_unit | Integer | Posti per unità (legacy) |
-| capacity | Integer | Capienza reale passeggeri |
-| has_tow_hitch | Boolean | Solo VAN: gancio traino |
-| max_rafts | Integer | Solo TRAILER: gommoni trasportabili |
-| is_active | Boolean | Attivazione |
+| [id](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#94-115) | UUID | PK |
+| `name` | String | Nome risorsa |
+| `contract_type` | String | "FISSO" o "EXTRA" |
+| `is_guide` | Boolean | Abilitato come guida |
+| `is_driver` | Boolean | Patente navetta |
+| `roles` | JSON | Multi-ruolo: `["RAF4","SK","NC"]` |
+| `contract_periods` | JSON | Periodi contratto: `[{"start":"2026-05-01","end":"2026-09-30"}]` |
+| `is_active` | Boolean | Flag attivazione |
 
-#### Tabella: `orders` (SQLite — DEPRECATA per commerciale)
-| Colonna | Tipo | Descrizione |
+### Colonne Critiche `fleet`
+
+| Colonna | Tipo | Significato |
 |---|---|---|
-| id | String(36) PK | UUID |
-| ride_id | FK → daily_rides | Turno |
-| order_status | String(20) | IN_ATTESA, CONFERMATO, COMPLETATO, PAGATO |
-| total_pax | Integer | Passeggeri |
-| price_total / price_paid | Float | Importi |
-| customer_name / email / phone | String | Dati cliente |
-| customer_id | FK → customers | CRM link |
-| booker_name / phone / email | String | Referente gruppo |
-| extras | JSON | [{"name":"Foto","price":15}] |
-| source | String(20) | WEB, DESK, PARTNER |
+| [id](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#94-115) | UUID | PK |
+| `name` | String | Nome mezzo |
+| `category` | String | "RAFT", "VAN", "TRAILER" |
+| `capacity` | Integer | Posti pax (gommoni) o posti sedere escluso autista (furgoni) |
+| `has_tow_hitch` | Boolean | Solo VAN: dotato di gancio traino |
+| `max_rafts` | Integer | Solo TRAILER: quanti gommoni può trasportare |
+| `is_active` | Boolean | Flag attivazione |
+
+### Colonne Critiche `activities`
+
+| Colonna | Tipo | Significato |
+|---|---|---|
+| `workflow_schema` | JSON | Schema flussi BPMN `{"flows":[...], "logistics":{...}}` |
+| `default_times` | JSON | Orari base `["09:00","14:00"]` |
+| `yellow_threshold` | Integer | Posti residui per semaforo giallo |
+| `overbooking_limit` | Integer | Posti extra vendibili prima del rosso |
+| `allow_intersections` | Boolean | Consenti incroci fiume (ARR Cascade) |
+| `activity_class` | String | "RAFTING", "HYDRO", "KAYAK" |
+
+### 4.B — Supabase Cloud (PostgreSQL) — 6 Tabelle
+
+| # | Tabella | Ruolo | Comunicazione Backend |
+|---|---|---|---|
+| 1 | `rides` | Turni operativi (stessa UUID di `daily_rides`) | httpx PostgREST |
+| 2 | `orders` | Ordini clienti (`pax`, `price_total`, `price_paid`, FK → `rides`) | httpx PostgREST |
+| 3 | `transactions` | Libro Mastro pagamenti (`amount`, `method`, `type`, FK → `orders`) | httpx PostgREST |
+| 4 | `registrations` | Partecipanti individuali (consensi, FIRAFT) | httpx PostgREST |
+| 5 | `customers` | Anagrafica CRM cloud | httpx PostgREST (UPSERT) |
+| 6 | `ride_allocations` | Assegnazione risorse (`metadata` JSONB — Busta Stagna Crew Builder) | httpx PostgREST |
+
+### Colonne Critiche `ride_allocations`
+
+| Colonna | Tipo | Significato |
+|---|---|---|
+| `ride_id` | UUID | FK → `rides.id` |
+| `resource_id` | UUID | **Chiave Logica** (no FK fisica!) verso `staff`/`fleet` in SQLite |
+| `resource_type` | String | `"crew_manifest"` (unico tipo attivo per Crew Builder) |
+| `metadata` | JSONB | Busta Stagna: `{ guide_id, guide_name, groups: [{ order_id, customer_name, pax }] }` |
 
 > [!WARNING]
-> La tabella `orders` in SQLite è un residuo del vecchio flusso. I dati operativi vivono su Supabase. Il modello ORM rimane per backward-compatibility del Motore Predittivo, ma **tutti i nuovi ordini vengono scritti su Supabase via httpx**.
-
-#### Tabella: `transactions` (SQLite — DEPRECATA)
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | PK | UUID |
-| order_id | FK → orders | Ordine |
-| amount | Float | Importo pagamento |
-| method | String(20) | CASH, SUMUP, BONIFICO, PARTNERS |
-| type | String(20) | CAPARRA, SALDO |
-| note | String(255) | Es. "Voucher Smartbox" |
-| timestamp | DateTime | Data/ora transazione |
-
-#### Tabella: `customers` (SQLite — DEPRECATA)
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | PK | UUID |
-| full_name | String(100) | Nome completo |
-| email / phone | String | Contatti |
-| created_at | DateTime | Data creazione |
-
-#### Tabella: `registrations`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | PK | UUID |
-| nome / cognome | String | Dati partecipante |
-| email / telefono | String | Contatti |
-| is_minor | Boolean | Minorenne |
-| locked | Boolean | Registrazione bloccata |
-| status | String(20) | EMPTY o COMPLETED |
-| pdf_path | Text | Path relativo al PDF firmato |
-| order_id | FK → orders | Ordine associato |
-| daily_ride_id | FK → daily_rides | Turno associato |
-| is_lead | Boolean | Referente gruppo |
-| firaft_status | String(20) | NON_RICHIESTO, DA_TESSERARE, TESSERATO, RIFIUTATO |
-
-#### Tabella: `resource_exceptions`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | PK | UUID |
-| resource_id | String(36) | ID dello Staff o Fleet |
-| resource_type | String(20) | STAFF o FLEET |
-| name | String(100) | Es. Ferie, Turno, Guasto |
-| is_available | Boolean | False=assenza (fissi), True=presenza (extra) |
-| dates | JSON | Array piatto ["2026-08-15",...] |
-
-#### Tabella: `system_settings`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| key | String(50) PK | Chiave EAV |
-| value | String(255) | Valore |
-| category | String(50) | Gruppo logico (Capienze Mezzi, Tempi Base) |
-| description | String(255) | Descrizione leggibile per la UI |
-
-#### Tabelle M2M FOSSILI (0 righe — MAI usate)
-- `ride_staff_link` (ride_id ↔ staff_id)
-- `ride_fleet_link` (ride_id ↔ fleet_id)
-- `crew_assignments` (ride_id, boat_id, guide_id)
-
-> [!NOTE]
-> Queste tre tabelle M2M sono fossili della Fase 6.B Blueprint. La composizione dell'equipaggio vive ESCLUSIVAMENTE nel cloud (Supabase `ride_allocations.metadata` JSONB). Non verranno mai populate in locale.
+> Il `resource_id` in `ride_allocations` NON ha vincoli FK fisici verso le tabelle SQLite. È una **Chiave Logica** validata solo applicativamente (Dogma 12). Il vincolo FK è stato amputato il 27/02/2026 dopo errori `409 Conflict`.
 
 ---
 
-### 4.B — Supabase Cloud (PostgreSQL)
+## 5. BACKEND — ROUTERS, MODELLI E SERVIZI
 
-#### Tabella: `rides`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | UUID PK | (condiviso con SQLite `daily_rides.id`) |
-| activity_id | UUID | FK logica → activities (SQLite) |
-| date | Date | Data turno |
-| time | Text | Ora partenza |
-| status | Text | A/B/C/D/X |
-| is_overridden | Boolean | Override manuale |
+### 5.A — Routers Registrati ([main.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/main.py))
 
-#### Tabella: `orders`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | UUID PK | Ordine |
-| ride_id | UUID FK → rides | Turno cloud |
-| pax | Integer | Passeggeri |
-| price_total / price_paid | Float | Importi |
-| customer_name / email / phone | Text | Dati cliente |
-| customer_id | UUID FK → customers | CRM link |
-| extras | JSONB | Extra aggiuntivi |
-| source | Text | WEB, DESK, PARTNER |
-| created_at | Timestamptz | Data creazione |
-
-#### Tabella: `transactions`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | UUID PK | Transazione |
-| order_id | UUID FK → orders (CASCADE) | Ordine |
-| amount | Float | Importo |
-| method | Text | CASH, SUMUP, BONIFICO, PARTNERS |
-| type | Text | CAPARRA, SALDO |
-| note | Text | Nota opzionale |
-| timestamp | Timestamptz | Data/ora |
-
-#### Tabella: `customers`
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | UUID PK | Cliente |
-| full_name | Text | Nome completo |
-| email / phone | Text | Contatti |
-| created_at | Timestamptz | Data creazione |
-
-#### Tabella: `registrations` (Cloud)
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | UUID PK | Registrazione partecipante |
-| order_id | UUID FK → orders | Ordine di appartenenza |
-| Dati consenso / partecipante | Vari | Anagrafica e stato compilazione |
-
-#### Tabella: `ride_allocations` (Busta Stagna — Crew Builder)
-| Colonna | Tipo | Descrizione |
-|---|---|---|
-| id | UUID PK | Auto-generato |
-| ride_id | UUID | FK logica → rides |
-| resource_id | UUID nullable | FK logica → fleet/staff (SQLite) |
-| resource_type | Text | "crew_manifest" (unico tipo usato attualmente) |
-| metadata | JSONB | **Busta Stagna:** `{ guide_id, groups: [{ order_id, customer_name, pax }] }` |
-
----
-
-## 5. MAPPA API ENDPOINTS
-
-Router montati in [main.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/main.py) con i seguenti prefissi:
-
-| # | Prefix | Router | Tags | Descrizione |
+| # | Prefix | File Router | Tags | Note |
 |---|---|---|---|---|
-| 1 | `/api/v1/vision` | vision.py | AI Vision | POST /analyze → Azure OCR |
-| 2 | `/api/v1` | registration.py | Registration | Registrazioni consensi (prefix interno /registration) |
-| 3 | `/api/v1/resources` | resources.py | Resources | CRUD Staff e Fleet (SQLite) |
-| 4 | `/api/v1/reservations` | reservations.py | Reservations | Legacy (1329 bytes, minimale) |
-| 5 | `/api/v1/calendar` | calendar.py (33KB) | Calendar | BFF principale: activities CRUD, daily-rides + Engine, Sync Sonda, Kill-Switch, Semaforo Dual-Write, FIRAFT export |
-| 6 | `/api/v1/legacy-orders` | orders.py | Orders (Legacy) | Ordini via ORM locale — DEPRECATO |
-| 7 | `/api/v1/firaft` | firaft.py | FiRaft | Registrazione bulk tesseramenti |
-| 8 | `/api/v1/logistics` | logistics.py (9KB) | Logistics | Staff e Fleet attivi per logistica |
-| 9 | `/api/v1/orders` | desk.py (17KB) | Desk POS | POS operativo: POST /desk, POST /{id}/transactions (httpx → Supabase) |
-| 10 | `/api/v1/public` | public.py | Public Check-in | Magic Link: GET /orders/{id}/info, POST /orders/{id}/fill-slot (NO auth) |
-| 11 | `/api/v1/availability` | availability.py | Availability Engine | GET /{activity_id}?date= |
-| 12 | `/api/v1/crew` | crew.py (6KB) | Crew Builder | GET/PUT /allocations/{ride_id} (httpx → Supabase) |
+| 1 | `/api/v1/vision` | [vision.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/api/v1/endpoints/vision.py) (1.7KB) | AI Vision | Azure OCR analisi documenti |
+| 2 | `/api/v1/registration` | [registration.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/registration.py) (10.8KB) | Registration | Gestione registrazioni e consensi |
+| 3 | `/api/v1/resources` | [resources.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/resources.py) (2.6KB) | Resources | CRUD Staff & Fleet (SQLite) |
+| 4 | `/api/v1/reservations` | [reservations.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/api/v1/endpoints/reservations.py) (1.3KB) | Reservations | Overrides e prenotazioni |
+| 5 | `/api/v1/calendar` | [calendar.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py) (33KB) | Calendar | **BFF principale**: CRUD attività, daily-rides, Motore Engine, Sync Sonda |
+| 6 | `/api/v1/legacy-orders` | [orders.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/orders.py) (12KB) | Orders (Legacy) | ⚠️ DEPRECATO — ORM locale, backward-compat |
+| 7 | `/api/v1/firaft` | [firaft.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/api/v1/endpoints/firaft.py) (4.6KB) | FiRaft | Gestione tesseramento |
+| 8 | `/api/v1/logistics` | [logistics.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/logistics.py) (9KB) | Logistics | Staff/Fleet attivo per Engine |
+| 9 | `/api/v1/orders` | [desk.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/desk.py) (17KB) | Desk POS | **POS Operativo** — httpx → Supabase |
+| 10 | `/api/v1/public` | [public.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/public.py) (5.2KB) | Public Check-in | NO AUTH — Kiosk Magic Link |
+| 11 | `/api/v1/availability` | [availability.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/availability.py) (1.2KB) | Availability Engine | Calcolo singola attività |
+| 12 | `/api/v1/crew` | [crew.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/api/v1/endpoints/crew.py) (7.8KB) | Crew Builder | GET/PUT allocazioni equipaggi |
 
-### Endpoint Critici Dettagliati
+### 5.B — Endpoints Chiave
 
-**Calendar (BFF — Il Router Più Grande, 33KB):**
-- GET /activities → Lista attività attive (SQLite)
-- POST /activities → Crea attività
-- PUT /activities/{id} → Aggiorna attività
-- GET /daily-rides?date=YYYY-MM-DD → Turni + Engine (filtro status≠X). Include Sync Sonda httpx
-- POST /daily-rides/close → Kill-Switch turno vuoto (status=X)
-- PATCH /daily-rides/{id}/status → Semaforo manuale Dual-Write SQLite
-- GET /daily-rides/export-firaft → Export CSV FIRAFT
-- GET /daily-rides/{id} → Dettaglio singolo turno
+**Calendar (BFF Principale):**
+- `GET /api/v1/calendar/activities` → Lista attività attive (SQLite)
+- `POST /api/v1/calendar/activities` → Crea attività
+- `PUT /api/v1/calendar/activities/{id}` → Aggiorna attività
+- `GET /api/v1/calendar/daily-rides?date=YYYY-MM-DD` → Turni + Engine (filtro status≠X)
+- `POST /api/v1/calendar/daily-rides/close` → Kill-Switch turno vuoto (status=X)
+- `PATCH /api/v1/calendar/daily-rides/{id}/status` → Semaforo manuale Dual-Write SQLite
+- `GET /api/v1/calendar/daily-rides/export-firaft` → Export CSV FIRAFT
 
-**Desk POS (httpx → Supabase):**
-- POST /desk → Crea ordine POS (httpx → Supabase + CRM Silente + Dual-Write turno)
-- POST /{order_id}/transactions → Registra pagamento (Supabase)
+**Desk POS:**
+- `POST /api/v1/orders/desk` → Crea ordine POS (httpx → Supabase + CRM Silente)
+- `POST /api/v1/orders/{order_id}/transactions` → Registra pagamento (Supabase)
 
-**Crew Builder (httpx → Supabase):**
-- GET /allocations/{ride_id} → Legge Busta Stagna (filtra resource_type=crew_manifest)
-- PUT /allocations/{ride_id} → Swap & Replace: DELETE+bulk INSERT
+**Crew Builder:**
+- `GET /api/v1/crew/allocations?ride_id=UUID` → Leggi equipaggi turno
+- `PUT /api/v1/crew/allocations?ride_id=UUID` → Salva equipaggi (Swap & Replace)
 
----
+**Public (NO AUTH):**
+- `GET /api/v1/public/orders/{order_id}/info` → Info discesa per header consenso
+- `POST /api/v1/public/orders/{order_id}/fill-slot` → Auto-Slotting Pac-Man
 
-## 6. MAPPA FILE SYSTEM
+### 5.C — Servizi
 
-### Backend (`backend/`)
-| Percorso | Dimensione | Ruolo |
+| File | Dimensione | Ruolo |
 |---|---|---|
-| main.py | 4.4 KB | Entry point FastAPI, mount di 12 router |
-| passenger_wsgi.py | 187 B | Bridge per deploy Ergonet (a2wsgi) |
-| rafting.db | 288 KB | Database SQLite locale |
-| init_db.py | 7 KB | Inizializzazione schema DB |
-| app/models/calendar.py | 13.7 KB | Tutti i modelli SQLAlchemy (11 classi/tabelle) |
-| app/models/registration.py | 3.4 KB | Modello RegistrationDB |
-| app/api/v1/endpoints/calendar.py | **33.2 KB** | BFF principale (il più grande) |
-| app/api/v1/endpoints/desk.py | 17 KB | POS operativo (httpx) |
-| app/api/v1/endpoints/orders.py | 11.9 KB | Legacy ORM (DEPRECATO) |
-| app/api/v1/endpoints/crew.py | 6 KB | Crew Builder (httpx) |
-| app/services/availability_engine.py | **22.1 KB** | Motore predittivo 1440 minuti |
-| app/services/yield_engine.py | **22 KB** | Yield Engine V5 |
-| app/services/azure_document_service.py | 15.6 KB | AI Vision (Azure OCR) |
-| app/services/waiver_service.py | 14 KB | Generatore PDF manleve (reportlab) |
-| app/services/local_vision_service.py | 36 KB | Vision locale (YOLO/Paddle — DISABILITATO in prod) |
-| requirements.txt | 1.5 KB | Dipendenze dev |
-| requirements_production.txt | 748 B | Dipendenze produzione (senza AI) |
+| [availability_engine.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/availability_engine.py) | 22KB | **Motore Predittivo** — Time-Array Slicer 1440 min, 2 Pass |
+| [yield_engine.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/yield_engine.py) | 22KB | Engine di calcolo yield (legacy V5, ancora in uso) |
+| [azure_document_service.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/azure_document_service.py) | 15.6KB | OCR documenti via Azure Cognitive Services |
+| [waiver_service.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/waiver_service.py) | 14KB | Generazione PDF manleva (reportlab) |
+| [local_vision_service.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/local_vision_service.py) | **36KB** | ☠️ **DA ELIMINARE** — Paddle+YOLO+GLiNER, mai usato in prod |
+| [image_utils.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/image_utils.py) | 12.6KB | Utilità processamento immagini |
+| [document_specs.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/document_specs.py) | 4KB | Specs formati documenti identità |
+| [waiver_mailer.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/waiver_mailer.py) | 1.8KB | Invio email manleva |
 
-### Frontend (`web-app/src/`)
-| Percorso | Dimensione | Ruolo |
+### 5.D — Schemas (Pydantic)
+
+| File | Dimensione | Contenuto |
 |---|---|---|
-| pages/PlanningPage.vue | **35.4 KB** | Omni-Board: Calendario Operativo |
-| pages/ResourcesPage.vue | 29.7 KB | CRUD Staff & Fleet |
-| pages/ScannerPage.vue | 28 KB | Scanner documenti |
-| pages/LoginPage.vue | 6.6 KB | Login |
-| components/RideDialog.vue | **47.9 KB** | Modale Omni-Board (il più grande) |
-| components/CrewBuilderPanel.vue | 17.7 KB | Crew Builder tab |
-| components/DeskBookingForm.vue | 10.6 KB | POS form estratto |
-| components/CalendarComponent.vue | 17.9 KB | Calendario mensile semaforo |
-| components/SeasonConfigDialog.vue | 21 KB | Config stagioni |
-| components/ResourcePanel.vue | 19.9 KB | Pannello risorse |
-| stores/resource-store.js | **35.3 KB** | Store principale (Merge Difensivo) |
-| stores/crew-store.js | 4.3 KB | Store Crew Builder |
-| stores/registration-store.js | 9.7 KB | Store registrazioni |
-| stores/settings-store.js | 3.4 KB | Store impostazioni |
-| stores/auth-store.js | 1.6 KB | Store autenticazione |
+| [calendar.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py) | 5.2KB | ActivityCreate/Response, DailyRideCreate/Response, SubPeriodSchema |
+| [desk.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/desk.py) | 3KB | DeskOrderCreate, SplitItem, ExtraItem (POS) |
+| [orders.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/orders.py) | 4.4KB | TransactionCreate, OrderResponse |
+| [logistics.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/logistics.py) | 4KB | StaffResponse, FleetResponse |
+| [registration.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/registration.py) | 6.3KB | RegistrationCreate, SlotData, ConsentData |
+| [resources.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/resources.py) | 5.6KB | StaffCreate/Update, FleetCreate/Update, ExceptionCreate |
+| [availability.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/availability.py) | 495B | AvailabilityQuery |
+| [public.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/public.py) | 572B | FillSlotRequest |
+
+### 5.E — File Requirements (Proliferazione da consolidare)
+
+| File | Destinazione |
+|---|---|
+| [requirements.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements.txt) | ⚠️ Sviluppo — da consolidare |
+| [requirements_fixed.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements_fixed.txt) | ⚠️ Con dipendenze AI pesanti — da consolidare |
+| [requirements_frozen.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements_frozen.txt) | ⚠️ Snapshot pip freeze — da eliminare |
+| [requirements_lock.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements_lock.txt) | ⚠️ Lock file — da eliminare |
+| [requirements_production.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements_production.txt) | ✅ **Produzione** — senza AI, quello che viene deployato |
 
 ---
 
-## 7. MOTORE PREDITTIVO
+## 6. FRONTEND — PAGINE, COMPONENTI E STORES
 
-File: `app/services/availability_engine.py` (22 KB)
+### 6.A — Rotte Attive
 
-### Struttura a 2 Passaggi
+| Path | Pagina | Ruolo | Auth |
+|---|---|---|---|
+| `/` → `/consenso` | `ConsentFormPage.vue` | Kiosk Pubblico (Magic Link, 6 step) | ❌ NO |
+| `/login` | [LoginPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/LoginPage.vue) | Autenticazione | ❌ NO |
+| `/admin/operativo` | [PlanningPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/PlanningPage.vue) | **Calendario Operativo** — hub principale | ✅ SÌ |
+| `/admin/segreteria` | [PlanningPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/PlanningPage.vue) | Stessa vista → Omni-Board collapse | ✅ SÌ |
+| `/admin/timeline` | [TimelinePage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/TimelinePage.vue) | Vista Gantt + Ruoli + Barra Saturazione | ✅ SÌ |
+| `/admin/board` | [DailyBoardPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/DailyBoardPage.vue) | Lavagna Operativa daily | ✅ SÌ |
+| `/admin/impostazioni` | [SettingsPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/SettingsPage.vue) | Costruttore Flussi BPMN a mattoncini | ✅ SÌ |
+| `/admin/risorse` | [ResourcesPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/ResourcesPage.vue) | CRUD Staff & Fleet — **ORGANO VITALE** | ✅ SÌ |
+| `/admin/registrazioni` | [RegistrationsPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/RegistrationsPage.vue) | Archivio Consensi | ✅ SÌ |
+| `/admin/scanner/:id?` | [ScannerPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/ScannerPage.vue) | Scanner documenti AI | ✅ SÌ |
 
-**Pass 1 — River Ledger (Cronologico):**
-Per ogni turno ordinato per orario:
-1. Se `status='X'` → skip (turno chiuso via Kill-Switch)
-2. Se `is_overridden=True` → bypass completo, restituisci status DB (A→VERDE, B→GIALLO, C→ROSSO, D→BLU)
-3. Altrimenti: calcola `booked_pax` (da `external_pax_map` Supabase o ORM locale)
-4. **ARR Harvesting:** consuma posti barche già in acqua a valle
-5. Calcola barche fisiche necessarie (`needed_boats`)
-6. Lancia nuove barche sul fiume (genera posti vuoti cascata ARR)
-7. Costruisci timeline BPMN (Two-Pass: anchor start + end)
+### 6.B — Componenti
 
-**Pass 2 — Semaforo Asimmetrico:**
-1. `_evaluate_ride_capacity` → Time-Array Slicer 1440 minuti
-2. `total_capacity = (max_boats × raft_capacity) + arr_bonus_seats`
-3. Soglie:
-   - `remaining_seats ≤ -overbooking_limit` → **ROSSO**
-   - `yield_warning OR remaining_seats ≤ yellow_threshold` → **GIALLO**
-   - else → **VERDE**
-
-### Time-Array Slicer (`_evaluate_ride_capacity`)
-- 3 array di 1440 interi: `usage_rafts`, `usage_guides`, `usage_vans`
-- Per ogni turno concorrente: "colora" i minuti occupati
-- Trova il **minuto peggiore** (collo di bottiglia)
-- **Safety Kayak:** `guides_needed = max(min_guides_absolute, needed_boats)`
-- **Soft Limit (Eccezione di Sarre):** `yield_warning = True` se pool vans insufficiente (NON blocca vendite)
-- **Formula Furgoni:** `math.ceil(booked_pax / van_net_seats)` — VIETATO il margine +1
-
-### Sync Sonda (Bypass Split-Brain)
-Il router `calendar.py` usa httpx per estrarre i `booked_pax` reali da Supabase e li inietta nel Motore Predittivo come `external_pax_map` (Dependency Injection). Questo disinnesca il bug "Zero Assoluto".
-
----
-
-## 8. FRONTEND ARCHITECTURE
-
-### Routing
-
-| Path | Componente | Descrizione |
+| Componente | Dimensione | Ruolo |
 |---|---|---|
-| `/` | redirect → `/consenso` | Landing page pubblica |
-| `/consenso` | ConsentFormPage.vue | Kiosk Check-in (no auth) |
-| `/login` | LoginPage.vue | Login standalone |
-| `/admin/operativo` | PlanningPage.vue | **Omni-Board** (default admin) |
-| `/admin/segreteria` | PlanningPage.vue | Stessa pagina, alias |
-| `/admin/timeline` | TimelinePage.vue | Vista Gantt + Ruoli |
-| `/admin/board` | DailyBoardPage.vue | Lavagna Operativa |
-| `/admin/risorse` | ResourcesPage.vue | CRUD Staff & Fleet |
-| `/admin/impostazioni` | SettingsPage.vue | Costruttore Flussi BPMN |
-| `/admin/registrazioni` | RegistrationsPage.vue | Archivio consensi |
-| `/admin/scanner/:id?` | ScannerPage.vue | Scanner documenti |
+| [RideDialog.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/RideDialog.vue) | **48KB** | Modale Omni-Board suprema (Tabs: Ordini/POS/Crew) |
+| [PlanningPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/PlanningPage.vue) | **35KB** | Griglia turni con semaforo, calendario mensile |
+| [SettingsPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/SettingsPage.vue) | **38KB** | Costruttore Flussi BPMN a mattoncini |
+| [ResourcesPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/ResourcesPage.vue) | **30KB** | CRUD Staff & Fleet |
+| [ScannerPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/ScannerPage.vue) | **28KB** | Scanner documenti AI (Azure OCR) |
+| [TimelinePage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/TimelinePage.vue) | **25KB** | Vista Gantt Multi-Lane |
+| [CrewBuilderPanel.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/CrewBuilderPanel.vue) | **24KB** | Tab Equipaggi (Banchina + Fiume + Sensori) |
+| [SeasonConfigDialog.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/SeasonConfigDialog.vue) | 21KB | Dialog configurazione stagione |
+| [CalendarComponent.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/CalendarComponent.vue) | 18KB | Calendario mensile con colori semaforo |
+| [ResourcePanel.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/ResourcePanel.vue) | 20KB | Pannello dettaglio singola risorsa |
+| [DeskBookingForm.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/DeskBookingForm.vue) | 10.6KB | Form POS estratto (Ledger Misto, Spacca-Conto) |
+| [DailyBoardPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/DailyBoardPage.vue) | 10.6KB | Lavagna giornaliera |
+| [RegistrationsPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/admin/RegistrationsPage.vue) | 13.7KB | Archivio consensi |
+| [CameraCapture.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/CameraCapture.vue) | 11.6KB | Cattura foto documento |
+| [FiraftDialog.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/FiraftDialog.vue) | 5.9KB | Dialog tesseramento FiRaft |
+| [QrDialog.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/QrDialog.vue) | 0.9KB | QR Code Magic Link |
+| [ModuleCard.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/ModuleCard.vue) | 1.4KB | Card modulo generica |
 
-### Componenti Chiave
+### 6.C — Pinia Stores
 
-**RideDialog.vue (47.9 KB — Il Più Grande):**
-Modale Omni-Board con tabs:
-- Tab "ORDINI ESISTENTI" (default): passeggeri, Libro Mastro, Drop-outs
-- Tab "NUOVA PRENOTAZIONE": POS completo (DeskBookingForm.vue)
-- Tab "EQUIPAGGI": Crew Builder (CrewBuilderPanel.vue)
-- Header: Semaforo Manuale (VERDE/BLU/GIALLO/ROSSO/AUTO) + Kill-Switch
+| Store | Dimensione | Ruolo |
+|---|---|---|
+| [resource-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/resource-store.js) | **35.5KB** | **Store principale**: staffList, fleetList, dailySchedule, activities, Merge Difensivo, Ghost Slots, Override Guard, Kill-Switch Client |
+| [crew-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/crew-store.js) | 5.1KB | Allocazioni equipaggi, `loadCrew`, `saveCrew`, getter `hasAnyOverflow` |
+| [registration-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/registration-store.js) | 9.7KB | Gestione registrazioni e consensi |
+| [settings-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/settings-store.js) | 3.4KB | System settings EAV |
+| [auth-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/auth-store.js) | 1.6KB | Autenticazione utente |
+| [index.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/index.js) | 0.5KB | Bootstrap Pinia |
 
-**CrewBuilderPanel.vue (17.7 KB):**
-- Zona Banchina: ordini con conteggio pax residui, badge verde/arancio
-- Zona Fiume: gommoni con gruppi imbarcati nominali, pax editabile
-- Select "Aggiungi Gruppo" filtrato per ordini con pax residui > 0
-- Pulsante "SIGILLA EQUIPAGGI"
+### 6.D — Composables
 
----
-
-## 9. PINIA STORES
-
-### resource-store.js (35.3 KB — Store Principale)
-
-**State:** staffList, fleetList, dailySchedule, activities, selectedDate, timelineViewMode, loading, selectedResourceId
-
-**Getter vitali:**
-- `activeStaff`, `riverGuides`, `shuttleDrivers`
-- `towVans` (filtro `has_tow_hitch`), `trailers`
-- `totalDailyPool { guides, drivers, vans, trailers }`
-
-**Action `fetchDailySchedule` — Merge Difensivo:**
-1. Fetch rides da Supabase (verità fisica)
-2. Fetch engineRides da FastAPI `/daily-rides` (Motore Predittivo)
-3. Merge per Firma Operativa (activity_name + ride_time normalizzato)
-4. Idratazione: total_capacity dal motore, fallback Supabase
-5. Override Guard: `is_overridden=True` → status Engine immutato
-6. Kill-Switch Client (solo se !is_overridden):
-   - capacità 0 + pax > 0 → forza ROSSO
-   - capacità 0 + pax = 0 → forza GIALLO
-7. Ghost Slots: genera slot vuoti da activities.default_times per date future
-
-### crew-store.js (4.3 KB)
-
-**State:** allocations, isLoading
-**Getter:** boatCount, assignedPax, unassignedPax, isEmpty
-**Actions:** loadCrew(ride_id), saveCrew(ride_id, payload), clearCrew()
-
-### Altri Store
-- `registration-store.js` (9.7 KB) — Gestione registrazioni Kiosk
-- `settings-store.js` (3.4 KB) — Variabili sistema EAV
-- `auth-store.js` (1.6 KB) — Autenticazione
+| Composable | Ruolo |
+|---|---|
+| `useCheckin.js` | `getMagicLink`, `copyMagicLink`, `openQrModal`, `shareWhatsApp` |
 
 ---
 
-## 10. FLUSSI DATI CRITICI
+## 7. FLUSSI DATI CRITICI
 
-### Prenotazione POS (Dual-Write)
-DeskBookingForm → `POST /orders/desk`
+### 7.1 — Prenotazione POS (Dual-Write)
+
+DeskBookingForm → POST /orders/desk
 → httpx → Supabase: INSERT orders, transactions, rides (UUID condiviso)
 → SQLAlchemy → SQLite: INSERT/UPDATE daily_rides (stesso UUID)
 → CRM Silente: UPSERT customers (Supabase)
 
-### Semaforo Manuale (Dual-Write)
-RideDialog [ROSSO] → `await Supabase rides.update(status='C', is_overridden=true)`
-→ `await PATCH /daily-rides/{id}/status` → SQLite (status='C', is_overridden=1)
+### 7.2 — Semaforo Manuale (Dual-Write)
+
+RideDialog [ROSSO] → await Supabase rides.update(status='C', is_overridden=true)
+→ await PATCH /daily-rides/{id}/status → SQLite (status='C', is_overridden=1)
 → Store Pinia: aggiornamento reattivo immediato
 
-### Kill-Switch Turno Vuoto
-PlanningPage [🗑️] → confirm → `POST /daily-rides/close`
+### 7.3 — Kill-Switch Turno Vuoto
+
+PlanningPage [🗑️] → dialog conferma → POST /daily-rides/close
 → SQLite: status='X', is_overridden=1, note += "[CHIUSO MANUALMENTE]"
-→ Store: splice reattivo + fetchDailySchedule background
+→ Store: dailySchedule.splice(idx, 1) — rimozione reattiva immediata
 
-### Check-in Digitale (Magic Link)
-Segreteria → `useCheckin.getMagicLink(order)` → WhatsApp / QR
-→ Cliente apre link → ConsentFormPage (6 step) → `POST /public/fill-slot`
-→ RegistrationDB: EMPTY → COMPLETED + firma + PDF manleva
+### 7.4 — Check-in Digitale (Magic Link)
 
-### Refresh Pagina
-PlanningPage onMounted → `fetchDailySchedule(date)`
-→ Supabase: rides + orders + allocations
-→ FastAPI: /daily-rides?date= → Sync Sonda + Engine
+Segreteria → useCheckin.getMagicLink(order) → WhatsApp / QR Code
+Cliente → ConsentFormPage (6 step) → POST /public/fill-slot
+→ RegistrationDB: status EMPTY → COMPLETED, dati anagrafici + firma
+→ Generazione PDF manleva (reportlab)
+
+### 7.5 — Crew Builder (Swap & Replace)
+
+CrewBuilderPanel → saveCrew(ride_id, payload)
+→ crew-store.js → PUT /api/v1/crew/allocations?ride_id=UUID
+→ Backend: DELETE ride_allocations WHERE ride_id=target
+→ Backend: bulk INSERT nuove allocazioni via httpx PostgREST
+→ Sensori UI: Bilancia Banchina + Galleggiamento + Kill-Switch Varo
+
+### 7.6 — Refresh Pagina Calendario
+
+PlanningPage onMounted → fetchDailySchedule(date)
+→ Supabase: rides + orders + allocations (verità fisica)
+→ FastAPI: /daily-rides?date= → Sync Sonda + Engine.calculate_availability()
 → Merge Difensivo con Override Guard → UI aggiornata
 
----
+### 7.7 — Motore Predittivo (2 Pass)
 
-## 11. MODULI OPERATIVI
+**Pass 1 — River Ledger:**
+Per ogni turno ordinato per orario:
+1. Se status='X' → skip (chiuso)
+2. Se is_overridden=True → bypass completo, restituisci status DB
+3. Calcola booked_pax (da external_pax_map Supabase)
+4. Harvesting ARR (posti vuoti in cascata)
+5. Calcola barche necessarie
+6. Costruisci timeline BPMN (Two-Pass: anchor start + end)
 
-### Kiosk Pubblico (Attivo e Operativo)
-- Interfaccia mobile-first via Magic Link (no auth)
-- Stepper a 6 passi: Lingua → Anagrafica → Contatti → Privacy/GDPR → Firma grafometrica → Conferma
-- Auto-Slotting Backend "Pac-Man": consuma il primo slot EMPTY in FIFO
-- PDF manleva generato con reportlab (firma inline come immagine base64)
-- Composable `useCheckin.js`: getMagicLink, copyMagicLink, openQrModal, shareWhatsApp
-
-### AI Vision (Azure OCR)
-- `POST /api/v1/vision/analyze`
-- Azure Cognitive Services cloud → zero RAM locale
-- Estrazione: nome, cognome, data nascita, codice fiscale, numero documento, scadenza, cittadinanza
-- Supporta: CIE, Passaporto, Patente italiana
-- Rispetto limite 1GB Ergonet: nessun modello caricato in memoria
-
-### Costruttore Flussi BPMN (SettingsPage.vue)
-- UI visiva a "mattoncini" per definire la ricetta logistica
-- Drag & Drop blocchi (HTML5 nativo)
-- Salvataggio in `workflow_schema.logistics` (JSON) nella tabella activities
-- Due tipi di ancora: `anchor=start` (forward) e `anchor=end` (backward)
-
-### Timeline Flussi (TimelinePage.vue)
-- Vista Gantt con toggle Discese/Ruoli
-- Multi-Lane Packing per visualizzare sovrapposizioni temporali
-- Barra Saturazione a 144 bucket (5 min ciascuno, 08:00-20:00)
-- Navigazione bidirezionale con PlanningPage (preserva data)
+**Pass 2 — Semaforo Asimmetrico:**
+Per ogni turno:
+1. Time-Array Slicer (3 array × 1440 interi)
+2. total_capacity = (max_boats × raft_capacity) + arr_bonus_seats
+3. Soglie: remaining ≤ -overbooking_limit → ROSSO / yield_warning o remaining ≤ yellow → GIALLO / else → VERDE
 
 ---
 
-## 12. BUG PENDENTI
+## 8. DOGMI ARCHITETTURALI VIGENTI
 
-### 🔴 BUG BLOCCANTE — Errore Silente "Sigilla Equipaggi" (Fase 7.D)
+I "Dogmi" sono regole inviolabili sancite nel LORE_VAULT.md dopo incidenti e bug in produzione. Ignorarli causa regressioni garantite.
 
-**Sintomo:** L'UI mostra notifica rossa al click su "SIGILLA EQUIPAGGI" nel CrewBuilderPanel. Il payload viene respinto dal backend o da Supabase.
+| # | Nome | Regola | Data |
+|---|---|---|---|
+| — | **Hard Limit LVE** | Max 1GB RAM su Ergonet. Vietato caricare modelli AI locali. Lazy Loading obbligatorio. | — |
+| — | **DDL Supabase** | Ogni alterazione DDL DEVE terminare con `NOTIFY pgrst, 'reload schema'` per svuotare la cache PostgREST. | — |
+| — | **Override** | Se `is_overridden=True` → Engine NON ricalcola. Bottone AUTO resetta il flag. | 27/02/2026 |
+| 10 | **Tetris Umano** | I passeggeri non sono numeri anonimi. La Busta Stagna contiene `groups: [{ order_id, customer_name, pax }]`. Un ordine può essere frammentato su più gommoni. | 27/02/2026 |
+| 11 | **Swap & Replace** | Aggiornamento massivo: DELETE tutti i vecchi record + bulk INSERT nuovi. Zero orfani. | 27/02/2026 |
+| 12 | **Chiavi Logiche Cross-DB** | Le FK da Supabase verso entità SQLite devono essere **UUID liberi** (no FK fisica). Altrimenti 409 Conflict. | 27/02/2026 |
+| 12c | **Sindrome Arto Fantasma** | Se una FK viene amputata, TUTTE le query PostgREST con JOIN verso l'entità scollegata devono essere epurate. Altrimenti PGRST200. | 27/02/2026 |
+| 13 | **Kill-Switch del Varo** | L'UI DEVE inibire il salvataggio se: A) mezzo supera capacity, B) imbarcati > paganti. Salvataggi in difetto ammessi (no-show). | 27/02/2026 |
 
-**Cause candidate da indagare (log FastAPI):**
+---
 
-| # | Ipotesi | Dettaglio |
-|---|---|---|
-| 1 | `resource_id` null | Gommone non selezionato per un boat. Il campo è `Optional[str]` nello schema Pydantic ma Supabase potrebbe avere un constraint NOT NULL |
-| 2 | Header mancanti | httpx in `crew.py`: verificare che `_headers(write=True)` includa `apikey` e `Authorization` nella POST bulk |
-| 3 | RLS Supabase | Policy "Allow all for anon" sulla tabella `ride_allocations` potrebbe respingere la POST massiva |
-| 4 | resource_type mismatch | DELETE filtra per `resource_type=eq.crew_manifest` — i record esistenti inseriti in sessioni precedenti potrebbero avere un resource_type diverso (es. "RAFT") |
+## 9. BUG PENDENTI E DEBITO TECNICO
 
-**Piano di azione (sessione 28/02/2026):**
-1. Aprire Terminale 1 (FastAPI), riprodurre il bug, leggere il log
-2. Fix del bug
-3. Collaudo Sigilla → verifica persistenza su Supabase
-4. Validazione warning se `SUM(groups.pax) != totale pax paganti`
-5. Highlight barche piene / overflow sulla capienza del gommone fisico
+### 9.A — Debito Tecnico ATTIVO (Fase 8 — Task Aperti)
+
+| # | Descrizione | Priorità | File Coinvolti |
+|---|---|---|---|
+| DT-1 | **Proliferazione requirements**: 5 file requirements ([requirements.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements.txt), `_fixed`, `_frozen`, `_lock`, `_production`). Consolidare in 2: [requirements.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements.txt) (dev) + [requirements_production.txt](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/requirements_production.txt) (prod). | 🟡 Media | `backend/requirements*.txt` |
+| DT-2 | **Pulizia commenti JSDoc obsoleti** nel frontend. Referenze a entità morte (YieldEngine V4, Segreteria POS standalone, DeskDashboardPage). | 🟢 Bassa | Codebase frontend |
+| DT-3 | **Tabelle SQLite morte** da rimuovere dal modello ORM: `crew_assignments`, `ride_staff_link`, `ride_fleet_link`. 0 righe, mai usate. Rimuovere anche le relationship ORM correlate da [StaffDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#195-207), [FleetDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#208-222), [DailyRideDB](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py#94-115). | 🟡 Media | [backend/app/models/calendar.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py), [main.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/main.py) |
+| DT-4 | **Rimozione [local_vision_service.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/local_vision_service.py)**: 36KB di codice morto (Paddle+YOLO+GLiNER). Sostituito al 100% da Azure OCR. Mai usato in produzione. | 🟡 Media | [backend/app/services/local_vision_service.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/local_vision_service.py) |
+
+### 9.B — Anomalie Strutturali Rilevate (Non bugs, ma rischi)
+
+| # | Descrizione | Rischio | Note |
+|---|---|---|---|
+| AN-1 | **Modello ORM OrderDB / TransactionDB / CustomerDB in SQLite**: Le tabelle esistono in SQLite ma i flussi operativi (POS, cassa) scrivono SOLO su Supabase via httpx. Le tabelle locali sono potenzialmente disallineate e vuote. Non sono state ancora rimosse per backward-compat con il router [orders.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/orders.py) legacy. | 🟠 Coerenza | Rimozione safe solo dopo verifica che nessun endpoint attivo le usi |
+| AN-2 | **Router [orders.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/schemas/orders.py) legacy** montato su `/api/v1/legacy-orders`: contiene ancora la logica ORM locale. Da verificare se qualche frontend lo chiama ancora prima di rimuoverlo. | 🟠 Coerenza | Potenziale dead code |
+| AN-3 | **Router [reservations.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/api/v1/endpoints/reservations.py)** (1.3KB): dimensione minima, probabilmente stub. Da verificare se è ancora usato o è un fossile. | 🟢 Bassa | Controllare eventuali chiamate frontend |
+| AN-4 | **CORS `allow_origins=["*"]`**: Permissivo per sviluppo. In produzione su Ergonet → il proxy Nginx gestisce la sicurezza. Valutare restrizione per hardening. | 🟢 Bassa | Configurabile via .env |
+| AN-5 | **[DEPLOY.md](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/DEPLOY.md) menziona gunicorn/systemd** ma le regole architettura impongono `passenger_wsgi.py` con `a2wsgi`. Il DEPLOY.md potrebbe essere disallineato dalla realtà produttiva. | 🟡 Media | Verificare procedura reale di deploy |
+| AN-6 | **[README.md](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/README.md) cita Paddle+YOLO+GLiNER come stack AI**. In realtà il sistema usa Azure OCR in produzione. README obsoleto. | 🟡 Media | Aggiornare |
+
+### 9.C — Bug Risolti Recentemente (Riferimento per regressioni)
+
+| Bug | Soluzione | Data | Dogma |
+|---|---|---|---|
+| 401 JWT Auth Crew Builder | Chiavi Supabase migrate da hardcode a `.env` con `load_dotenv()` + `.strip()` | 27/02 | — |
+| 422 Pydantic mismatch `resource_type` | "RAFT" → "crew_manifest" | 27/02 | — |
+| 409 FK violation `ride_allocations_resource_id_fkey` | Amputazione FK fisica Supabase | 27/02 | Dogma 12 |
+| PGRST200 Ghost Limb | Rimozione JOIN PostgREST `resources(*)` dal frontend | 27/02 | Dogma 12c |
+| Passeggero Fantasma (+1) nella formula furgoni | `math.ceil(booked_pax / van_net_seats)` senza margine | 27/02 | Formula Deterministica |
+| Zero Assoluto (ORM locale isolato) | Sync Sonda httpx per `external_pax_map` | 25/02 | — |
+| Split-Brain Desk POS | Sventramento SQLAlchemy, sostituzione con httpx nativo | 26/02 | — |
+
+---
+
+## 10. STORICO FASI COMPLETATE
+
+| Fase | Nome | Data | Sintesi |
+|---|---|---|---|
+| **5** | Motore BPMN e Yield Engine V5 | Pre-24/02 | Incenerito V4, Costruttore Flussi a mattoncini, Yield Engine V5, Scudo Anti-Ubiquità |
+| **6** | Logistica Fluidodinamica e POS Ibrido | 24-27/02/2026 | 12+ sottofasi. Time-Array Slicer, ARR Cascade, Split-Brain risolto, Dual-Write, Omni-Board, Timeline Gantt, Drag&Drop BPMN, Spurgo Sentina |
+| **6.A** | Daily Board Onesta | 24/02 | Estirpato hardcode "16 pax", lettura veri booked_pax |
+| **6.B** | Crew Builder Blueprint | 24/02 | Architettura ride_allocations teorizzata |
+| **6.D** | Sacco Risorse | 25/02 | Footprint logistico in workflow_schema.logistics |
+| **6.E.1-7** | Availability Engine | 25-26/02 | Sensori Pinia, Time-Array Slicer, Eccezione di Sarre, Safety Kayak, River Ledger, Sync Sonda |
+| **6.F** | Fix Engine Precision | 27/02 | Eliminato Passeggero Fantasma (+1) |
+| **6.G** | Persistenza Override | 27/02 | Colonna is_overridden, bypass Engine |
+| **6.H** | Kill-Switch Turni Vuoti | 27/02 | Endpoint POST /daily-rides/close |
+| **6.I** | Dual-Write Semaforo | 27/02 | Bottoni manuali con Dual-Write |
+| **6.J** | Timeline Flussi | 27/02 | Vista Gantt + Multi-Lane Packing + Barra Saturazione |
+| **6.K** | Spurgo Sentina | 27/02 | 9 file inceneriti, DeskDashboardPage distrutta |
+| **6.L** | Drag & Drop BPMN | 27/02 | Riordinamento blocchi HTML5 Drag&Drop |
+| **7** | Crew Builder | 27/02/2026 | 5 sottofasi. Scaffold → DDL → UI → Backend → Sensori → Collaudo E2E |
+| **7.A** | Scaffold Tubature | 27/02 | Router crew.py, CrewBuilderPanel.vue, tab Equipaggi |
+| **7.B** | Fondazione Busta Stagna | 27/02 | DDL ride_allocations JSONB, crew-store.js |
+| **7.C** | Banchina d'Imbarco UI | 27/02 | UI righe dinamiche, contatori pax, SIGILLA EQUIPAGGI |
+| **7.C.2** | Tetris Umano | 27/02 | Assegnazione nominale per gruppi/ordini |
+| **7.D** | Allineamento Valvola Backend | 27/02 | Pydantic allineamento, Swap & Replace |
+| **7.D.fix** | Autopsia Tripla | 27/02 | Fix JWT, FK, PGRST200 |
+| **7.E** | Sensori e Bilancia | 27/02 | 3 sensori visivi, Kill-Switch Varo |
+| **7.E.fix** | Pompa Sentina | 27/02 | Script purge, collaudo E2E OK |
+
+---
+
+## 11. RISCHI E AVVERTIMENTI PER IL TECH LEAD
 
 > [!CAUTION]
-> Il `resource_type` ha un'incoerenza di naming: nello schema Pydantic il default è `"RAFT"` (`CrewAllocationItem.resource_type`), ma nel codice del PUT il valore hardcoded nell'INSERT è `"crew_manifest"`. La GET filtra anche per `resource_type=eq.crew_manifest`. Se esistono record storici con `resource_type="RAFT"`, la GET non li troverà e la DELETE non li cancellerà, causando duplicati orfani.
+> **Regola #1: MAI creare FK fisici da Supabase verso entità SQLite.** Il sistema è Split-Brain by design. Le relazioni cross-database sono LOGICHE (UUID condivisi, validati solo applicativamente). Violazione → errore 409 bloccante.
 
----
-
-## 13. DEBITO TECNICO
-
-| Area | Priorità | Dettaglio |
-|---|---|---|
-| requirements multipli | Media | 5 file requirements (`requirements.txt`, `_fixed`, `_frozen`, `_lock`, `_production`). Consolidare |
-| Commenti JSDoc obsoleti | Bassa | Residuali dalla Fase 6.K |
-| Tabelle SQLite fossili | Bassa | `crew_assignments`, `ride_staff_link`, `ride_fleet_link` — 0 righe, mai usate. DROP quando possibile |
-| Modello ORM Orders/Transactions | Media | `OrderDB`, `TransactionDB`, `CustomerDB` in SQLite sono deprecati per il flusso commerciale. Mantenuti solo per backward-compat del Motore Predittivo |
-| local_vision_service.py | Bassa | 36 KB di codice per YOLO/Paddle disabilitato in produzione. Mantenerlo come fallback dev |
-| Supabase Key inline | Alta | La chiave `_SUPABASE_KEY` è hardcoded in `crew.py` e `desk.py`. Dovrebbe venire da `.env` |
-| CORS wildcard | Media | `allow_origins=["*"]` in produzione — restringere ai domini effettivi |
-| Router /reservations | Bassa | 1329 bytes, quasi vuoto. Valutare rimozione |
-
----
-
-## 14. STORICO FASI COMPLETATE
-
-| Fase | Titolo | Data | Highlights |
-|---|---|---|---|
-| 5 | Motore BPMN & Yield V5 | Pre-24/02 | Costruttore Flussi, Yield Engine V5, Scudo Anti-Ubiquità |
-| 6.A | Daily Board Onesta | 24-27/02 | Estirpato hardcode "16 pax" |
-| 6.B | Crew Builder Blueprint | 24/02 | Architettura ride_allocations teorizzata |
-| 6.D | Sacco Risorse | 24/02 | Footprint logistico in workflow_schema.logistics |
-| 6.E | Availability Engine | 24-27/02 | Time-Array Slicer, ARR Cascade, Sync Sonda, Safety Kayak |
-| 6.F | Fix Engine Precision | 27/02 | Eliminato "Passeggero Fantasma" (+1) |
-| 6.G | Override Manuale | 27/02 | Colonna is_overridden, Dogma Override |
-| 6.H | Kill-Switch | 27/02 | POST /daily-rides/close, status=X |
-| 6.I | Dual-Write Semaforo | 27/02 | Bottoni VERDE/BLU/GIALLO/ROSSO/AUTO |
-| 6.J | Timeline Flussi | 27/02 | Vista Gantt, Multi-Lane Packing, Barra Saturazione |
-| 6.K | Spurgo Sentina | 27/02 | 9 file orfani inceneriti, DeskDashboardPage distrutto |
-| 6.L | Drag & Drop BPMN | 27/02 | Riordinamento blocchi nei flussi |
-| Split-Brain POS | Codice Rosso | 26-27/02 | desk.py amputato da SQLAlchemy, httpx verso Supabase |
-| CRM Silente | Innesto | 26/02 | UPSERT customers backend su POST /desk |
-| Omni-Board | Fusione | 26/02 | DeskBookingForm estratto e innestato in RideDialog |
-| 7.A | Scaffold Crew Builder | 27/02 | Router crew.py, CrewBuilderPanel, tab Equipaggi |
-| 7.B | Busta Stagna | 27/02 | DDL ride_allocations, crew-store.js |
-| 7.C | UI Banchina d'Imbarco | 27/02 | Righe dinamiche, contatori pax |
-| 7.C.2 | Tetris Umano | 27/02 | Gruppi nominali, split ordini su gommoni |
-| 7.D | Allineamento Backend | 27/02 | Fix 422, Swap & Replace, schemi Pydantic |
-| **7.E** | **Collaudo e2e** | **PROSSIMO** | **Bug bloccante da risolvere** |
-
----
-
-## 15. DEPLOY E INFRASTRUTTURA
-
-### Ambiente Produzione (Ergonet — CloudLinux LVE)
-
-**Build:**
-1. Frontend: `cd web-app && npx quasar build` → `dist/spa/`
-2. Upload SPA in `/var/www/vhosts/raftingrepublic.com/subdomains/gestionale/httpdocs/`
-3. Upload backend in `/var/www/vhosts/raftingrepublic.com/backend/`
-
-**Backend Run:**
-- Opzione A: `screen -S backend` + gunicorn con UvicornWorker (2 workers)
-- Opzione B: systemd service con auto-restart
-
-**Proxy:** Nginx (Plesk) su `/api/` → `127.0.0.1:8000`
-
-**HTTPS:** Let's Encrypt (gestito da Plesk)
-
-**Esclusioni upload:** venv/, __pycache__/, storage/debug_captures/, test/, tools/
+> [!WARNING]
+> **Regola #2: Ogni DDL su Supabase DEVE terminare con `NOTIFY pgrst, 'reload schema'`.** Dimenticarlo causa PGRST204 (schema cache stale). Storicamente questo passaggio è stato omesso causando debug inutile.
 
 > [!IMPORTANT]
-> **AI disabilitata in prod:** Con `requirements_production.txt` le funzioni AI (OCR vision locale) non sono disponibili. L'endpoint `/api/v1/vision/analyze` usa Azure OCR (cloud) e funziona. YOLO/Paddle/GLiNER richiederebbero upgrade RAM a 2GB.
-
-### Ambiente Sviluppo (Locale — Windows)
-- Backend: `python -m uvicorn main:app --reload --port 8000`
-- Frontend: `npx quasar dev` (Vite HMR)
-- Entrambi attivi nei terminali correnti della sessione
-
----
-
-## 16. DOGMI ARCHITETTURALI
-
-Questi sono principi inviolabili sanciti nel `LORE_VAULT.md`. Chiunque tocchi il codice li deve conoscere.
-
-| # | Nome | Descrizione |
-|---|---|---|
-| 1 | LVE/CloudLinux | Max 1GB RAM. Vietato caricare modelli AI locali, ORM pesanti in loop. Backend stateless |
-| 2 | Architettura Ibrida | SQLite = Catalogo. Supabase = Transazionale. Dual-Write turni con stesso UUID |
-| 3 | DDL Supabase | Ogni script DDL DEVE contenere `NOTIFY pgrst, 'reload schema'` come ultima riga |
-| 4 | Override | Se `is_overridden=True`, l'Engine NON ricalcola. Rispetto della scelta manuale. Reset solo con AUTO |
-| 5 | Formula Furgoni | `math.ceil(pax / seats)`. VIETATO il `+1`. Bug "Passeggero Fantasma" già scoperto e corretto |
-| 6 | Eccezione di Sarre | Insufficienza furgoni = Giallo (warning), MAI Rosso (blocco). Si risolve con spola |
-| 7 | Safety Kayak | `guides_needed = max(min_guides, needed_boats)` — Floor non lineare |
-| 8 | Omni-Board | Il Calendario è l'unico hub. Tutto collassa in RideDialog. Zero context-switching |
-| 9 | Swap & Replace | Per aggiornamenti massivi: DELETE + bulk INSERT. Zero orfani, zero diff |
-| 10 | Tetris Umano | I passeggeri non sono MAI anonimi. La Busta Stagna contiene `groups: [{order_id, customer_name, pax}]` |
-| 11 | GDPR | Nessuna immagine di documenti su disco. Solo audit.json append-only. Firma biometrica in RAM |
-
----
+> **Regola #3: Il file [local_vision_service.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/local_vision_service.py) (36KB) è una bomba a orologeria per la RAM.** Carica Paddle+YOLO+GLiNER in memoria. Non viene mai invocato in produzione (Azure OCR lo ha sostituito) ma un `import` accidentale può far esplodere il limite di 1GB.
 
 > [!NOTE]
-> **Per la prossima sessione (28/02/2026):** La priorità assoluta è risolvere il bug bloccante del Crew Builder (Sigilla Equipaggi). Una volta stabilizzato, si procede alla Fase 7.E (validazione end-to-end) e poi al backlog (Presenze Staff, Flusso Prenotazioni CRM).
+> **Regola #4: I dati commerciali (ordini, transazioni, CRM) vivono SOLO su Supabase.** Le tabelle corrispondenti in SQLite (`orders`, `transactions`, `customers`) esistono per backward-compat ORM ma NON sono la source of truth. Non leggere mai da lì per logiche di business.
+
+> [!TIP]
+> **Regola #5: Il [resource-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/resource-store.js) (35KB) è il cuore del frontend.** Contiene il Merge Difensivo, i Ghost Slots, l'Override Guard e il Kill-Switch Client. Ogni modifica qui ha effetto a cascata sull'intera UI operativa.
+
+### File da NON Toccare senza comprensione completa
+
+| File | Motivo |
+|---|---|
+| [availability_engine.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/services/availability_engine.py) | Motore matematico critico, formula deterministica |
+| [resource-store.js](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/stores/resource-store.js) | Hub reattivo con 7+ logiche interconnesse |
+| [calendar.py](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/backend/app/models/calendar.py) (endpoint) | 33KB di BFF con Sync Sonda e Dual-Write |
+| [RideDialog.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/components/RideDialog.vue) | 48KB — Omni-Board con 3 tabs e semaforo |
+| [ResourcesPage.vue](file:///c:/Users/RAFTING/Desktop/Gestionale%20RR/Nuovo-Gestionale-RR/web-app/src/pages/ResourcesPage.vue) | CRUD vitale — tentativo di amputazione abortito 26/02 |
+
+### Backlog Strategico (Post Fase 8)
+
+| Priorità | Iniziativa | Stato |
+|---|---|---|
+| 1 | **Fase 8 Attiva**: Consolidamento requirements, pulizia JSDoc, rimozione tabelle/file morti | 🔵 In corso |
+| 2 | Modulo Presenze Giornaliere Staff | 📋 Backlog |
+| 3 | Flusso Prenotazioni CRM (Anagrafiche, Pagamenti) | 📋 Backlog |
+
+---
+
+**Fine Report. Documento generato automaticamente dall'analisi dei file sorgente.**
+**Il Tech Lead è invitato a leggere LORE_VAULT.md per il contesto storico e TECH_ARCHITECTURE.md per il dettaglio degli endpoint.**

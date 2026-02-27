@@ -10,8 +10,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app.db.database import engine, Base, SessionLocal
 from app.models.registration import RegistrationDB
 from app.models.calendar import (
-    ActivityDB, DailyRideDB, OrderDB, TransactionDB, StaffDB, FleetDB, CrewAssignmentDB,
+    ActivityDB, DailyRideDB, StaffDB, FleetDB,
     ResourceExceptionDB, SystemSettingDB, ActivitySubPeriodDB,
+    # OrderDB, TransactionDB, CustomerDB: INCENERITE Fase 8
 )
 
 

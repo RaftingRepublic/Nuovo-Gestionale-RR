@@ -1,32 +1,25 @@
 # PROJECT RADAR
 
-## STATO ATTUALE: FASE 7 (Crew Builder — Lavagna d'Imbarco)
+## STATO ATTUALE: POST-FASE 8 (Debito Tecnico Azzerato)
 
 ---
 
-**CANTIERE ATTIVO — Fase 7.E: Collaudo end-to-end e Validazioni (Tetris Umano)**
+**CANTIERE CHIUSO — Fase 8: Smaltimento Debito Tecnico ✅ SIGILLATA (27/02/2026 23:10)**
 
-**Obiettivi Prossima Sessione:**
-
-- [ ] Warning UI se `SUM(groups.pax) != totale pax paganti` (mismatch imbarcati vs prenotati)
-- [ ] Highlight barche piene / overflow sulla capienza del gommone fisico
-- [ ] Collaudo end-to-end Tetris Umano: salva → ricarica → verifica persistenza Supabase
-- [ ] Pulizia record orfani eventualmente creati durante il debugging Fase 7.D
+**Tutti gli obiettivi completati.**
 
 ---
 
-## Debito Tecnico Pendente:
+### Fase 8 Completata — Smaltimento Debito Tecnico (27/02/2026) ✅ SIGILLATA
 
-Residuali dalla Fase 6.K:
+- [x] **DT-1 (Consolidamento Requirements — 27/02/2026):** Inceneriti `requirements_fixed.txt`, `requirements_frozen.txt`, `requirements_lock.txt`. Sopravvivono solo `requirements.txt` (dev) e `requirements_production.txt` (deploy).
+- [x] **DT-2 (Epurazione JSDoc Obsoleti — 27/02/2026):** Rimossi TODO obsoleti (`FASE 6.F`), commenti FK morte, template `assigned_staff/assigned_fleet` legacy da `PlanningPage.vue`. Puliti commenti duplicati e riferimenti a vecchie FK in `CalendarComponent.vue`.
+- [x] **DT-3 (Amputazione ORM Tabelle Morte — 27/02/2026):** Distrutte `CrewAssignmentDB`, `ride_staff_link`, `ride_fleet_link` da `calendar.py`. Amputate tutte le relationship orfane da `DailyRideDB`, `StaffDB`, `FleetDB`. Epurati import da `main.py`, `__init__.py`, `init_db.py`. Import `Table` rimosso.
+- [x] **DT-4 (Inceneritore AI Locale — 27/02/2026):** Distrutto `local_vision_service.py` (36KB, Paddle+YOLO+GLiNER). Sterilizzati import orfani in `vision.py` e `registration.py` con stub `AI_AVAILABLE=False`. Azure OCR è l'unico provider.
+- [x] **DT-5 (Demolizione Cimitero Backend — 27/02/2026):** Router `/api/v1/legacy-orders` incenerito (file `orders.py` eliminato). Classi `CustomerDB` e `TransactionDB` amputate da `calendar.py`. Schemi `OrderCreate`/`OrderResponse` eliminati. Helper `calculate_booked_pax`/`recalculate_ride_status` estratti in `ride_helpers.py`. Tabelle SQLite `transactions` e `customers` DROPpate da `rafting.db`. `OrderDB` mantenuta per integrità relazionale (DailyRideDB, RegistrationDB, AvailabilityEngine).
+- [x] **DT-6 (Silenziamento Regex Deprecate — 27/02/2026):** Sostituito `regex=` con `pattern=` in `resources.py` e `reservations.py`. Zero warning FastAPI residui.
 
-- Pulizia commenti JSDoc obsoleti.
-- Consolidamento file requirements multipli (`requirements.txt`, `_fixed`, `_frozen`, `_lock`, `_production`).
-
----
-
-## STORICO TRAGUARDI RAGGIUNTI:
-
-### Fase 7 Completata — Crew Builder (27/02/2026)
+### Fase 7 Completata — Crew Builder (27/02/2026) ✅ SIGILLATA
 
 - [x] **Fase 7.A (Scaffold Tubature — 27/02/2026):** Router `crew.py` (GET/PUT allocations), `CrewBuilderPanel.vue`, tab "Equipaggi" in RideDialog.
 - [x] **Fase 7.B (Fondazione Busta Stagna — 27/02/2026):** Script DDL Supabase per `ride_allocations` (colonna `metadata` JSONB, indici, RLS). Store Pinia `crew-store.js` con actions `loadCrew`/`saveCrew` via Axios.
@@ -34,6 +27,8 @@ Residuali dalla Fase 6.K:
 - [x] **Fase 7.C.2 (Tetris Umano — 27/02/2026):** Dogma 10 sancito. metadata dei gommoni ora contiene `groups: [{ order_id, customer_name, pax }]`. Zona Banchina mostra pax residui per ordine con badge verde/arancione. Zona Fiume con sezione "Gruppi Imbarcati" editabile e select "Aggiungi Gruppo" filtrato per pax residui > 0.
 - [x] **Fase 7.D (Allineamento Valvola Backend — 27/02/2026):** Fix 422. Schemi Pydantic allineati al Tetris Umano (CrewGroup, CrewMetadata, CrewAllocationItem). PUT accetta `List[CrewAllocationItem]`. Tecnica Swap & Replace (DELETE+bulk INSERT via httpx). GET restituisce `{ allocations: [...] }`. Store frontend allineato: saveCrew invia array diretto, loadCrew legge da `data.allocations`. Rimosso dump errore raw dalla UI.
 - [x] **Fase 7.D.fix (Autopsia Tripla — 27/02/2026):** Fix Auth JWT 401 (chiavi Supabase migrate da hardcode a `.env` con `load_dotenv()` e blindatura `.strip()`). Fix Pydantic mismatch `resource_type` ("RAFT" → "crew_manifest"). Amputazione Foreign Key Supabase `ride_allocations_resource_id_fkey` per risorse locali (Errore 409). Cura della Sindrome dell'Arto Fantasma nel frontend: epurate JOIN PostgREST `resources(*)` da `resource-store.js` (Errore PGRST200). Sanciti Dogma 12 e Corollario Arto Fantasma nel LORE_VAULT.
+- [x] **Fase 7.E (Sensori di Galleggiamento e Bilancia Banchina — 27/02/2026):** Installati 3 sensori visivi nel CrewBuilderPanel. (1) Bilancia Banchina: q-banner reattivo a 3 stati (🚨 Rosso fantasmi / ⚠️ Arancione molo / ✅ Verde bilancio perfetto). (2) Sensore di Galleggiamento: card gommone con bordi e sfondo dinamici (rosso overflow, verde pieno, blu liberi) + badge carico/capienza. Incrocio resource_id con fleetList per capacity fisica. (3) Kill-Switch Varo: bottone SIGILLA EQUIPAGGI bloccato se overflow o sovra-assegnazione, con tooltip motivo blocco. Getter `hasAnyOverflow` aggiunto al crew-store.
+- [x] **Fase 7.E.fix (Pompa di Sentina e Collaudo — 27/02/2026):** Script `purge_bilge.py` eseguito: 0 record fossili trovati (sentina pulita). Collaudo E2E confermato dal PM. Script di spurgo smantellato dopo esecuzione (niente esplosivi incustoditi nel cantiere). Dogma 13 sancito nel LORE_VAULT.
 
 ### Fase 6 Completata — Logistica Fluidodinamica e POS Ibrido (24-27/02/2026)
 
@@ -82,10 +77,15 @@ Residuali dalla Fase 6.K:
 
 ---
 
-## BACKLOG (Idee in Stand-by):
+## BACKLOG STRATEGICO (Priorità):
+
+1. **PROSSIMA → Fase 9:** Migrazione completa `OrderDB` a Supabase (amputazione finale tabella `orders` da SQLite). Richiede adattamento `AvailabilityEngine`, `calendar.py`, `public.py` a leggere ordini via httpx.
+2. **Opzione B:** Modulo Presenze Giornaliere Staff.
+3. **Opzione C:** Flusso Prenotazioni CRM (Anagrafiche, Pagamenti).
+
+**Completati:**
 
 - [x] ~~Opzione A: Timeline View~~ → COMPLETATA (Fase 6.J)
-- [ ] Opzione B: Modulo Presenze Giornaliere Staff.
-- [ ] Opzione C: Flusso Prenotazioni CRM (Anagrafiche, Pagamenti).
-- [x] TATTICA IMMINENTE 1: Amputazione ruderi geologici completata.
-- [x] TATTICA IMMINENTE 1.5: Abortita amputazione ResourcesPage (Falso Positivo UI).
+- [x] ~~TATTICA IMMINENTE 1: Amputazione ruderi geologici~~ → COMPLETATA
+- [x] ~~TATTICA IMMINENTE 1.5: Abortita amputazione ResourcesPage~~ → Falso Positivo UI
+- [x] ~~Fase 8: Smaltimento Debito Tecnico~~ → COMPLETATA (27/02/2026)

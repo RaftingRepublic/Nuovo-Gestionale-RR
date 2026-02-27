@@ -2,7 +2,7 @@ LORE VAULT - RAFTING REPUBLIC
 
 Documento di Riferimento Supremo. Architettura, Lore e Scelte di Business consolidate.
 
-Aggiornato a: Chiusura Fase 6.J — Build Verificata (27/02/2026 16:00)
+Aggiornato a: Chiusura Fase 8 — Debito Tecnico Azzerato (27/02/2026 23:10)
 
 🔴 MAPPA DEGLI ORGANI VITALI (L'Architettura Definitiva)
 
@@ -93,7 +93,11 @@ Ghost Slots Dinamici: Creazione di slot virtuali nel calendario basati sui defau
 
 ☠️ TabOrdiniEsistenti Mockup (RideDialog.vue): Incenerito l'HTML statico del Libro Mastro. I campi `paid_amount` e `total_pax` (dialetto ORM locale SQLAlchemy) sono morti e sepolti, sostituiti definitivamente da `price_paid` e `pax` (chiavi fisiche Supabase). La lista transazioni è ora iterata dinamicamente da `order.transactions[]`, non più una riga hardcoded "SUMUP". Il bottone PAGA è vivo con `v-model` + `submitPayment()`.
 
-☠️ Dati Transazionali in SQLite: Dichiarati obsoleti per i dati operativi. La cassa e la segreteria (Ordini e Transazioni) DEVONO vivere solo nel cloud (Supabase). SQLite resta ad uso esclusivo del Motore Predittivo (Availability Engine, Yield Engine) e del Catalogo BPMN (activities, workflow_schema, staff, fleet). Il router `desk.py` che scrive ordini in SQLite è marcato per sventramento (CODICE ROSSO).
+☠️ Dati Transazionali in SQLite: Dichiarati obsoleti per i dati operativi. La cassa e la segreteria (Ordini e Transazioni) DEVONO vivere solo nel cloud (Supabase). SQLite resta ad uso esclusivo del Motore Predittivo (Availability Engine, Yield Engine) e del Catalogo BPMN (activities, workflow_schema, staff, fleet). Il router legacy `orders.py` (endpoint `/api/v1/legacy-orders`) è stato **incenerito fisicamente** il 27/02/2026 (Fase 8 DT-5). Le classi `CustomerDB` e `TransactionDB` sono state amputate. La tabella `orders` SQLite resta temporaneamente per le relazioni `DailyRideDB` e `RegistrationDB`.
+
+☠️ Cimitero Backend (Fase 8, 27/02/2026): Router `orders.py` eliminato. Classi `CustomerDB`, `TransactionDB` distrutte dal modello. Schemi Pydantic `OrderCreate`, `OrderResponse` rimossi. Le funzioni helper `calculate_booked_pax` e `recalculate_ride_status` sono state estratte nel modulo `app/services/ride_helpers.py` (pattern di micro-servizio). Tabelle fisiche `transactions` e `customers` DROPpate da `rafting.db` via script monouso.
+
+☠️ Sindrome UUID Visuale (Fase 8, 27/02/2026): Curata la visualizzazione di UUID raw nei mattoncini del calendario mensile. Template `assigned_staff`/`assigned_fleet` (vestigia FK SQLite) rimosso da PlanningPage. I commenti legacy su FK morte e TODO superati sono stati epurati dal frontend.
 
 \[ARCHITETTURA UX E DEBITO GEOLOGICO]
 
@@ -171,3 +175,44 @@ L'aggiornamento massivo di entità figlie e complesse (come gli equipaggi) si fa
 - Tecnica Swap & Replace implementata: DELETE vecchi crew_manifest per ride_id + bulk INSERT nuovi via httpx PostgREST.
 - GET restituisce `{ ride_id, allocations: [...] }` (array piatto). Store frontend allineato: `saveCrew` invia array diretto, `loadCrew` legge da `data.allocations`.
 - Rimosso dump errore raw dalla UI. Notifiche Quasar position=top per success/error.
+
+🔴 **DOGMA 13 — KILL-SWITCH DEL VARO (Bilancia Banchina, 27/02/2026):**
+
+L'interfaccia UI (CrewBuilderPanel.vue) DEVE inibire fisicamente il salvataggio API se: A) Un mezzo fisico supera la sua `capacity` (Sensore di Galleggiamento — incrocio `resource_id` con `fleetList`). B) I passeggeri imbarcati superano quelli paganti dell'ordine (Niente fantasmi gratis — Sovra-assegnazione). I salvataggi in difetto (imbarcati < paganti) sono invece AMMESSI per tollerare i no-show fisici al molo. Il bottone "SIGILLA EQUIPAGGI" cambia colore a grigio e mostra un tooltip rosso con il motivo del blocco. La computed property `isVaroBloccato` nel componente e il getter `hasAnyOverflow` nello store governano la logica.
+
+**[SIGILLO FASE 7.E — COMPLETATA (27/02/2026)]**
+
+**FASE 7.E COMPLETATA (Sensori di Galleggiamento e Bilancia Banchina)**
+
+- Bilancia Banchina: q-banner reattivo a 3 stati nella Zona Banchina (🚨 Rosso fantasmi / ⚠️ Arancione molo / ✅ Verde bilancio perfetto).
+- Sensore di Galleggiamento: card gommone con bordi, sfondo e badge dinamici. Incrocio `resource_id` con `fleetList` per `capacity` fisica. Stati: overflow (rosso), pieno (verde), liberi (blu), sconosciuto (default).
+- Kill-Switch Varo: bottone SIGILLA EQUIPAGGI bloccato se overflow O sovra-assegnazione, con tooltip motivo blocco.
+- Getter `hasAnyOverflow` aggiunto al `crew-store.js` come funzione factory cross-store.
+- Pompa di Sentina: script `purge_bilge.py` eseguito e poi smantellato. 0 record orfani trovati.
+- Collaudo E2E confermato dal PM.
+
+**[SIGILLO FASE 7 — COMPLETATA (27/02/2026 21:46)]**
+
+**FASE 7 COMPLETATA (Crew Builder — Lavagna d'Imbarco Digitale)**
+
+Il Crew Builder è operativo e collaudato. Dalla Fase 7.A alla 7.E: scaffold backend/frontend, DDL Supabase, store Pinia, UI a righe dinamiche (Tetris Umano nominale), allineamento Pydantic, Swap & Replace, fix JWT/FK/PGRST200, sensori di galleggiamento, bilancia banchina, kill-switch varo e purge sentina. L'intera Fase 7 è stata completata nella sessione unica del 27/02/2026.
+
+**[SIGILLO FASE 8 — IN CORSO (27/02/2026 22:17)]**
+
+**FASE 8 — Smaltimento Debito Tecnico (Operazione Spurgo Sentina)**
+
+- **DT-1 (Consolidamento Requirements):** Inceneriti 3 file requirements ridondanti (`_fixed`, `_frozen`, `_lock`). Sopravvivono solo `requirements.txt` (dev) e `requirements_production.txt` (deploy Ergonet).
+- **DT-3 (Amputazione ORM Tabelle Morte):** Distrutte le entità fossili `CrewAssignmentDB` (classe), `ride_staff_link` (Table), `ride_fleet_link` (Table) dal modello `calendar.py`. Amputate tutte le relationship orfane da `DailyRideDB` (3 relationship: `crew_assignments`, `assigned_staff`, `assigned_fleet`), `StaffDB` (`crew_assignments`), `FleetDB` (`crew_assignments`). Epurati gli import da `main.py`, `__init__.py`, `init_db.py`. Import `sqlalchemy.Table` rimosso. La composizione equipaggio vive esclusivamente in `ride_allocations` JSONB su Supabase.
+- **DT-4 (Inceneritore AI Locale):** Distrutto `local_vision_service.py` (36KB — Paddle+YOLO+GLiNER). Questa era una bomba a orologeria per il limite 1GB RAM Ergonet: un import accidentale avrebbe caricato 3 modelli neurali in memoria. Import orfani sterilizzati in `vision.py` e `registration.py` con stub permanenti (`AI_AVAILABLE=False`). Azure OCR (cloud, zero RAM locale) è confermato come unico provider di riconoscimento documenti.
+- **Collaudo:** PM ha confermato avvio pulito del backend. ORM inizializzato senza errori.
+- **DT-2 (Epurazione JSDoc Obsoleti):** Rimossi commenti morti, TODO superati, template di FK inesistenti. Frontend epurato da inerzia testuale.
+- **DT-5 (Demolizione Cimitero Backend):** Router `orders.py` incenerito, `CustomerDB` e `TransactionDB` amputate, schemi `OrderCreate`/`OrderResponse` eliminati. Helper estratti in `ride_helpers.py`. Tabelle `transactions` e `customers` DROPpate da `rafting.db`.
+- **DT-6 (Silenziamento Regex):** `regex=` → `pattern=` in `resources.py` e `reservations.py`. Zero warning FastAPI.
+- **Residuo architetturale:** `OrderDB` mantenuta in SQLite per DailyRideDB/RegistrationDB/AvailabilityEngine. Migrazione completa a Supabase → Fase 9.
+- **Collaudo:** PM ha confermato avvio pulito del backend post-demolizione. Tabelle DROPpate con successo.
+
+**[SIGILLO FASE 8 — COMPLETATA (27/02/2026 23:10)]**
+
+**FASE 8 COMPLETATA (Smaltimento Debito Tecnico — Operazione Spurgo Sentina)**
+
+Debito tecnico azzerato. 6 task completati (DT-1 → DT-6). Zero warning FastAPI, zero import orfani, zero classi morte, zero commenti obsoleti. Il backend riparte pulito con soli i modelli necessari a sostenere l'architettura ibrida SQLite/Supabase fino alla migrazione finale di `OrderDB` (Fase 9).

@@ -67,14 +67,11 @@ except ImportError as e:
     analyze_with_azure = None
     print(f"⚠️ Azure Document Intelligence non disponibile: {e}")
 
-# --- IMPORT CONDIZIONALE: AI Locale (FALLBACK) ---
-try:
-    from app.services.local_vision_service import analyze_documents_locally
-    AI_AVAILABLE = True
-except ImportError as e:
-    AI_AVAILABLE = False
-    analyze_documents_locally = None
-    print(f"⚠️ AI Vision locale non disponibile in registration: {e}")
+# --- AI LOCALE DEPRECATA (27/02/2026 Fase 8) ---
+# local_vision_service.py incenerito. Azure OCR è l'unico provider.
+# Le variabili restano per i rami fallback nel codice (degradano a 503).
+AI_AVAILABLE = False
+analyze_documents_locally = None
 
 from app.services.registration.registration_service import RegistrationService
 

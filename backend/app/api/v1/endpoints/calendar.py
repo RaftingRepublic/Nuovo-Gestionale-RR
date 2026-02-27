@@ -17,15 +17,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.calendar import (
     ActivityDB, DailyRideDB, OrderDB, ActivitySubPeriodDB,
-    StaffDB, FleetDB,
 )
 from app.schemas.calendar import (
     ActivityResponse, ActivityCreate, DailyRideResponse,
-    ActivitySeasonUpdate, DailyScheduleResponse, RideAllocationUpdate,
-    AssignedResource,
+    ActivitySeasonUpdate, DailyScheduleResponse,
 )
 from app.schemas.orders import DailyRideDetailResponse, RideOverrideRequest
-from app.api.v1.endpoints.orders import calculate_booked_pax, recalculate_ride_status
+from app.services.ride_helpers import calculate_booked_pax, recalculate_ride_status
 from app.services.availability_engine import AvailabilityEngine
 
 router = APIRouter()
@@ -259,8 +257,6 @@ def list_daily_rides(
         .options(
             joinedload(DailyRideDB.activity),
             joinedload(DailyRideDB.orders),
-            joinedload(DailyRideDB.assigned_staff),
-            joinedload(DailyRideDB.assigned_fleet),
         )
         .filter(DailyRideDB.status != "X")  # Escludi turni chiusi manualmente
         .order_by(DailyRideDB.ride_date, DailyRideDB.ride_time)
@@ -312,8 +308,6 @@ def list_daily_rides(
                 yield_warning=avail.get("debug_yield_warning", False),
                 remaining_seats=avail.get("remaining_seats", 0),
                 engine_status=avail.get("status", "VERDE"),
-                assigned_staff=[AssignedResource(id=s.id, name=s.name) for s in (ride.assigned_staff or [])],
-                assigned_fleet=[AssignedResource(id=f.id, name=f.name, category=getattr(f, 'category', None)) for f in (ride.assigned_fleet or [])],
             )
         )
 
@@ -742,71 +736,4 @@ def get_daily_schedule(
 
     return list(schedule_dict.values())
 
-
-# ──────────────────────────────────────────────────────────
-# PUT /daily-rides/{ride_id}/allocations — Assegna Staff e Mezzi
-# ──────────────────────────────────────────────────────────
-@router.put("/daily-rides/{ride_id}/allocations")
-def update_ride_allocations(
-    ride_id: str,
-    payload: RideAllocationUpdate,
-    db: Session = Depends(get_db),
-):
-    """
-    Cantiere 5: Aggiorna le assegnazioni Staff e Fleet per una discesa.
-    Sostituisce completamente le liste precedenti.
-    Se il turno non esiste ancora in DB (ride teorica con 0 pax), lo crea al volo.
-    """
-    ride = (
-        db.query(DailyRideDB)
-        .options(
-            joinedload(DailyRideDB.assigned_staff),
-            joinedload(DailyRideDB.assigned_fleet),
-        )
-        .filter(DailyRideDB.id == ride_id)
-        .first()
-    )
-
-    # ── Lazy creation: il turno non esiste ancora, crealo dal payload ──
-    if not ride:
-        if not payload.date or not payload.time or not payload.activity_id:
-            raise HTTPException(
-                status_code=404,
-                detail="Discesa non trovata e dati insufficienti per crearla."
-            )
-        from datetime import datetime as dt_datetime
-        ride = DailyRideDB(
-            id=ride_id,
-            activity_id=payload.activity_id,
-            ride_date=dt_datetime.strptime(payload.date, "%Y-%m-%d").date(),
-            ride_time=dt_datetime.strptime(payload.time, "%H:%M:%S").time()
-                if len(payload.time) > 5
-                else dt_datetime.strptime(payload.time, "%H:%M").time(),
-        )
-        db.add(ride)
-        db.flush()
-        print(f"[CALENDAR] Lazy-created DailyRideDB {ride.id} for {payload.date} {payload.time}")
-
-    try:
-        # Svuota assegnazioni precedenti
-        ride.assigned_staff.clear()
-        ride.assigned_fleet.clear()
-
-        # Assegna nuovo staff
-        if payload.staff_ids:
-            staff_members = db.query(StaffDB).filter(StaffDB.id.in_(payload.staff_ids)).all()
-            ride.assigned_staff.extend(staff_members)
-
-        # Assegna nuovi mezzi
-        if payload.fleet_ids:
-            fleet_items = db.query(FleetDB).filter(FleetDB.id.in_(payload.fleet_ids)).all()
-            ride.assigned_fleet.extend(fleet_items)
-
-        db.commit()
-        return {"status": "ok", "message": f"Assegnate {len(ride.assigned_staff)} guide e {len(ride.assigned_fleet)} mezzi."}
-
-    except Exception as e:
-        db.rollback()
-        print(f"[CALENDAR] CRASH update_ride_allocations: {e}")
-        raise HTTPException(status_code=500, detail=f"Errore assegnazione: {str(e)}")
 

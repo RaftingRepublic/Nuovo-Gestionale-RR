@@ -1,8 +1,10 @@
 """
-Modelli SQL per il Motore Calendario (Tetris), Ordini, Transazioni e Logistica.
+Modelli SQL per il Motore Calendario (Tetris) e Logistica.
 Sostituisce i file JSON e si aggancia al modello esistente RegistrationDB.
 
-Cantiere 2: aggiunto TransactionDB (ledger multi-pagamento) e campi desk su OrderDB.
+Fase 8 (27/02/2026): CustomerDB e TransactionDB INCENERITE.
+Ordini commerciali vivono su Supabase. OrderDB mantenuta SOLO per
+relazione SQLite con DailyRideDB/RegistrationDB (calcolo semafori).
 """
 
 import uuid
@@ -12,7 +14,7 @@ from sqlalchemy.orm import relationship
 
 # Importiamo la Base dalla VOSTRA configurazione esistente
 from app.db.database import Base
-from sqlalchemy import Table
+# sqlalchemy.Table rimosso — Fase 8: tabelle M2M morte (ride_staff_link, ride_fleet_link) amputate
 
 def generate_uuid():
     return str(uuid.uuid4())
@@ -74,19 +76,10 @@ class ActivitySubPeriodDB(Base):
     activity = relationship("ActivityDB", back_populates="sub_periods")
 
 # ==========================================
-# 2a. TABELLE ASSOCIATIVE M2M (Cantiere 5)
+# 2a. TABELLE M2M — AMPUTATE (Fase 8, 27/02/2026)
+# ride_staff_link, ride_fleet_link: 0 righe, mai usate.
+# Composizione equipaggio vive in ride_allocations JSONB (Supabase).
 # ==========================================
-ride_staff_link = Table(
-    "ride_staff_link", Base.metadata,
-    Column("ride_id", String(36), ForeignKey("daily_rides.id", ondelete="CASCADE"), primary_key=True),
-    Column("staff_id", String(36), ForeignKey("staff.id", ondelete="CASCADE"), primary_key=True),
-)
-
-ride_fleet_link = Table(
-    "ride_fleet_link", Base.metadata,
-    Column("ride_id", String(36), ForeignKey("daily_rides.id", ondelete="CASCADE"), primary_key=True),
-    Column("fleet_id", String(36), ForeignKey("fleet.id", ondelete="CASCADE"), primary_key=True),
-)
 
 # ==========================================
 # 2. LA DISCESA FISICA (Il "Quadratino" sul Tetris)
@@ -107,25 +100,13 @@ class DailyRideDB(Base):
 
     activity = relationship("ActivityDB", back_populates="rides")
     orders = relationship("OrderDB", back_populates="ride")
-    crew_assignments = relationship("CrewAssignmentDB", back_populates="ride")
-
-    # ── Cantiere 5: Assegnazione diretta Staff e Mezzi (M2M) ──
-    assigned_staff = relationship("StaffDB", secondary=ride_staff_link, lazy="joined")
-    assigned_fleet = relationship("FleetDB", secondary=ride_fleet_link, lazy="joined")
+    # crew_assignments, assigned_staff, assigned_fleet: amputati Fase 8
+    # Composizione equipaggio gestita da ride_allocations JSONB in Supabase
 
 # ==========================================
-# 2.5 ANAGRAFICHE CLIENTI (CRM)
+# 2.5 ANAGRAFICHE CLIENTI — INCENERITA (Fase 8, 27/02/2026)
+# CustomerDB eliminata: CRM vive su Supabase.
 # ==========================================
-class CustomerDB(Base):
-    __tablename__ = "customers"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
-    full_name = Column(String(100), nullable=False)
-    email = Column(String(255), index=True, nullable=True)
-    phone = Column(String(50), index=True, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    orders = relationship("OrderDB", back_populates="customer")
 
 # ==========================================
 # 3. PRENOTAZIONE COMMERCIALE (Il "Carrello")
@@ -158,36 +139,17 @@ class OrderDB(Base):
     booker_name = Column(String(100), nullable=True, comment="Referente gruppo")
     booker_phone = Column(String(50), nullable=True)
     booker_email = Column(String(255), nullable=True)
-    adjustments = Column(Float, default=0.0, comment="Penali no-show (+) o sconti (-)")
-    extras = Column(JSON, default=list, comment='Es. [{"name":"Foto","price":15}]')
-    source = Column(String(20), default="WEB", comment="WEB, DESK, PARTNER")
-    
-    customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True)
-    customer = relationship("CustomerDB", back_populates="orders")
-
     ride = relationship("DailyRideDB", back_populates="orders")
     
     # ---> IL PONTE D'ORO: 1 Ordine contiene N Registrazioni Fisiche (Kiosk)
     registrations = relationship("RegistrationDB", back_populates="order", cascade="all, delete-orphan")
-    # ---> LIBRO MASTRO: 1 Ordine ha N Transazioni (multi-pagamento)
-    transactions = relationship("TransactionDB", back_populates="order", cascade="all, delete-orphan")
+    # TransactionDB: INCENERITA Fase 8 — ledger vive su Supabase
+    # CustomerDB: INCENERITA Fase 8 — CRM vive su Supabase
 
 # ==========================================
-# 3b. TRANSAZIONE (Libro Mastro Multi-Pagamento)
+# 3b. TRANSAZIONE (Libro Mastro) — INCENERITA (Fase 8, 27/02/2026)
+# TransactionDB eliminata: il ledger multi-pagamento vive su Supabase.
 # ==========================================
-class TransactionDB(Base):
-    """Singolo movimento contabile associato a un ordine."""
-    __tablename__ = "transactions"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
-    order_id = Column(String(36), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
-    amount = Column(Float, nullable=False, comment="Importo del pagamento")
-    method = Column(String(20), nullable=False, comment="CASH, SUMUP, BONIFICO, PARTNERS")
-    type = Column(String(20), default="SALDO", comment="CAPARRA, SALDO")
-    note = Column(String(255), nullable=True, comment='Es. "Voucher Smartbox"')
-    timestamp = Column(DateTime, default=datetime.utcnow)
-
-    order = relationship("OrderDB", back_populates="transactions")
 
 # ==========================================
 # 4. LOGISTICA E ASSEGNAZIONI (Guide e Gommoni reali)
@@ -202,8 +164,7 @@ class StaffDB(Base):
     roles = Column(JSON, default=list, comment='Multi-ruolo: ["RAF4","SK","NC"]')
     contract_periods = Column(JSON, default=list, comment='[{"start":"2026-05-01","end":"2026-09-30"}]')
     is_active = Column(Boolean, default=True)
-    
-    crew_assignments = relationship("CrewAssignmentDB", back_populates="guide")
+    # crew_assignments: amputato Fase 8 — Crew Builder usa ride_allocations JSONB
 
 class FleetDB(Base):
     __tablename__ = "fleet"
@@ -217,21 +178,13 @@ class FleetDB(Base):
     capacity = Column(Integer, default=0, comment="Capienza passeggeri (gommoni) o posti a sedere escluso autista (furgoni)")
     has_tow_hitch = Column(Boolean, default=False, comment="Solo VAN: dotato di gancio traino")
     max_rafts = Column(Integer, default=0, comment="Solo TRAILER: quanti gommoni può trasportare")
+    # crew_assignments: amputato Fase 8 — Crew Builder usa ride_allocations JSONB
 
-    crew_assignments = relationship("CrewAssignmentDB", back_populates="boat")
-
-class CrewAssignmentDB(Base):
-    """Assegna un Gommone e una Guida a uno specifico turno/discesa"""
-    __tablename__ = "crew_assignments"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
-    ride_id = Column(String(36), ForeignKey("daily_rides.id"), nullable=False)
-    boat_id = Column(String(36), ForeignKey("fleet.id"), nullable=True)
-    guide_id = Column(String(36), ForeignKey("staff.id"), nullable=True)
-
-    ride = relationship("DailyRideDB", back_populates="crew_assignments")
-    boat = relationship("FleetDB", back_populates="crew_assignments")
-    guide = relationship("StaffDB", back_populates="crew_assignments")
+# ==========================================
+# CrewAssignmentDB — INCENERITA (Fase 8, 27/02/2026)
+# La classe aveva 0 righe e non è mai stata usata.
+# La composizione equipaggio vive in ride_allocations (Supabase JSONB).
+# ==========================================
 
 # ==========================================
 # 5. DIARIO RISORSE UNIFICATO (Eccezioni a Calendario)

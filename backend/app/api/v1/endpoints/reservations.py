@@ -15,7 +15,7 @@ def create_reservation(payload: ReservationCreate):
     return engine.add_reservation(payload)
 
 @router.get("/", response_model=List[Reservation])
-def list_reservations(date: Optional[str] = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$")):
+def list_reservations(date: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$")):
     return engine.list_reservations(date)
 
 @router.delete("/{id}")
@@ -29,7 +29,7 @@ def create_override(payload: ManualOverrideCreate):
     return engine.add_manual_override(payload)
 
 @router.get("/overrides", response_model=List[ManualOverride])
-def list_overrides(date: Optional[str] = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$")):
+def list_overrides(date: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$")):
     return engine.list_manual_overrides(date)
 
 @router.delete("/overrides/{id}")

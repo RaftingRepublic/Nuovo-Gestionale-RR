@@ -21,6 +21,50 @@
 
         <q-separator />
 
+        <!-- ═══ FASE 7.E — BILANCIA BANCHINA (Banner a 3 stati) ═══ -->
+        <q-banner
+          v-if="assignedPax > totalPaxToBoard"
+          rounded dense
+          class="bg-red-2 text-red-10 q-mx-md q-mt-md"
+          style="border: 2px solid #c62828;"
+        >
+          <template #avatar><q-icon name="error" color="red-10" size="28px" /></template>
+          <div class="text-weight-bold" style="font-size: 14px;">
+            🚨 ERRORE CRITICO: Stai imbarcando fantasmi che non hanno pagato! (Sovra-assegnazione)
+          </div>
+          <div class="text-caption">
+            Imbarcati {{ assignedPax }} su {{ totalPaxToBoard }} paganti — {{ assignedPax - totalPaxToBoard }} fantasmi a bordo.
+          </div>
+        </q-banner>
+        <q-banner
+          v-else-if="assignedPax < totalPaxToBoard"
+          rounded dense
+          class="bg-orange-1 text-orange-10 q-mx-md q-mt-md"
+          style="border: 2px solid #e65100;"
+        >
+          <template #avatar><q-icon name="warning" color="orange-9" size="28px" /></template>
+          <div class="text-weight-bold" style="font-size: 14px;">
+            ⚠️ ATTENZIONE: Hai passeggeri paganti ancora sulla ghiaia.
+          </div>
+          <div class="text-caption">
+            Imbarcati {{ assignedPax }} su {{ totalPaxToBoard }} paganti — {{ totalPaxToBoard - assignedPax }} in attesa sul molo.
+          </div>
+        </q-banner>
+        <q-banner
+          v-else-if="totalPaxToBoard > 0"
+          rounded dense
+          class="bg-green-1 text-green-10 q-mx-md q-mt-md"
+          style="border: 2px solid #2e7d32;"
+        >
+          <template #avatar><q-icon name="check_circle" color="green-8" size="28px" /></template>
+          <div class="text-weight-bold" style="font-size: 14px;">
+            ✅ Bilancio perfetto. Tutti a bordo.
+          </div>
+          <div class="text-caption">
+            {{ assignedPax }} passeggeri imbarcati su {{ assignedPax }} paganti.
+          </div>
+        </q-banner>
+
         <q-card-section class="q-pa-md">
           <!-- Contatore Da Imbarcare -->
           <div class="row items-center justify-between q-mb-sm">
@@ -45,15 +89,6 @@
               {{ remainingOnDock }}
             </q-badge>
           </div>
-
-          <!-- ALLARME OVER-ASSEGNAZIONE -->
-          <q-banner v-if="assignedPax > totalPaxToBoard" rounded dense class="bg-red-1 text-red-9 q-mb-md">
-            <template #avatar><q-icon name="warning" color="red" /></template>
-            <div class="text-weight-bold">OVER-ASSEGNAZIONE!</div>
-            <div class="text-caption">
-              Hai imbarcato {{ assignedPax - totalPaxToBoard }} passeggeri in più dei paganti.
-            </div>
-          </q-banner>
 
           <q-separator class="q-mb-md" />
 
@@ -149,25 +184,63 @@
             </div>
           </div>
 
-          <!-- ═══ RIGHE GOMMONI ═══ -->
+          <!-- ═══ RIGHE GOMMONI (Fase 7.E — Sensore di Galleggiamento) ═══ -->
           <q-card
             v-for="(alloc, index) in crewStore.allocations"
             :key="'raft-' + index"
             flat bordered
             class="q-mb-md"
-            style="border-left: 4px solid #1976D2;"
+            :class="getBoatStatusClass(alloc)"
+            :style="getBoatBorderStyle(alloc)"
           >
-            <!-- Header gommone con totale pax a bordo -->
-            <q-card-section class="q-py-sm q-px-md bg-blue-1">
+            <!-- Header gommone con totale pax a bordo + Sensore Overflow -->
+            <q-card-section class="q-py-sm q-px-md" :class="getBoatHeaderBg(alloc)">
               <div class="row items-center q-gutter-sm">
-                <q-avatar color="blue-2" text-color="blue-9" size="28px" class="text-weight-bold">
+                <q-avatar
+                  :color="getBoatOverflowInfo(alloc).status === 'overflow' ? 'red-2' : getBoatOverflowInfo(alloc).status === 'full' ? 'green-2' : 'blue-2'"
+                  :text-color="getBoatOverflowInfo(alloc).status === 'overflow' ? 'red-10' : getBoatOverflowInfo(alloc).status === 'full' ? 'green-10' : 'blue-9'"
+                  size="28px" class="text-weight-bold"
+                >
                   {{ index + 1 }}
                 </q-avatar>
-                <div class="text-subtitle2 text-weight-bold text-blue-9">Gommone #{{ index + 1 }}</div>
+                <div
+                  class="text-subtitle2 text-weight-bold"
+                  :class="getBoatOverflowInfo(alloc).status === 'overflow' ? 'text-red-10' : 'text-blue-9'"
+                >
+                  Gommone #{{ index + 1 }}
+                </div>
                 <q-space />
-                <q-badge :color="getBoatPax(alloc) > 0 ? 'blue' : 'grey'" class="text-body2 q-pa-xs">
+
+                <!-- Badge Sensore di Galleggiamento -->
+                <q-badge
+                  v-if="getBoatOverflowInfo(alloc).status === 'overflow'"
+                  color="red"
+                  class="text-body2 q-pa-xs text-weight-bold"
+                >
+                  🚨 OVERFLOW {{ getBoatPax(alloc) }}/{{ getBoatOverflowInfo(alloc).capacity }}
+                </q-badge>
+                <q-badge
+                  v-else-if="getBoatOverflowInfo(alloc).status === 'full'"
+                  color="green"
+                  class="text-body2 q-pa-xs text-weight-bold"
+                >
+                  ✅ PIENO {{ getBoatPax(alloc) }}/{{ getBoatOverflowInfo(alloc).capacity }}
+                </q-badge>
+                <q-badge
+                  v-else-if="getBoatOverflowInfo(alloc).capacity > 0"
+                  color="blue"
+                  class="text-body2 q-pa-xs"
+                >
+                  {{ getBoatPax(alloc) }}/{{ getBoatOverflowInfo(alloc).capacity }} — {{ getBoatOverflowInfo(alloc).capacity - getBoatPax(alloc) }} liberi
+                </q-badge>
+                <q-badge
+                  v-else
+                  :color="getBoatPax(alloc) > 0 ? 'blue' : 'grey'"
+                  class="text-body2 q-pa-xs"
+                >
                   {{ getBoatPax(alloc) }} pax a bordo
                 </q-badge>
+
                 <q-btn flat round dense color="red-6" icon="delete" size="sm" @click="removeRaft(index)">
                   <q-tooltip>Tira su questa barca</q-tooltip>
                 </q-btn>
@@ -296,18 +369,22 @@
 
         <q-separator />
 
-        <!-- FOOTER — Sigilla Equipaggi -->
+        <!-- FOOTER — Sigilla Equipaggi (Fase 7.E — Kill-Switch Varo) -->
         <q-card-actions class="bg-grey-1 q-pa-md">
           <q-space />
           <q-btn
             unelevated
-            color="green-8"
+            :color="isVaroBloccato ? 'grey-5' : 'green-8'"
             icon="lock"
             label="SIGILLA EQUIPAGGI"
             :loading="crewStore.isLoading"
-            :disable="crewStore.allocations.length === 0"
+            :disable="isVaroBloccato || crewStore.allocations.length === 0"
             @click="sealCrew"
-          />
+          >
+            <q-tooltip v-if="isVaroBloccato" class="bg-red-9 text-body2" :offset="[0, 8]">
+              🚫 Varo bloccato: {{ varoBlockReason }}
+            </q-tooltip>
+          </q-btn>
         </q-card-actions>
       </q-card>
     </div>
@@ -378,6 +455,81 @@ function getBoatPax(alloc) {
   const groups = alloc.metadata?.groups || []
   return groups.reduce((sum, g) => sum + (g.pax || 0), 0)
 }
+
+// ═══════════════════════════════════════════════════════════
+// FASE 7.E — SENSORE DI GALLEGGIAMENTO (Overflow Gommone)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Restituisce { capacity, pax, status } per un singolo gommone.
+ * status: 'overflow' | 'full' | 'free' | 'unknown'
+ * Incrocia resource_id con fleetList per ottenere la capienza fisica.
+ */
+function getBoatOverflowInfo(alloc) {
+  const pax = getBoatPax(alloc)
+  if (!alloc.resource_id) {
+    return { capacity: 0, pax, status: 'unknown' }
+  }
+  const raft = (resourceStore.fleetList || []).find(f => f.id === alloc.resource_id)
+  const cap = raft?.capacity || raft?.capacity_per_unit || 0
+  if (cap <= 0) {
+    return { capacity: 0, pax, status: 'unknown' }
+  }
+  if (pax > cap) return { capacity: cap, pax, status: 'overflow' }
+  if (pax === cap) return { capacity: cap, pax, status: 'full' }
+  return { capacity: cap, pax, status: 'free' }
+}
+
+// Classe dinamica per la card del gommone
+function getBoatStatusClass(alloc) {
+  const info = getBoatOverflowInfo(alloc)
+  if (info.status === 'overflow') return 'bg-red-1'
+  if (info.status === 'full') return 'bg-green-1'
+  return ''
+}
+
+// Bordo dinamico per la card del gommone
+function getBoatBorderStyle(alloc) {
+  const info = getBoatOverflowInfo(alloc)
+  if (info.status === 'overflow') return 'border-left: 4px solid #c62828; border-color: #e57373;'
+  if (info.status === 'full') return 'border-left: 4px solid #2e7d32;'
+  return 'border-left: 4px solid #1976D2;'
+}
+
+// Background header dinamico
+function getBoatHeaderBg(alloc) {
+  const info = getBoatOverflowInfo(alloc)
+  if (info.status === 'overflow') return 'bg-red-2'
+  if (info.status === 'full') return 'bg-green-1'
+  return 'bg-blue-1'
+}
+
+// ═══════════════════════════════════════════════════════════
+// FASE 7.E — KILL-SWITCH VARO (Blocco Salvataggio)
+// ═══════════════════════════════════════════════════════════
+
+/** True se c'è almeno un gommone in overflow fisico */
+const hasOverflow = computed(() => {
+  return crewStore.hasAnyOverflow(resourceStore.fleetList)
+})
+
+/** True se imbarcati > paganti (fantasmi a bordo) */
+const hasGhostPassengers = computed(() => {
+  return assignedPax.value > totalPaxToBoard.value
+})
+
+/** Kill-Switch: blocca il bottone SIGILLA se overflow O fantasmi */
+const isVaroBloccato = computed(() => {
+  return hasOverflow.value || hasGhostPassengers.value
+})
+
+/** Motivo del blocco (per tooltip) */
+const varoBlockReason = computed(() => {
+  const reasons = []
+  if (hasOverflow.value) reasons.push('Almeno un gommone è in OVERFLOW')
+  if (hasGhostPassengers.value) reasons.push('Ci sono fantasmi non paganti a bordo')
+  return reasons.join(' + ') || ''
+})
 
 // ── Opzioni per i Select ──
 const raftOptions = computed(() => {

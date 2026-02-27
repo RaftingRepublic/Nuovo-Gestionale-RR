@@ -43,7 +43,7 @@ def create_activity_rule(payload: ActivityRuleCreate): return engine.add_activit
 def delete_activity_rule(id: str): return engine.delete_activity_rule(id)
 
 @router.get("/daily-schedule", response_model=List[DailySlotView])
-def get_daily_schedule(date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$")):
+def get_daily_schedule(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$")):
     return engine.get_daily_schedule(date)
 
 @router.get("/month-overview")

@@ -34,8 +34,10 @@ except ImportError as e:
 from app.db.database import engine, Base
 from app.models.registration import RegistrationDB  # noqa: F401 — import necessario per creare la tabella
 from app.models.calendar import (  # noqa: F401
-    ActivityDB, DailyRideDB, OrderDB, TransactionDB, StaffDB, FleetDB, CrewAssignmentDB,
+    ActivityDB, DailyRideDB, OrderDB, StaffDB, FleetDB,
     ResourceExceptionDB, SystemSettingDB, ActivitySubPeriodDB,
+    # TransactionDB, CustomerDB: INCENERITE Fase 8 — classi rimosse
+    # CrewAssignmentDB: amputata Fase 8 — ride_allocations JSONB su Supabase
 )
 
 app = FastAPI(title="AI Modular Backend", version="0.3.0")
@@ -89,9 +91,9 @@ app.include_router(reservations.router, prefix="/api/v1/reservations", tags=["Re
 from app.api.v1.endpoints import calendar
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["Calendar"])
 
-# 6. Orders LEGACY (Creazione Ordini via ORM locale — DEPRECATO, mantenuto per backward-compat)
-from app.api.v1.endpoints import orders
-app.include_router(orders.router, prefix="/api/v1/legacy-orders", tags=["Orders (Legacy)"])
+# 6. Orders LEGACY — INCENERITO Fase 8 (27/02/2026)
+# Il router /api/v1/legacy-orders è stato eliminato fisicamente.
+# Gli ordini vivono esclusivamente su Supabase via Desk POS (httpx).
 
 # 7. FiRaft (Gestione Tesseramento)
 from app.api.v1.endpoints import firaft

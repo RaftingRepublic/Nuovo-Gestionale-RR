@@ -107,21 +107,6 @@
               ></div>
             </div>
 
-            <!-- Riga inferiore: badge risorse (solo per turni reali, vista STAFF o TUTTO) -->
-            <div
-              v-if="!ride.isGhost && ride.allocations && ride.allocations.length > 0 && (viewFilter === 'staff' || viewFilter === 'tutto')"
-              class="ride-brick-allocs"
-            >
-              <span
-                v-for="(alloc, ai) in ride.allocations"
-                :key="'a-'+ai"
-                class="alloc-badge"
-                :class="'alloc-' + (alloc.resource_type || 'guide')"
-              >
-                {{ alloc.resource_name }}
-              </span>
-            </div>
-
             <!-- Tooltip -->
             <q-tooltip
               class="bg-grey-10 text-body2"
@@ -135,9 +120,6 @@
               <div class="text-weight-bold">{{ ride.title || ride.activity_code }}</div>
               <div>Orario: {{ formatTime(ride.time) }}</div>
               <div v-if="ride.pax > 0">PAX: {{ ride.pax }}</div>
-              <div v-if="ride.allocations && ride.allocations.length > 0">
-                Risorse: {{ ride.allocations.map(a => a.resource_name).join(', ') }}
-              </div>
               <div v-if="ride.isGhost" class="text-grey-5">Slot disponibile — clicca per prenotare</div>
             </q-tooltip>
           </div>
@@ -290,8 +272,7 @@ function getBadgeStyle(type) {
 }
 
 // ── Classi colore per mattoncino (Priorità Motore + Kill-Switch) ──
-// RIPRISTINO SENIOR:
-// RIPRISTINO SENIOR:
+// Logica colore mattoncino (Priorità Motore + Kill-Switch)
 function getRideColorClass(ride) {
   // 1. I Ghost (slot vuoti/potenziali) restano neutri e passivi
   if (ride.isGhost) {
@@ -348,11 +329,7 @@ function getRidesForDay(day) {
     // Solo turni reali (no ghost)
     return allRides.filter(r => !r.isGhost)
   }
-  if (props.viewFilter === 'staff') {
-    // Solo turni reali con almeno un'allocazione (mostra chi è assegnato)
-    return allRides.filter(r => !r.isGhost && r.allocations && r.allocations.length > 0)
-  }
-  // TUTTO: mostra tutto (reali + ghost)
+  // TUTTO o STAFF: mostra tutti i mattoncini (reali + ghost)
   return allRides
 }
 
@@ -519,31 +496,7 @@ function isToday(dateStr) {
     flex-shrink: 0;
 }
 
-/* Riga inferiore: badge risorse assegnate */
-.ride-brick-allocs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1px;
-    padding: 1px 2px;
-    background: rgba(255,255,255,0.92);
-    border-top: 1px solid rgba(0,0,0,0.08);
-}
 
-.alloc-badge {
-    font-size: 8px;
-    font-weight: 600;
-    padding: 0px 3px;
-    border-radius: 2px;
-    white-space: nowrap;
-    line-height: 1.4;
-}
-
-/* Colori badge per tipo risorsa */
-.alloc-guide { background: #e3f2fd; color: #1565c0; }
-.alloc-driver { background: #fff3e0; color: #e65100; }
-.alloc-raft { background: #e8f5e9; color: #2e7d32; }
-.alloc-van { background: #fce4ec; color: #c62828; }
-.alloc-trailer { background: #efebe9; color: #4e342e; }
 
 /* ── Navigation Dropdown Triggers ── */
 .nav-dropdown-trigger {

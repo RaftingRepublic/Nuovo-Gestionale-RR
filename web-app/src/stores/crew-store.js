@@ -1,5 +1,5 @@
 /**
- * crew-store.js — Nastro Trasportatore Busta Stagna (Fase 7.D — Swap & Replace)
+ * crew-store.js — Nastro Trasportatore Busta Stagna (Fase 7.E — Sensori di Galleggiamento)
  *
  * Store Pinia dedicato al Crew Builder.
  * Comunica con il backend FastAPI via Axios (api instance dal boot).
@@ -45,6 +45,25 @@ export const useCrewStore = defineStore('crew', {
     },
 
     isEmpty: (state) => state.allocations.length === 0,
+
+    /**
+     * Fase 7.E — Sensore di Galleggiamento.
+     * Restituisce una FUNZIONE che accetta fleetList (dal resource-store)
+     * e controlla se almeno un gommone è in overflow rispetto alla sua capacity fisica.
+     * Uso nel componente: crewStore.hasAnyOverflow(resourceStore.fleetList)
+     */
+    hasAnyOverflow: (state) => {
+      return (fleetList) => {
+        for (const alloc of state.allocations) {
+          const paxOnBoard = (alloc.metadata?.groups || []).reduce((s, g) => s + (g.pax || 0), 0)
+          const raft = (fleetList || []).find(f => f.id === alloc.resource_id)
+          const cap = raft?.capacity || raft?.capacity_per_unit || 0
+          // Overflow = carico > capienza E capienza nota (> 0)
+          if (cap > 0 && paxOnBoard > cap) return true
+        }
+        return false
+      }
+    },
   },
 
   actions: {

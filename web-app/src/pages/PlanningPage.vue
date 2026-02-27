@@ -163,11 +163,6 @@
                     size="sm" color="brown" text-color="white" icon="rv_hookup" dense
                   >{{ t.name }}</q-chip>
                 </div>
-                <!-- Fallback: risorse assegnate via SQLite (assigned_staff / assigned_fleet) -->
-                <div class="row q-gutter-xs q-mb-xs wrap" v-else-if="slot.assigned_staff?.length || slot.assigned_fleet?.length">
-                  <q-chip v-for="s in slot.assigned_staff" :key="'as'+s.id" dense icon="person" color="teal" text-color="white" size="sm">{{ s.name }}</q-chip>
-                  <q-chip v-for="f in slot.assigned_fleet" :key="'af'+f.id" dense :icon="f.category === 'RAFT' ? 'sailing' : 'local_shipping'" :color="f.category === 'RAFT' ? 'blue' : 'orange'" text-color="white" size="sm">{{ f.name }}</q-chip>
-                </div>
                 <!-- Nessuna risorsa -->
                 <div v-else class="text-caption text-grey-4 q-mb-xs text-center" style="font-size: 11px;">
                   Nessuna risorsa assegnata
@@ -236,7 +231,6 @@ import SeasonConfigDialog from 'components/SeasonConfigDialog.vue'
 import ResourcePanel from 'components/ResourcePanel.vue'
 import FiraftDialog from 'components/FiraftDialog.vue'
 import RideDialog from 'components/RideDialog.vue'
-// [SPURGO SENTINA 27/02/2026] DeskDashboardPage eliminato — POS migrato in RideDialog tabs
 
 const route = useRoute()
 const router = useRouter()
@@ -474,7 +468,6 @@ function openRideDialog(slot) {
 // QUICK-BOOK — Click su Ghost Slot dal calendario mensile
 // ═══════════════════════════════════════════════════════════
 function onQuickBookFromMonth(ride, dateStr) {
-  // TODO: FASE 6.F — Il booking ora avviene direttamente nel RideDialog
   // Apri il giorno e poi il RideDialog per lo slot corrispondente
   selectedDate.value = dateStr.replace(/-/g, '/')
   viewMode.value = 'DETAIL'
