@@ -1,10 +1,10 @@
 # PROJECT RADAR
 
-## STATO ATTUALE: FASE 10 IN CORSO — Il Mangiasoldi (Cassa & CRM)
+## STATO ATTUALE: FASE 10 STABILE — Il Mangiasoldi (Cassa & CRM)
 
 ---
 
-**CANTIERE APERTO — Fase 10: Il Mangiasoldi (28/02/2026)**
+**CANTIERE STABILE — Fase 10: Il Mangiasoldi (28/02/2026)**
 
 ### Fase 10.A — Fondazione Cassa & CRM + Inceneritore Debito Tecnico
 
@@ -17,8 +17,9 @@
 - [x] **Fase 10.C (Leva dello Strozzino — 28/02/2026):** Bottone "Incassa Saldo" nel fascicolo cliente. Modale incasso con importo precompilato e select metodo. Dual-Query Supabase: INSERT transaction + UPDATE order.price_paid. Refresh automatico fascicolo + Libro Mastro.
 - [x] **Fase 10.D (Spia Check Engine — 28/02/2026):** Error handling rumoroso nel fascicolo cliente (console.error + alert). Ispezione desk.py: pipeline CRM già corretta (full_name/email/phone + Prefer return=representation + customer_id iniettato). Colonne Anagrafica verificate.
 
-**⚠️ BUG CRITICO DA VERIFICARE IN APERTURA PROSSIMA SESSIONE:**
-Frontend CassaPage parzialmente operativo (Cassetti e Fascicolo cablati). BUG CRITICO: desk.py (POS) genera ordini orfani omettendo il customer_id nel payload verso Supabase e perde l'email/telefono del cliente. Da fixare tassativamente all'apertura con l'header 'Prefer: return=representation'. NOTA OPERAIO: L'ispezione del codice desk.py (righe 114-167) mostra che la pipeline CRM è già cablata correttamente. Il bug potrebbe manifestarsi solo in casi edge (es. nessun dato referente inserito dal form). Da verificare con test E2E.
+- [x] **Fase 10.fix — Operazione Acchiappafantasmi (28/02/2026):** Blindatura Frontend (DeskBookingForm.vue): rules Quasar obbligatorie su booker_name con trim + lazy-rules, validazione programmatica via ref, bottone CONFERMA disabilitato se nome vuoto o soli spazi. Blindatura Backend (desk.py): fallback difensivo "Cliente Walk-in" se booker_name vuoto, CRM UPSERT SEMPRE eseguito (rimosso bypass condizionale), parsing risposta Supabase robusto (list/dict), Kill-Switch Dogma 18 (HTTPException 400 se customer_id ancora None dopo il pipeline CRM). **BUG CRITICO 7.1 (Ordini orfani): RISOLTO E COLLAUDATO E2E.**
+- [x] **Fase 10.fix — Cura Allucinazioni Frontend (28/02/2026):** CassaPage.vue: corretta select relazionale rides(date, time) invece di rides(ride_date, ride_time). Rimossa colonna created_at inesistente dalla q-table transazioni e dal template pagamenti nel fascicolo. Ordinamento fetchTransactions cambiato da .order('created_at') a .order('id'). Campo notes corretto in note. Eliminati 2 errori Supabase 42703.
+- [x] **Fase 10.fix — Graffettatrice Vue (28/02/2026):** CassaPage.vue: importato uid() da Quasar e iniettato come Primary Key nel payload INSERT su tabella transactions. Fix violazione vincolo NOT NULL su colonna id. Corollario Dogma 18 sancito nel LORE_VAULT.
 
 ---
 
@@ -104,7 +105,7 @@ Frontend CassaPage parzialmente operativo (Cassetti e Fascicolo cablati). BUG CR
 
 ## BACKLOG STRATEGICO (Priorità):
 
-1. **IN CORSO → Fase 10: Il Mangiasoldi (Cassa & CRM).** Fase 10.A completata. Prossimo: reportistica avanzata, storico ordini per cliente, dashboard incassi giornalieri.
+1. **STABILE → Fase 10: Il Mangiasoldi (Cassa & CRM).** Fase 10.A-D completata + 3 fix (Acchiappafantasmi, Allucinazioni Schema, Graffettatrice). Prossimo: Reportistica avanzata, storico ordini per cliente, dashboard incassi giornalieri.
 2. **Opzione B:** Modulo Presenze Giornaliere Staff.
 
 **Completati:**

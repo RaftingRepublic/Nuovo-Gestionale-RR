@@ -8,7 +8,14 @@
         </div>
       </div>
       <div class="col-12 col-sm-4">
-        <q-input v-model="form.booker_name" label="Nome referente *" outlined dense />
+        <q-input
+          ref="bookerNameRef"
+          v-model="form.booker_name"
+          label="Nome referente *"
+          outlined dense
+          lazy-rules
+          :rules="[val => !!val && val.trim().length > 0 || 'Il nome è obbligatorio per la cassa']"
+        />
       </div>
       <div class="col-12 col-sm-4">
         <q-input v-model="form.booker_phone" label="Telefono" outlined dense />
@@ -163,7 +170,7 @@
           unelevated
           class="full-width"
           :loading="saving"
-          :disable="!form.booker_name || form.pax < 1"
+          :disable="!form.booker_name || !form.booker_name.trim() || form.pax < 1"
           @click="submitOrder"
         />
       </div>
@@ -190,6 +197,7 @@ const emit = defineEmits(['success'])
 
 // ─── STATE ─────────────────────────────────────────────────
 const saving = ref(false)
+const bookerNameRef = ref(null)
 const extraPhoto = ref(false)
 const extraVideo = ref(false)
 const splitCount = ref(1)
@@ -251,7 +259,12 @@ function removeTx (idx) {
 
 // ─── SUBMIT ORDINE ─────────────────────────────────────────
 async function submitOrder () {
-    if (!form.booker_name || form.pax < 1) return
+    if (!form.booker_name || !form.booker_name.trim() || form.pax < 1) return
+    // Forza validazione Quasar per mostrare errore visivo
+    if (bookerNameRef.value) {
+      bookerNameRef.value.validate()
+      if (bookerNameRef.value.hasError) return
+    }
     saving.value = true
 
     try {

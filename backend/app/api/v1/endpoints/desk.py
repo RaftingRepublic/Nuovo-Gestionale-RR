@@ -110,8 +110,13 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
                 if c_ride.status_code not in (200, 201):
                     raise HTTPException(status_code=500, detail="Errore sync Turno (Ride) su Supabase.")
 
-            # 4. CRM Silente su Supabase
+            # 4. FALLBACK DIFENSIVO: Se booker_name è vuoto, forza a "Cliente Walk-in"
+            if not payload.booker_name or not payload.booker_name.strip():
+                payload.booker_name = "Cliente Walk-in"
+
+            # 5. CRM Silente su Supabase — SEMPRE ESEGUITO (Dogma 18)
             customer_id = None
+            # 5a. Cerca cliente esistente per email o telefono
             if payload.booker_email or payload.booker_phone:
                 conds = []
                 if payload.booker_email: conds.append(f"email.eq.{payload.booker_email}")
@@ -121,7 +126,8 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
                 if cust_resp.status_code == 200 and cust_resp.json():
                     customer_id = cust_resp.json()[0]["id"]
 
-            if not customer_id and (payload.booker_name or payload.booker_email or payload.booker_phone):
+            # 5b. Se non trovato, CREA SEMPRE un nuovo record CRM (niente bypass)
+            if not customer_id:
                 new_cust = {
                     "id": str(uuid.uuid4()),
                     "full_name": payload.booker_name,
@@ -130,9 +136,21 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
                 }
                 c_cust_resp = client.post(f"{_SUPABASE_URL}/rest/v1/customers", json=new_cust, headers=write_headers)
                 if c_cust_resp.status_code in (200, 201):
-                    customer_id = c_cust_resp.json()[0]["id"]
+                    resp_data = c_cust_resp.json()
+                    if isinstance(resp_data, list) and len(resp_data) > 0:
+                        customer_id = resp_data[0]["id"]
+                    elif isinstance(resp_data, dict):
+                        customer_id = resp_data["id"]
 
-            # 5. Pricing Incorruttibile calcolato da listino SQLite locale
+            # ██ KILL-SWITCH DOGMA 18 ██
+            # Se customer_id è ANCORA None dopo il CRM, BLOCCA TUTTO.
+            if customer_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="DOGMA 18: Fallimento CRM. Impossibile staccare uno scontrino senza customer_id."
+                )
+
+            # 6. Pricing Incorruttibile calcolato da listino SQLite locale
             base_price = payload.pax * unit_price
             extras_total = sum(float(ex.get("price", 0)) for ex in payload.extras)
             total_amount = base_price + extras_total + payload.adjustments
@@ -145,7 +163,7 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
             else:
                 order_status = "IN_ATTESA"
 
-            # 6. Scrittura Ordine puro cloud su Supabase
+            # 7. Scrittura Ordine puro cloud su Supabase
             order_id = str(uuid.uuid4())
             new_order = {
                 "id": order_id,
@@ -170,7 +188,7 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
             if c_ord_resp.status_code not in (200, 201):
                 raise HTTPException(status_code=500, detail=f"Errore scrittura Ordine su Supabase: {c_ord_resp.text}")
 
-            # 7. Transazioni
+            # 8. Transazioni
             if payload.transactions:
                 txs_data = []
                 for tx in payload.transactions:
@@ -184,7 +202,7 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
                     })
                 client.post(f"{_SUPABASE_URL}/rest/v1/transactions", json=txs_data, headers=write_headers)
 
-            # 8. Registrazioni (Slot Fantasma)
+            # 9. Registrazioni (Slot Fantasma)
             regs_data = []
             for i in range(payload.pax):
                 regs_data.append({
@@ -203,7 +221,7 @@ def create_desk_order(payload: DeskOrderCreate, db: Session = Depends(get_db)):
             if regs_data:
                 client.post(f"{_SUPABASE_URL}/rest/v1/registrations", json=regs_data, headers=write_headers)
 
-            # 9. Ritorno per la UI
+            # 10. Ritorno per la UI
             final_resp = client.get(f"{_SUPABASE_URL}/rest/v1/orders?id=eq.{order_id}&select=*,transactions(*),registrations(*)&limit=1", headers=read_headers)
             if final_resp.status_code == 200 and final_resp.json():
                 return _serialize_desk_order(final_resp.json()[0])

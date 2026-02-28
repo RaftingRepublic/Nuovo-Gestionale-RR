@@ -232,11 +232,16 @@ In Python, un UUID object di SQLAlchemy (`uuid.UUID('...')`) NON matcha MAI una 
 
 Nessun ordine commerciale può essere inviato a Supabase senza prima aver creato il cliente, estrapolato il suo ID e iniettato il `customer_id` associato nel payload. Il POS locale non deve mai generare tuple orfane in cloud. La sequenza obbligatoria è: (1) UPSERT customers → (2) Estrai `customer_id` dalla risposta (header `Prefer: return=representation`) → (3) INSERT orders con `customer_id` valorizzato. Un ordine senza `customer_id` è un animale ferito che non potrà mai essere rintracciato dal CRM, dal Fascicolo Cliente o dalla Leva dello Strozzino nella CassaPage.
 
-**[SIGILLO FASE 10.A-D — IN CORSO (28/02/2026 01:23)]**
+⚠️ **COROLLARIO — La Graffettatrice del Cassiere (28/02/2026):** Qualsiasi inserimento diretto (INSERT) proveniente dal client Vue.js verso tabelle Supabase (es. `transactions`) DEVE generare e includere la Primary Key (UUID) utilizzando l'utility `uid()` di Quasar PRIMA dell'invio del payload. Supabase Cloud respinge la query per violazione del vincolo NOT NULL se l'ID è assente. Il backend Python genera le PK con `uuid.uuid4()`, il frontend le genera con `uid()` di Quasar. Mai delegare la generazione ID al database cloud: il client è responsabile della propria graffetta.
 
-**FASE 10 IN CORSO (Il Mangiasoldi — Cassa & CRM)**
+**[SIGILLO FASE 10 — STABILE (28/02/2026 02:10)]**
+
+**FASE 10 STABILE (Il Mangiasoldi — Cassa & CRM)**
 
 - Inceneritore Debito Tecnico: `reservations.py`, `yield_engine.py` e `availability.py` (guscio) eliminati/decablati. TECH_ARCHITECTURE aggiornata.
 - CassaPage.vue operativa: 3 cassetti finanziari (CASH/POS/TRANSFER), Anagrafica clienti con drill-down, Fascicolo storico ordini con semaforo debiti, Leva dello Strozzino (incasso diretto da fascicolo).
 - Spia Check Engine installata: error handling rumoroso nel fascicolo cliente.
 - Dogma 18 (La Graffettatrice) sancito. Pipeline CRM desk.py verificata e conforme.
+- Operazione Acchiappafantasmi: Blindatura form frontend + CRM obbligatorio backend + Kill-Switch Dogma 18. BUG ordini orfani RISOLTO.
+- Cura Allucinazioni Frontend: colonne rides corrette (date/time), created_at rimosso da transactions, campo note allineato.
+- Graffettatrice Vue: uid() di Quasar iniettato in INSERT transazioni. Corollario Dogma 18 sancito.

@@ -135,7 +135,7 @@
 
               <div class="row text-caption text-grey-7 q-mb-sm">
                 <div class="col">Pax: <strong>{{ ordine.pax || '—' }}</strong></div>
-                <div class="col">Discesa: <strong>{{ ordine.rides ? formatDate(ordine.rides.ride_date) + ' ' + (ordine.rides.ride_time || '') : '—' }}</strong></div>
+                <div class="col">Discesa: <strong>{{ ordine.rides ? formatDate(ordine.rides.date) + ' ' + (ordine.rides.time || '') : '—' }}</strong></div>
               </div>
 
               <q-separator class="q-my-sm" />
@@ -160,7 +160,7 @@
                   class="row text-caption q-py-xs"
                   style="border-bottom: 1px dashed #e0e0e0;"
                 >
-                  <div class="col-5">{{ formatDate(tx.created_at) }}</div>
+                  <div class="col-5">{{ tx.type || '—' }}</div>
                   <div class="col-3">{{ tx.method || '—' }}</div>
                   <div class="col-4 text-right text-weight-bold">€ {{ Number(tx.amount || 0).toFixed(2) }}</div>
                 </div>
@@ -192,6 +192,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { uid } from 'quasar'
 import { supabase } from 'src/supabase'
 
 // ── State ──
@@ -220,11 +221,10 @@ const loadingPagamento = ref(false)
 
 // ── Colonne tabella transazioni ──
 const txColumns = [
-  { name: 'created_at', label: 'Data', field: 'created_at', sortable: true, format: v => v ? new Date(v).toLocaleString('it-IT') : '-' },
   { name: 'type', label: 'Tipo', field: 'type', sortable: true },
   { name: 'method', label: 'Metodo', field: 'method', sortable: true },
   { name: 'amount', label: 'Importo (€)', field: 'amount', sortable: true, format: v => v != null ? Number(v).toFixed(2) : '-' },
-  { name: 'notes', label: 'Note', field: 'notes' },
+  { name: 'note', label: 'Note', field: 'note' },
 ]
 
 // ── Colonne tabella clienti ──
@@ -284,7 +284,7 @@ async function apriFascicolo (evt, row) {
   try {
     const { data, error } = await supabase
       .from('orders')
-      .select('*, rides(ride_date, ride_time), transactions(*)')
+      .select('*, rides(date, time), transactions(*)')
       .eq('customer_id', row.id)
       .order('created_at', { ascending: false })
 
@@ -316,6 +316,7 @@ const eseguiPagamento = async () => {
   try {
     // 1. Inserisce la transazione nel Libro Mastro
     const { error: txError } = await supabase.from('transactions').insert({
+      id: uid(),
       order_id: formPagamento.value.order_id,
       amount: Number(formPagamento.value.amount),
       method: formPagamento.value.method,
@@ -352,7 +353,7 @@ async function fetchTransactions () {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
     if (error) throw error
     transactions.value = data || []
   } catch (e) {
