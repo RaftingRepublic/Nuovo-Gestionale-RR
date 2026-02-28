@@ -2,7 +2,7 @@ LORE VAULT - RAFTING REPUBLIC
 
 Documento di Riferimento Supremo. Architettura, Lore e Scelte di Business consolidate.
 
-Aggiornato a: Chiusura Fase 8 — Debito Tecnico Azzerato (27/02/2026 23:10)
+Aggiornato a: Chiusura Fase 9 — OrderDB Amputata, Cablaggio HTTPX Supabase (27/02/2026 23:55)
 
 🔴 MAPPA DEGLI ORGANI VITALI (L'Architettura Definitiva)
 
@@ -93,7 +93,7 @@ Ghost Slots Dinamici: Creazione di slot virtuali nel calendario basati sui defau
 
 ☠️ TabOrdiniEsistenti Mockup (RideDialog.vue): Incenerito l'HTML statico del Libro Mastro. I campi `paid_amount` e `total_pax` (dialetto ORM locale SQLAlchemy) sono morti e sepolti, sostituiti definitivamente da `price_paid` e `pax` (chiavi fisiche Supabase). La lista transazioni è ora iterata dinamicamente da `order.transactions[]`, non più una riga hardcoded "SUMUP". Il bottone PAGA è vivo con `v-model` + `submitPayment()`.
 
-☠️ Dati Transazionali in SQLite: Dichiarati obsoleti per i dati operativi. La cassa e la segreteria (Ordini e Transazioni) DEVONO vivere solo nel cloud (Supabase). SQLite resta ad uso esclusivo del Motore Predittivo (Availability Engine, Yield Engine) e del Catalogo BPMN (activities, workflow_schema, staff, fleet). Il router legacy `orders.py` (endpoint `/api/v1/legacy-orders`) è stato **incenerito fisicamente** il 27/02/2026 (Fase 8 DT-5). Le classi `CustomerDB` e `TransactionDB` sono state amputate. La tabella `orders` SQLite resta temporaneamente per le relazioni `DailyRideDB` e `RegistrationDB`.
+☠️ Dati Transazionali in SQLite: Dichiarati obsoleti per i dati operativi. La cassa e la segreteria (Ordini e Transazioni) DEVONO vivere solo nel cloud (Supabase). SQLite resta ad uso esclusivo del Motore Predittivo (Availability Engine, Yield Engine) e del Catalogo BPMN (activities, workflow_schema, staff, fleet). Il router legacy `orders.py` (endpoint `/api/v1/legacy-orders`) è stato **incenerito fisicamente** il 27/02/2026 (Fase 8 DT-5). Le classi `CustomerDB` e `TransactionDB` sono state amputate. La tabella `orders` SQLite è stata AMPUTATA e DROPpata nella Fase 9.A. La classe `OrderDB` è stata eliminata fisicamente. `RegistrationDB.order_id` è ora una stringa orfana (UUID Supabase).
 
 ☠️ Cimitero Backend (Fase 8, 27/02/2026): Router `orders.py` eliminato. Classi `CustomerDB`, `TransactionDB` distrutte dal modello. Schemi Pydantic `OrderCreate`, `OrderResponse` rimossi. Le funzioni helper `calculate_booked_pax` e `recalculate_ride_status` sono state estratte nel modulo `app/services/ride_helpers.py` (pattern di micro-servizio). Tabelle fisiche `transactions` e `customers` DROPpate da `rafting.db` via script monouso.
 
@@ -197,22 +197,46 @@ L'interfaccia UI (CrewBuilderPanel.vue) DEVE inibire fisicamente il salvataggio 
 
 Il Crew Builder è operativo e collaudato. Dalla Fase 7.A alla 7.E: scaffold backend/frontend, DDL Supabase, store Pinia, UI a righe dinamiche (Tetris Umano nominale), allineamento Pydantic, Swap & Replace, fix JWT/FK/PGRST200, sensori di galleggiamento, bilancia banchina, kill-switch varo e purge sentina. L'intera Fase 7 è stata completata nella sessione unica del 27/02/2026.
 
-**[SIGILLO FASE 8 — IN CORSO (27/02/2026 22:17)]**
-
-**FASE 8 — Smaltimento Debito Tecnico (Operazione Spurgo Sentina)**
-
-- **DT-1 (Consolidamento Requirements):** Inceneriti 3 file requirements ridondanti (`_fixed`, `_frozen`, `_lock`). Sopravvivono solo `requirements.txt` (dev) e `requirements_production.txt` (deploy Ergonet).
-- **DT-3 (Amputazione ORM Tabelle Morte):** Distrutte le entità fossili `CrewAssignmentDB` (classe), `ride_staff_link` (Table), `ride_fleet_link` (Table) dal modello `calendar.py`. Amputate tutte le relationship orfane da `DailyRideDB` (3 relationship: `crew_assignments`, `assigned_staff`, `assigned_fleet`), `StaffDB` (`crew_assignments`), `FleetDB` (`crew_assignments`). Epurati gli import da `main.py`, `__init__.py`, `init_db.py`. Import `sqlalchemy.Table` rimosso. La composizione equipaggio vive esclusivamente in `ride_allocations` JSONB su Supabase.
-- **DT-4 (Inceneritore AI Locale):** Distrutto `local_vision_service.py` (36KB — Paddle+YOLO+GLiNER). Questa era una bomba a orologeria per il limite 1GB RAM Ergonet: un import accidentale avrebbe caricato 3 modelli neurali in memoria. Import orfani sterilizzati in `vision.py` e `registration.py` con stub permanenti (`AI_AVAILABLE=False`). Azure OCR (cloud, zero RAM locale) è confermato come unico provider di riconoscimento documenti.
-- **Collaudo:** PM ha confermato avvio pulito del backend. ORM inizializzato senza errori.
-- **DT-2 (Epurazione JSDoc Obsoleti):** Rimossi commenti morti, TODO superati, template di FK inesistenti. Frontend epurato da inerzia testuale.
-- **DT-5 (Demolizione Cimitero Backend):** Router `orders.py` incenerito, `CustomerDB` e `TransactionDB` amputate, schemi `OrderCreate`/`OrderResponse` eliminati. Helper estratti in `ride_helpers.py`. Tabelle `transactions` e `customers` DROPpate da `rafting.db`.
-- **DT-6 (Silenziamento Regex):** `regex=` → `pattern=` in `resources.py` e `reservations.py`. Zero warning FastAPI.
-- **Residuo architetturale:** `OrderDB` mantenuta in SQLite per DailyRideDB/RegistrationDB/AvailabilityEngine. Migrazione completa a Supabase → Fase 9.
-- **Collaudo:** PM ha confermato avvio pulito del backend post-demolizione. Tabelle DROPpate con successo.
-
 **[SIGILLO FASE 8 — COMPLETATA (27/02/2026 23:10)]**
 
 **FASE 8 COMPLETATA (Smaltimento Debito Tecnico — Operazione Spurgo Sentina)**
 
 Debito tecnico azzerato. 6 task completati (DT-1 → DT-6). Zero warning FastAPI, zero import orfani, zero classi morte, zero commenti obsoleti. Il backend riparte pulito con soli i modelli necessari a sostenere l'architettura ibrida SQLite/Supabase fino alla migrazione finale di `OrderDB` (Fase 9).
+
+🔴 **DOGMA 14 — WALKIE-TALKIE HTTPX (Disconnessione Totale SQLite↔Transazioni, 27/02/2026):**
+
+La classe `OrderDB` (SQLAlchemy) è stata AMPUTATA fisicamente. La tabella `orders` è stata DROPpata da SQLite. I dati transazionali (ordini, transazioni, registrazioni cloud, clienti) vivono ESCLUSIVAMENTE su Supabase. Il backend li accede via `httpx.AsyncClient` attraverso il modulo radio `app/services/supabase_bridge.py` (3 funzioni async difensive: `fetch_orders_by_ride`, `fetch_order_by_id`, `fetch_pax_by_rides`). Il campo `RegistrationDB.order_id` in SQLite è ora una stringa orfana (UUID Supabase) senza FK fisico. L'integrità referenziale è LOGICA, non FISICA. Se Supabase (Francoforte) ha un singhiozzo, le funzioni restituiscono `[]` o `None` senza crashare il server.
+
+🔴 **DOGMA 15 — MASCHERAMENTO NIMITZ (Soglia Capacità Logistica, 27/02/2026):**
+
+Le attività senza vincoli logistici (nessun `workflow_schema.logistics`) producono capacità astronomiche dal Motore Predittivo (es. 7992 pax). Nessun operatore deve mai vedere questi numeri. La soglia NIMITZ è fissata a 1000: se `total_capacity >= 1000`, il frontend NASCONDE il denominatore (`/ 7992`), i "posti residui" e la barra di progresso. Mostra SOLO i passeggeri confermati: "X pax confermati". Applicato in `PlanningPage.vue` (card turno + helper `isNimitz()`) e `RideDialog.vue` (header badge + banner Engine).
+
+🔴 **DOGMA 16 — SINDROME UUID (Mismatch Tipo Chiave Cross-Database, 28/02/2026):**
+
+In Python, un UUID object di SQLAlchemy (`uuid.UUID('...')`) NON matcha MAI una stringa Supabase (`"..."`) quando usato come chiave di dizionario. `dict.get(UUID('abc'), 0)` su un dict con chiavi `str` restituisce SEMPRE 0 silenziosamente. Regola aurea: usare TASSATIVAMENTE `str(ride.id)` prima di accedere a qualsiasi dizionario popolato da fetch esterni (Sonda Supabase, `external_pax_map`, `real_pax_map`). Strato difensivo nei router: se `remaining_seats == total_capacity` E `booked_pax > 0`, l'Engine ha ignorato i pax → forzare `remaining_seats = max(0, total_capacity - booked_pax)`. Strato difensivo nel frontend: calcolo deterministico `Math.max(0, cap - pax)` in-template, MAI fidarsi ciecamente del campo `remaining_seats` del backend.
+
+🔴 **DOGMA 17 — DIVIETO ASSOLUTO httpx.Client SINCRONO (Thread FastAPI, 28/02/2026):**
+
+È SEVERAMENTE VIETATO istanziare `httpx.Client()` (sincrono) nel thread principale di un endpoint FastAPI. FastAPI gira su un event loop async (uvicorn); una chiamata HTTP bloccante congestiona il worker e provoca timeout a cascata per tutti gli utenti. L'unica eccezione tollerata è la Sync Sonda legacy (`_fetch_supabase_pax` in `calendar.py`) che opera in un endpoint `def` sincrono (non `async def`). Per qualsiasi altro caso usare `httpx.AsyncClient` in endpoint `async def`, oppure delegare a `run_in_executor`. Mai — in nessun caso — mettere `httpx.Client` in un helper importato globalmente (come `ride_helpers.py`): verrebbe invocato ad ogni request.
+
+**[SIGILLO FASE 9 — COMPLETATA E SIGILLATA (28/02/2026 00:15)]**
+
+**FASE 9 COMPLETATA (Migrazione OrderDB a Supabase — Amputazione + Cablaggio HTTPX + Hotfix Matematici)**
+
+- **9.A (Amputazione):** Classe `OrderDB` eliminata. FK `orders.id` recisa da `RegistrationDB`. Tabella `orders` DROPpata da `rafting.db`. Tutti i `joinedload` e import epurati. Export FIRAFT riscritta con JOIN diretto `daily_ride_id`.
+- **9.B (Cablaggio):** Modulo radio `supabase_bridge.py` creato. Matrioska cablata a Supabase. Daily-schedule popolato via `fetch_pax_by_rides`. Public API Kiosk validata su Supabase Cloud. Schema Pydantic `orders: List[dict]`.
+- **9.Fix (Pallottoliere + Nimitz + Sindrome UUID):** Soglia NIMITZ applicata al frontend. `ride_helpers.py` epurato da httpx sincrono (Dogma 17). Strato difensivo matematico nei router: `remaining_seats = max(0, total_cap - booked_pax)` quando Engine ignora i pax. Frontend blindato: `getRemainingSeats()` e banner Omni-Board ora deterministici (`cap - pax`), mai fidarsi del backend. Dogma 16 (Sindrome UUID) e Dogma 17 (Divieto httpx sincrono) sanciti.
+- L'architettura ibrida è ora cristallizzata: SQLite = Catalogo + Motore, Supabase = Transazioni + CRM.
+
+🔴 **DOGMA 18 — LA GRAFFETTATRICE (Anti-Ordini Orfani, 28/02/2026):**
+
+Nessun ordine commerciale può essere inviato a Supabase senza prima aver creato il cliente, estrapolato il suo ID e iniettato il `customer_id` associato nel payload. Il POS locale non deve mai generare tuple orfane in cloud. La sequenza obbligatoria è: (1) UPSERT customers → (2) Estrai `customer_id` dalla risposta (header `Prefer: return=representation`) → (3) INSERT orders con `customer_id` valorizzato. Un ordine senza `customer_id` è un animale ferito che non potrà mai essere rintracciato dal CRM, dal Fascicolo Cliente o dalla Leva dello Strozzino nella CassaPage.
+
+**[SIGILLO FASE 10.A-D — IN CORSO (28/02/2026 01:23)]**
+
+**FASE 10 IN CORSO (Il Mangiasoldi — Cassa & CRM)**
+
+- Inceneritore Debito Tecnico: `reservations.py`, `yield_engine.py` e `availability.py` (guscio) eliminati/decablati. TECH_ARCHITECTURE aggiornata.
+- CassaPage.vue operativa: 3 cassetti finanziari (CASH/POS/TRANSFER), Anagrafica clienti con drill-down, Fascicolo storico ordini con semaforo debiti, Leva dello Strozzino (incasso diretto da fascicolo).
+- Spia Check Engine installata: error handling rumoroso nel fascicolo cliente.
+- Dogma 18 (La Graffettatrice) sancito. Pipeline CRM desk.py verificata e conforme.

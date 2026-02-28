@@ -204,7 +204,7 @@ PDF Manleva (reportlab):
 Dopo la compilazione del consenso, il backend genera un PDF contenente:
 
 - Dati anagrafici del partecipante
-- Informazioni discesa (attività, data, ora — da OrderDB → DailyRideDB → ActivityDB)
+- Informazioni discesa (attività, data, ora — da Supabase orders → DailyRideDB → ActivityDB)
 - Firma grafometrica (immagine base64 catturata dal Canvas)
 - Testo integrale della manleva e dell'informativa GDPR
 
@@ -245,6 +245,8 @@ Action fetchDailySchedule — Merge Difensivo:
    - capacità 0 + pax > 0 → forza ROSSO (overbooking innegabile)
    - capacità 0 + pax = 0 → forza GIALLO (turno senza risorse)
 7. Ghost Slots: genera slot vuoti da activities.default_times per date future
+
+OrderDB è stata AMPUTATA fisicamente. L'integrità referenziale tra SQLite (daily_rides/registrations) e Supabase (orders/rides) è garantita esclusivamente da chiavi logiche cross-DB (UUID stringhe orfane) - Dogma 12.
 
 8. # FLUSSI DATI CRITICI
 

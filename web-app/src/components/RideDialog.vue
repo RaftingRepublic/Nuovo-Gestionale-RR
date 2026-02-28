@@ -12,7 +12,7 @@
             <div class="text-caption">
               {{ localRide?.ride_date }} · {{ localRide?.ride_time }}
               <q-badge color="white" text-color="dark" class="q-ml-sm text-weight-bold">
-                {{ localRide?.booked_pax || 0 }} / {{ localRide?.max_pax || '—' }} pax
+                {{ localRide?.booked_pax || 0 }}<template v-if="(localRide?.max_pax || 0) < 1000"> / {{ localRide?.max_pax || '—' }}</template> pax{{ (localRide?.max_pax || 0) >= 1000 ? ' confermati' : '' }}
               </q-badge>
             </div>
             <!-- Risorse sotto il titolo -->
@@ -62,8 +62,8 @@
       <q-tab-panels v-model="activeTab" animated v-else-if="localRide" class="col scroll q-pa-none" style="overflow-x: hidden; min-height: 0;">
         <q-tab-panel name="existing" class="q-pa-none">
 
-        <!-- Info Disponibilità (Engine Dashboard) -->
-        <q-card-section class="q-pb-none" v-if="localRide && localRide.total_capacity !== undefined">
+        <!-- Info Disponibilità (Engine Dashboard) — Nascosta per NIMITZ -->
+        <q-card-section class="q-pb-none" v-if="localRide && localRide.total_capacity !== undefined && (localRide.total_capacity || 0) < 1000">
            <q-banner :class="localRide.status === 'GIALLO' ? 'bg-warning text-dark' : (localRide.status === 'ROSSO' ? 'bg-negative text-white' : 'bg-positive text-white')" rounded dense>
               <template v-slot:avatar>
                  <q-icon :name="localRide.status === 'GIALLO' ? 'local_shipping' : (localRide.status === 'ROSSO' ? 'warning' : 'check_circle')" />
@@ -72,7 +72,7 @@
               <div class="text-caption">
                  Capacità Totale: {{ localRide.total_capacity }} pax ({{ localRide.total_capacity - (localRide.arr_bonus_seats || 0) }} Base + {{ localRide.arr_bonus_seats || 0 }} Fluviali ARR)
               </div>
-              <div class="text-caption">Posti Residui: {{ localRide.remaining_seats }}</div>
+              <div class="text-caption">Posti Residui: {{ Math.max(0, (localRide.total_capacity || 0) - (localRide.booked_pax || 0)) }}</div>
            </q-banner>
         </q-card-section>
 

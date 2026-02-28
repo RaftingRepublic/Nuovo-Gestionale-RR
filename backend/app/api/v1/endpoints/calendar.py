@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db.database import get_db
 from app.models.calendar import (
-    ActivityDB, DailyRideDB, OrderDB, ActivitySubPeriodDB,
+    ActivityDB, DailyRideDB, ActivitySubPeriodDB,
+    # OrderDB: AMPUTATA Fase 9.A
 )
 from app.schemas.calendar import (
     ActivityResponse, ActivityCreate, DailyRideResponse,
@@ -25,6 +26,7 @@ from app.schemas.calendar import (
 from app.schemas.orders import DailyRideDetailResponse, RideOverrideRequest
 from app.services.ride_helpers import calculate_booked_pax, recalculate_ride_status
 from app.services.availability_engine import AvailabilityEngine
+from app.services.supabase_bridge import fetch_orders_by_ride, fetch_pax_by_rides
 
 router = APIRouter()
 
@@ -256,7 +258,7 @@ def list_daily_rides(
         db.query(DailyRideDB)
         .options(
             joinedload(DailyRideDB.activity),
-            joinedload(DailyRideDB.orders),
+            # joinedload(DailyRideDB.orders): AMPUTATA Fase 9.A
         )
         .filter(DailyRideDB.status != "X")  # Escludi turni chiusi manualmente
         .order_by(DailyRideDB.ride_date, DailyRideDB.ride_time)
@@ -288,8 +290,17 @@ def list_daily_rides(
 
     result: List[DailyRideResponse] = []
     for ride in rides:
-        booked_pax = calculate_booked_pax(ride)
+        booked_pax = real_pax_map.get(str(ride.id), 0)  # Fase 9.B: pax dalla Sonda Supabase
         avail = availability_map.get(ride.id, {})
+
+        # Strato difensivo: se l'Engine non ha visto i pax, forza la matematica
+        total_cap = avail.get("total_capacity", 0)
+        engine_remaining = avail.get("remaining_seats", 0)
+        # Se remaining == total_cap E booked_pax > 0, l'Engine ha ignorato i pax
+        if booked_pax > 0 and engine_remaining == total_cap:
+            final_remaining = max(0, total_cap - booked_pax)
+        else:
+            final_remaining = engine_remaining
 
         result.append(
             DailyRideResponse(
@@ -303,10 +314,10 @@ def list_daily_rides(
                 activity_name=ride.activity.name if ride.activity else "Sconosciuta",
                 color_hex=ride.activity.color_hex if ride.activity else "#9E9E9E",
                 booked_pax=booked_pax,
-                total_capacity=avail.get("total_capacity", 0),
+                total_capacity=total_cap,
                 arr_bonus_seats=avail.get("arr_bonus_seats", 0),
                 yield_warning=avail.get("debug_yield_warning", False),
-                remaining_seats=avail.get("remaining_seats", 0),
+                remaining_seats=final_remaining,
                 engine_status=avail.get("status", "VERDE"),
             )
         )
@@ -417,15 +428,15 @@ def export_firaft_csv(
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato data non valido. Usa YYYY-MM-DD.")
 
-    # Query: Registrazioni → Ordine → Turno → Attività, filtrando per data e stato COMPLETED
+    # Query: Registrazioni → Turno → Attività, filtrando per data e stato COMPLETED
+    # Fase 9.A: JOIN via daily_ride_id (diretto), non più attraverso OrderDB
     results = (
         db.query(
             RegistrationDB,
             DailyRideDB.ride_time,
             ActivityDB.name.label("activity_name"),
         )
-        .join(OrderDB, RegistrationDB.order_id == OrderDB.id)
-        .join(DailyRideDB, OrderDB.ride_id == DailyRideDB.id)
+        .join(DailyRideDB, RegistrationDB.daily_ride_id == DailyRideDB.id)
         .join(ActivityDB, DailyRideDB.activity_id == ActivityDB.id)
         .filter(DailyRideDB.ride_date == target_date)
         .filter(RegistrationDB.status == "COMPLETED")
@@ -467,7 +478,7 @@ def export_firaft_csv(
 # GET /daily-rides/{ride_id} — Dettaglio "Matrioska"
 # ──────────────────────────────────────────────────────────
 @router.get("/daily-rides/{ride_id}", response_model=DailyRideDetailResponse)
-def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
+async def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
     """
     Ritorna il dettaglio completo di una singola discesa (Ride).
     Include: Ride → [Ordini → [Registrazioni]] + campi arricchiti.
@@ -476,7 +487,7 @@ def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
         db.query(DailyRideDB)
         .options(
             joinedload(DailyRideDB.activity),
-            joinedload(DailyRideDB.orders).joinedload(OrderDB.registrations),
+            # joinedload(DailyRideDB.orders).joinedload(OrderDB.registrations): AMPUTATA Fase 9.A
         )
         .filter(DailyRideDB.id == ride_id)
         .first()
@@ -488,11 +499,24 @@ def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
             detail=f"Discesa con id '{ride_id}' non trovata."
         )
 
-    booked_pax = calculate_booked_pax(ride)
-    
+    # 📡 Fase 9.B: Fetch ordini reali da Supabase via Walkie-Talkie
+    supabase_orders = await fetch_orders_by_ride(str(ride.id))
+
+    # Calcola booked_pax dalla somma dei pax degli ordini Supabase
+    booked_pax = sum(int(o.get("pax", 0)) for o in supabase_orders)
+
     # Calcolo availability specifica per questo turno
-    avail_map = AvailabilityEngine.calculate_availability(db, ride.ride_date)
+    pax_map_single = {str(ride.id): booked_pax}
+    avail_map = AvailabilityEngine.calculate_availability(db, ride.ride_date, external_pax_map=pax_map_single)
     avail = avail_map.get(ride.id, {})
+
+    # Strato difensivo: forza remaining_seats deterministico
+    total_cap = avail.get("total_capacity", 0)
+    engine_remaining = avail.get("remaining_seats", 0)
+    if booked_pax > 0 and engine_remaining == total_cap:
+        final_remaining = max(0, total_cap - booked_pax)
+    else:
+        final_remaining = engine_remaining
 
     return DailyRideDetailResponse(
         id=ride.id,
@@ -505,12 +529,12 @@ def get_daily_ride_detail(ride_id: str, db: Session = Depends(get_db)):
         activity_name=ride.activity.name if ride.activity else "Sconosciuta",
         color_hex=ride.activity.color_hex if ride.activity else "#9E9E9E",
         booked_pax=booked_pax,
-        total_capacity=avail.get("total_capacity", 0),
+        total_capacity=total_cap,
         arr_bonus_seats=avail.get("arr_bonus_seats", 0),
         yield_warning=avail.get("debug_yield_warning", False),
-        remaining_seats=avail.get("remaining_seats", 0),
+        remaining_seats=final_remaining,
         engine_status=avail.get("status", "VERDE"),
-        orders=ride.orders,
+        orders=supabase_orders,
     )
 
 
@@ -534,7 +558,7 @@ def override_ride_status(
             db.query(DailyRideDB)
             .options(
                 joinedload(DailyRideDB.activity),
-                joinedload(DailyRideDB.orders),
+                # joinedload(DailyRideDB.orders): AMPUTATA Fase 9.A
             )
             .filter(DailyRideDB.id == ride_id)
             .first()
@@ -671,7 +695,7 @@ COUNTING_ORDER_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
 
 
 @router.get("/daily-schedule", response_model=List[DailyScheduleResponse])
-def get_daily_schedule(
+async def get_daily_schedule(
     start_date: date = Query(..., description="Data inizio range (YYYY-MM-DD)"),
     end_date: date = Query(..., description="Data fine range (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
@@ -687,7 +711,7 @@ def get_daily_schedule(
         db.query(DailyRideDB)
         .options(
             joinedload(DailyRideDB.activity),
-            joinedload(DailyRideDB.orders),
+            # joinedload(DailyRideDB.orders): AMPUTATA Fase 9.A
         )
         .filter(
             DailyRideDB.ride_date >= start_date,
@@ -697,15 +721,14 @@ def get_daily_schedule(
         .all()
     )
 
+    # 📡 Fase 9.B: Fetch pax reali da Supabase in blocco
+    ride_ids = [str(r.id) for r in rides]
+    pax_map = await fetch_pax_by_rides(ride_ids)
+
     # Raggruppa per data, includendo SOLO ride con pax reali > 0
     schedule_dict: dict = {}
     for ride in rides:
-        # Calcola pax reali da OrderDB
-        pax = sum(
-            o.total_pax
-            for o in (ride.orders or [])
-            if o.order_status in COUNTING_ORDER_STATUSES
-        )
+        pax = pax_map.get(str(ride.id), 0)
 
         if pax == 0:
             continue  # Skip: nessuna prenotazione reale

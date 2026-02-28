@@ -5,6 +5,9 @@ Cantiere 3: endpoint PUBBLICI (senza Auth) per il flusso consenso.
 Il cliente apre il Magic Link, compila la manleva, e il backend
 consuma automaticamente il primo slot vuoto dell'ordine.
 
+Fase 9.B (27/02/2026): Cablaggio Walkie-Talkie Supabase.
+Ordine validato via httpx su Supabase, slot consumati su SQLite locale.
+
 Endpoints:
   GET  /public/orders/{order_id}/info       → Info discesa (activity, data, ora)
   POST /public/orders/{order_id}/fill-slot  → Pac-Man: divora il primo slot EMPTY
@@ -13,12 +16,13 @@ Endpoints:
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.models.calendar import OrderDB, DailyRideDB, ActivityDB
+from app.models.calendar import DailyRideDB, ActivityDB
 from app.models.registration import RegistrationDB
 from app.schemas.public import PublicOrderInfo, FillSlotPayload
+from app.services.supabase_bridge import fetch_order_by_id
 
 router = APIRouter()
 
@@ -27,21 +31,21 @@ router = APIRouter()
 # GET /orders/{order_id}/info — Info discesa per header form
 # ──────────────────────────────────────────────────────────
 @router.get("/orders/{order_id}/info", response_model=PublicOrderInfo)
-def get_order_info(order_id: str, db: Session = Depends(get_db)):
-    """Ritorna attività, data e ora della discesa associata all'ordine."""
+async def get_order_info(order_id: str, db: Session = Depends(get_db)):
+    """
+    Fase 9.B: Recupera info ordine da Supabase, poi risale al turno/attività
+    locale via ride_id → DailyRideDB → ActivityDB.
+    """
     try:
-        order = (
-            db.query(OrderDB)
-            .options(
-                joinedload(OrderDB.ride).joinedload(DailyRideDB.activity),
-            )
-            .filter(OrderDB.id == order_id)
-            .first()
-        )
-        if not order:
-            raise HTTPException(status_code=404, detail="Ordine non trovato.")
+        # 📡 Fase 9.B: Fetch ordine da Supabase
+        order = await fetch_order_by_id(order_id)
 
-        ride = order.ride
+        if not order:
+            raise HTTPException(status_code=404, detail="Ordine non trovato nel Cloud.")
+
+        # Risali al turno locale via ride_id
+        ride_id = order.get("ride_id")
+        ride = db.query(DailyRideDB).filter(DailyRideDB.id == ride_id).first() if ride_id else None
         activity = ride.activity if ride else None
 
         return PublicOrderInfo(
@@ -60,24 +64,16 @@ def get_order_info(order_id: str, db: Session = Depends(get_db)):
 # POST /orders/{order_id}/fill-slot — Pac-Man: divora slot vuoto
 # ──────────────────────────────────────────────────────────
 @router.post("/orders/{order_id}/fill-slot")
-def fill_slot(order_id: str, payload: FillSlotPayload, db: Session = Depends(get_db)):
+async def fill_slot(order_id: str, payload: FillSlotPayload, db: Session = Depends(get_db)):
     """
-    Trova il primo slot EMPTY dell'ordine e lo riempie coi dati del consenso.
-    Se tutti gli slot sono già compilati → 400.
-
-    Auto-Slotting: il backend agisce da "distributore di biglietti",
-    assegnando automaticamente il prossimo slot disponibile.
+    Fase 9.B: Verifica l'ordine su Supabase, poi consuma il primo slot EMPTY
+    dalle registrazioni locali (SQLite).
     """
     try:
-        # Verifica ordine esiste
-        order = (
-            db.query(OrderDB)
-            .options(joinedload(OrderDB.ride).joinedload(DailyRideDB.activity))
-            .filter(OrderDB.id == order_id)
-            .first()
-        )
+        # 📡 Fase 9.B: Verifica ordine esiste su Supabase
+        order = await fetch_order_by_id(order_id)
         if not order:
-            raise HTTPException(status_code=404, detail="Ordine non trovato.")
+            raise HTTPException(status_code=404, detail="Ordine non trovato nel Cloud.")
 
         # Cerca il primo slot EMPTY (ordinato per ID per garantire FIFO)
         empty_slot = (
@@ -106,12 +102,13 @@ def fill_slot(order_id: str, payload: FillSlotPayload, db: Session = Depends(get
         empty_slot.locked = True
         empty_slot.updated_at = datetime.utcnow()
 
-        # Se l'attività è gestita da "Anatre" → tesseramento
-        activity = order.ride.activity if order.ride else None
-        if activity and activity.manager and activity.manager.upper() == "ANATRE":
-            empty_slot.firaft_status = "DA_TESSERARE"
-
-        # TODO: Generare PDF inserendo i dati della discesa: activity_name, date, time
+        # Verifica manager per tesseramento via ride locale
+        ride_id = order.get("ride_id")
+        if ride_id:
+            ride = db.query(DailyRideDB).filter(DailyRideDB.id == ride_id).first()
+            activity = ride.activity if ride else None
+            if activity and activity.manager and activity.manager.upper() == "ANATRE":
+                empty_slot.firaft_status = "DA_TESSERARE"
 
         db.commit()
 
@@ -123,3 +120,4 @@ def fill_slot(order_id: str, payload: FillSlotPayload, db: Session = Depends(get
         db.rollback()
         print(f"[PUBLIC API] CRASH fill_slot: {e}")
         raise HTTPException(status_code=500, detail=f"Errore interno: {str(e)}")
+

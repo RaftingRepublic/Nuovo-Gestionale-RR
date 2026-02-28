@@ -98,14 +98,17 @@
                       <span class="text-h3 text-weight-bold" :class="(slot.engine_status === 'ROSSO' || slot.status_code === 'C') ? 'text-negative' : 'text-primary'">
                          {{ slot.booked_pax || 0 }}
                       </span>
-                      <span class="text-h5 text-grey-6 q-ml-sm">
-                         / {{ slot.total_capacity !== undefined ? slot.total_capacity : '?' }}
-                      </span>
-                      <span class="text-subtitle1 text-grey-8 q-ml-sm">pax</span>
+                      <!-- NIMITZ: Nascondi denominatore se capacità >= 1000 (attività senza vincoli) -->
+                      <template v-if="!isNimitz(slot)">
+                        <span class="text-h5 text-grey-6 q-ml-sm">
+                           / {{ slot.total_capacity !== undefined ? slot.total_capacity : '?' }}
+                        </span>
+                      </template>
+                      <span class="text-subtitle1 text-grey-8 q-ml-sm">{{ isNimitz(slot) ? 'pax confermati' : 'pax' }}</span>
                    </div>
 
-                   <!-- Remaining Seats — Riga reattiva con icona Sarre -->
-                   <div class="row items-center justify-center q-mt-xs q-gutter-x-xs">
+                   <!-- Remaining Seats — Riga reattiva con icona Sarre (nascosta per NIMITZ) -->
+                   <div v-if="!isNimitz(slot)" class="row items-center justify-center q-mt-xs q-gutter-x-xs">
                       <q-icon
                         v-if="slot.engine_status === 'GIALLO'"
                         name="warning"
@@ -131,7 +134,8 @@
                       </q-badge>
                    </div>
                 </div>
-                <q-linear-progress v-if="slot.total_capacity" :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity)" class="q-mt-xs" rounded />
+                <!-- NIMITZ: Nascondi progress bar se capacità >= 1000 -->
+                <q-linear-progress v-if="slot.total_capacity && !isNimitz(slot)" :value="Math.min(1, (slot.booked_pax || 0) / Math.max(1, slot.total_capacity))" :color="getProgressBarColor(slot.booked_pax, slot.total_capacity)" class="q-mt-xs" rounded />
               </q-card-section>
               <!-- Badge Risorse Assegnate — Visualizzazione Individuale -->
               <q-card-section class="q-pa-xs q-pt-none" v-show="viewFilter === 'tutto' || viewFilter === 'staff'">
@@ -648,8 +652,15 @@ function filterKnownResources(resources) {
   })
 }
 
+// ── NIMITZ THRESHOLD: Soglia capacità oltre la quale si nasconde il denominatore ──
+const NIMITZ_THRESHOLD = 1000
+
+function isNimitz(slot) {
+  return (slot.total_capacity || 0) >= NIMITZ_THRESHOLD
+}
+
 function getProgressBarColor(pax, max = null) {
-  if (!max) return 'grey-4'
+  if (!max || max >= NIMITZ_THRESHOLD) return 'grey-4'
   if (pax >= max) return 'negative'
   if (pax >= max - 4 && pax > 0) return 'warning'
   return 'primary'
@@ -658,18 +669,16 @@ function getProgressBarColor(pax, max = null) {
 function getSlotBgClass(slot) {
   const pax = slot.booked_pax || 0
   const max = slot.total_capacity
-  if (!max) return pax > 0 ? 'bg-green-1' : 'bg-white'
+  if (!max || max >= NIMITZ_THRESHOLD) return pax > 0 ? 'bg-green-1' : 'bg-white'
   if (pax >= max) return 'bg-red-1'
   if (pax >= max - 4 && pax > 0) return 'bg-orange-1'
   return 'bg-green-1'
 }
 
 function getRemainingSeats(slot) {
-  // Preferisce il valore pre-calcolato dal Motore Predittivo (già include ARR bonus)
-  if (slot.remaining_seats !== undefined && slot.remaining_seats !== null) {
-    return Number(slot.remaining_seats)
-  }
-  // Fallback matematico client-side
+  // NIMITZ: Non mostrare seats per attività senza vincoli logistici
+  if (isNimitz(slot)) return 0
+  // Calcolo deterministico: SEMPRE total_capacity - booked_pax (non fidarsi del backend)
   const cap = Number(slot.total_capacity || 0)
   const pax = Number(slot.booked_pax || 0)
   return Math.max(0, cap - pax)

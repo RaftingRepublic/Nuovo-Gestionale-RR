@@ -1,10 +1,28 @@
 # PROJECT RADAR
 
-## STATO ATTUALE: POST-FASE 8 (Debito Tecnico Azzerato)
+## STATO ATTUALE: FASE 10 IN CORSO — Il Mangiasoldi (Cassa & CRM)
 
 ---
 
-**CANTIERE CHIUSO — Fase 8: Smaltimento Debito Tecnico ✅ SIGILLATA (27/02/2026 23:10)**
+**CANTIERE APERTO — Fase 10: Il Mangiasoldi (28/02/2026)**
+
+### Fase 10.A — Fondazione Cassa & CRM + Inceneritore Debito Tecnico
+
+- [x] **BUG-1 (TECH_ARCHITECTURE Fossile OrderDB — 28/02/2026):** Rimosso riferimento obsoleto "da OrderDB → DailyRideDB → ActivityDB". Aggiunta dichiarazione esplicita: OrderDB AMPUTATA, integrità referenziale cross-DB via UUID stringhe orfane (Dogma 12).
+- [x] **BUG-2 (Router Reservations Zombi — 28/02/2026):** Eliminato fisicamente `reservations.py`. Rimosso import e `include_router` da `main.py`.
+- [x] **BUG-3 (Yield Engine Zavorra — 28/02/2026):** Eliminato fisicamente `yield_engine.py` (servizio morto, mai referenziato).
+- [x] **BUG-4 (Filo Scoperto availability.py — 28/02/2026):** Router `availability.py` (guscio vuoto del defunto `yield_engine.py`) decablato da `main.py`. ImportError che crashava Uvicorn.
+- [x] **Fase 10.A (CassaPage Frontend — 28/02/2026):** Creata `CassaPage.vue` con client Supabase JS diretto (Dogma: i soldi si contano in Banca). Due tab: Libro Mastro (totali per metodo pagamento + q-table transazioni) e Anagrafica (q-table clienti con filtro locale reattivo). Rotta `/admin/cassa` cablata. Menu laterale aggiornato con icona `point_of_sale`.
+- [x] **Fase 10.B (Cassetti e Fascicoli — 28/02/2026):** 3 card totali fissi (CASH/POS/TRANSFER con colori semantici). Drill-down clienti con dialog laterale: query relazionale Supabase `orders + rides + transactions`. Semaforo debiti per ordine (badge rosso DEBITO / verde SALDATO).
+- [x] **Fase 10.C (Leva dello Strozzino — 28/02/2026):** Bottone "Incassa Saldo" nel fascicolo cliente. Modale incasso con importo precompilato e select metodo. Dual-Query Supabase: INSERT transaction + UPDATE order.price_paid. Refresh automatico fascicolo + Libro Mastro.
+- [x] **Fase 10.D (Spia Check Engine — 28/02/2026):** Error handling rumoroso nel fascicolo cliente (console.error + alert). Ispezione desk.py: pipeline CRM già corretta (full_name/email/phone + Prefer return=representation + customer_id iniettato). Colonne Anagrafica verificate.
+
+**⚠️ BUG CRITICO DA VERIFICARE IN APERTURA PROSSIMA SESSIONE:**
+Frontend CassaPage parzialmente operativo (Cassetti e Fascicolo cablati). BUG CRITICO: desk.py (POS) genera ordini orfani omettendo il customer_id nel payload verso Supabase e perde l'email/telefono del cliente. Da fixare tassativamente all'apertura con l'header 'Prefer: return=representation'. NOTA OPERAIO: L'ispezione del codice desk.py (righe 114-167) mostra che la pipeline CRM è già cablata correttamente. Il bug potrebbe manifestarsi solo in casi edge (es. nessun dato referente inserito dal form). Da verificare con test E2E.
+
+---
+
+**CANTIERE CHIUSO — Fase 9: Migrazione OrderDB a Supabase ✅ SIGILLATA (27/02/2026 23:55)**
 
 **Tutti gli obiettivi completati.**
 
@@ -29,6 +47,13 @@
 - [x] **Fase 7.D.fix (Autopsia Tripla — 27/02/2026):** Fix Auth JWT 401 (chiavi Supabase migrate da hardcode a `.env` con `load_dotenv()` e blindatura `.strip()`). Fix Pydantic mismatch `resource_type` ("RAFT" → "crew_manifest"). Amputazione Foreign Key Supabase `ride_allocations_resource_id_fkey` per risorse locali (Errore 409). Cura della Sindrome dell'Arto Fantasma nel frontend: epurate JOIN PostgREST `resources(*)` da `resource-store.js` (Errore PGRST200). Sanciti Dogma 12 e Corollario Arto Fantasma nel LORE_VAULT.
 - [x] **Fase 7.E (Sensori di Galleggiamento e Bilancia Banchina — 27/02/2026):** Installati 3 sensori visivi nel CrewBuilderPanel. (1) Bilancia Banchina: q-banner reattivo a 3 stati (🚨 Rosso fantasmi / ⚠️ Arancione molo / ✅ Verde bilancio perfetto). (2) Sensore di Galleggiamento: card gommone con bordi e sfondo dinamici (rosso overflow, verde pieno, blu liberi) + badge carico/capienza. Incrocio resource_id con fleetList per capacity fisica. (3) Kill-Switch Varo: bottone SIGILLA EQUIPAGGI bloccato se overflow o sovra-assegnazione, con tooltip motivo blocco. Getter `hasAnyOverflow` aggiunto al crew-store.
 - [x] **Fase 7.E.fix (Pompa di Sentina e Collaudo — 27/02/2026):** Script `purge_bilge.py` eseguito: 0 record fossili trovati (sentina pulita). Collaudo E2E confermato dal PM. Script di spurgo smantellato dopo esecuzione (niente esplosivi incustoditi nel cantiere). Dogma 13 sancito nel LORE_VAULT.
+
+### Fase 9 Completata — Migrazione OrderDB a Supabase (28/02/2026) ✅ SIGILLATA
+
+- [x] **Fase 9.A (Amputazione ORM OrderDB — 27/02/2026):** Classe `OrderDB` eliminata fisicamente da `calendar.py`. FK `orders.id` recisa da `RegistrationDB` (colonna `order_id` → stringa orfana UUID Supabase). Tabella `orders` DROPpata da `rafting.db` via `drop_orders_table.py`. Tutte le `joinedload(DailyRideDB.orders)` rimosse da `calendar.py`, `public.py`, `availability_engine.py`. Export FIRAFT riscritta con JOIN diretto `RegistrationDB.daily_ride_id → DailyRideDB`. Import `OrderDB` epurato da `main.py`, `__init__.py`.
+- [x] **Fase 9.B (Cablaggio Walkie-Talkie HTTPX — 27/02/2026):** Creato `supabase_bridge.py` (modulo radio centralizzato: 3 funzioni async `fetch_orders_by_ride`, `fetch_order_by_id`, `fetch_pax_by_rides`). Matrioska cablata: `GET /daily-rides/{ride_id}` restituisce ordini Supabase via HTTPX. Daily-schedule: pax reali da `fetch_pax_by_rides`. Public API Kiosk: ordine validato su Supabase Cloud. Schema Pydantic: `orders: List[dict]` per JSON Supabase nativo.
+- [x] **Fase 9.Fix (Pallottoliere Engine + Nimitz — 27/02/2026):** `ride_helpers.py` cablato a Supabase via httpx sincrono (non più `return 0`). `_calc_booked_pax` nell'Engine usa `external_pax_map` correttamente (iniettato dalla Sync Sonda). Frontend: soglia NIMITZ (capacity ≥ 1000) → nasconde denominatore, posti residui e progress bar per attività senza vincoli logistici. Mostra solo "X pax confermati".
+- [x] **Fase 9.Fix (Hotfix Pallottoliere + Sindrome UUID — 28/02/2026):** `ride_helpers.py` epurato da httpx sincrono vietato (Dogma 17). Strato difensivo matematico nei router: `remaining_seats = max(0, total_cap - booked_pax)` se Engine ignora i pax. Frontend blindato: `getRemainingSeats()` e banner Omni-Board deterministici (`cap - pax`). Dogma 16 (Sindrome UUID) e Dogma 17 (Divieto httpx sincrono) sanciti nel LORE_VAULT.
 
 ### Fase 6 Completata — Logistica Fluidodinamica e POS Ibrido (24-27/02/2026)
 
@@ -79,9 +104,8 @@
 
 ## BACKLOG STRATEGICO (Priorità):
 
-1. **PROSSIMA → Fase 9:** Migrazione completa `OrderDB` a Supabase (amputazione finale tabella `orders` da SQLite). Richiede adattamento `AvailabilityEngine`, `calendar.py`, `public.py` a leggere ordini via httpx.
+1. **IN CORSO → Fase 10: Il Mangiasoldi (Cassa & CRM).** Fase 10.A completata. Prossimo: reportistica avanzata, storico ordini per cliente, dashboard incassi giornalieri.
 2. **Opzione B:** Modulo Presenze Giornaliere Staff.
-3. **Opzione C:** Flusso Prenotazioni CRM (Anagrafiche, Pagamenti).
 
 **Completati:**
 
@@ -89,3 +113,4 @@
 - [x] ~~TATTICA IMMINENTE 1: Amputazione ruderi geologici~~ → COMPLETATA
 - [x] ~~TATTICA IMMINENTE 1.5: Abortita amputazione ResourcesPage~~ → Falso Positivo UI
 - [x] ~~Fase 8: Smaltimento Debito Tecnico~~ → COMPLETATA (27/02/2026)
+- [x] ~~Fase 9: Migrazione OrderDB a Supabase~~ → COMPLETATA E SIGILLATA (28/02/2026)

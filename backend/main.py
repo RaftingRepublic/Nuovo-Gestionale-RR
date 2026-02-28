@@ -34,8 +34,9 @@ except ImportError as e:
 from app.db.database import engine, Base
 from app.models.registration import RegistrationDB  # noqa: F401 — import necessario per creare la tabella
 from app.models.calendar import (  # noqa: F401
-    ActivityDB, DailyRideDB, OrderDB, StaffDB, FleetDB,
+    ActivityDB, DailyRideDB, StaffDB, FleetDB,
     ResourceExceptionDB, SystemSettingDB, ActivitySubPeriodDB,
+    # OrderDB: AMPUTATA Fase 9.A — ordini vivono esclusivamente su Supabase
     # TransactionDB, CustomerDB: INCENERITE Fase 8 — classi rimosse
     # CrewAssignmentDB: amputata Fase 8 — ride_allocations JSONB su Supabase
 )
@@ -83,9 +84,8 @@ if resources:
 else:
     print("❌ Router Resources NON caricato. Controlla gli errori sopra.")
 
-# 4. Reservations & Overrides
-from app.api.v1.endpoints import reservations
-app.include_router(reservations.router, prefix="/api/v1/reservations", tags=["Reservations"])
+# 4. Reservations & Overrides — INCENERITO Fase 10 (28/02/2026)
+# Il router reservations.py è stato eliminato fisicamente. Debito tecnico saldato.
 
 # 5. Calendar (BFF — Motore Calendario SQL)
 from app.api.v1.endpoints import calendar
@@ -111,9 +111,9 @@ app.include_router(desk.router, prefix="/api/v1/orders", tags=["Desk POS"])
 from app.api.v1.endpoints import public
 app.include_router(public.router, prefix="/api/v1/public", tags=["Public Check-in"])
 
-# 11. Yield Engine (Motore Matematico Disponibilità)
-from app.api.v1.endpoints import availability
-app.include_router(availability.router, prefix="/api/v1/availability", tags=["Availability Engine"])
+# 11. Yield Engine — INCENERITO Fase 10 (28/02/2026)
+# Il router availability.py era un guscio vuoto del defunto yield_engine.py.
+# Il vero motore è availability_engine.py, invocato internamente da calendar.py.
 
 # 12. Crew Builder (Fase 7 — Lavagna d'Imbarco)
 from app.api.v1.endpoints import crew

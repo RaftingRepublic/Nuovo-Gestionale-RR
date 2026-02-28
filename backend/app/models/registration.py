@@ -40,8 +40,9 @@ class RegistrationDB(Base):
     # Percorso al PDF firmato (relativo a storage/)
     pdf_path = Column(Text, nullable=True, comment="Path relativo al PDF firmato")
     # === IL PONTE VERSO IL CALENDARIO COMMERCIALE ===
-    # FK verso l'ordine (nullable=True perché al Kiosk potrei firmare PRIMA di essere associato a un ordine web)
-    order_id = Column(String(36), ForeignKey("orders.id"), nullable=True, index=True)
+    # FK AMPUTATA Fase 9.A: order_id è ora una stringa orfana contenente l'UUID di Supabase.
+    # L'integrità referenziale è gestita logicamente, non fisicamente in SQLite.
+    order_id = Column(String(36), nullable=True, index=True)
     # FK verso il turno diretto (per link veloce)
     daily_ride_id = Column(String(36), ForeignKey("daily_rides.id"), nullable=True, index=True)
     
@@ -51,8 +52,7 @@ class RegistrationDB(Base):
     # Semaforo Tesseramento
     firaft_status = Column(String(20), default="NON_RICHIESTO", comment="NON_RICHIESTO, DA_TESSERARE, TESSERATO, RIFIUTATO")
 
-    # Relazione bidirezionale
-    order = relationship("OrderDB", back_populates="registrations")
+    # order: AMPUTATA Fase 9.A — OrderDB eliminata, relazione morta
 
     def __repr__(self):
         return f"<Registration {self.id}: {self.cognome} {self.nome}>"

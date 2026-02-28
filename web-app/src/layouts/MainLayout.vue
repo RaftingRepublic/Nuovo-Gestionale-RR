@@ -57,6 +57,11 @@
           <q-item-section>Pannello Variabili</q-item-section>
         </q-item>
 
+        <q-item clickable v-ripple to="/admin/cassa" active-class="text-primary bg-blue-1" @click="leftDrawerOpen = false">
+          <q-item-section avatar><q-icon name="point_of_sale" /></q-item-section>
+          <q-item-section>Cassa &amp; CRM</q-item-section>
+        </q-item>
+
         <!-- Spacer per spingere il logout in fondo -->
         <q-space />
 

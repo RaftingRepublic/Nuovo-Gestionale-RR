@@ -19,12 +19,10 @@ from datetime import date, datetime, timedelta
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session, joinedload
 from app.models.calendar import (
-    ActivityDB, DailyRideDB, OrderDB, StaffDB, FleetDB,
+    ActivityDB, DailyRideDB, StaffDB, FleetDB,
     ResourceExceptionDB, ActivitySubPeriodDB, SystemSettingDB
 )
-
-# Stati ordine che occupano posti
-COUNTING_STATUSES = {"CONFERMATO", "COMPLETATO", "PAGATO", "IN_ATTESA"}
+# OrderDB: AMPUTATA Fase 9.A — pax reali arrivano da external_pax_map (Supabase Sync Sonda)
 
 class AvailabilityEngine:
     """Motore di calcolo disponibilità per una singola data."""
@@ -212,7 +210,7 @@ class AvailabilityEngine:
             db.query(DailyRideDB)
             .options(
                 joinedload(DailyRideDB.activity).joinedload(ActivityDB.sub_periods),
-                joinedload(DailyRideDB.orders),
+                # joinedload(DailyRideDB.orders): AMPUTATA Fase 9.A
             )
             .filter(DailyRideDB.ride_date == target_date)
             .order_by(DailyRideDB.ride_time)
@@ -456,12 +454,8 @@ class AvailabilityEngine:
 
     @staticmethod
     def _calc_booked_pax(ride: DailyRideDB, raft_capacity: int) -> int:
-        pax = 0
-        for o in ride.orders:
-            if o.order_status not in COUNTING_STATUSES: continue
-            if o.is_exclusive_raft: pax += math.ceil(o.total_pax / raft_capacity) * raft_capacity
-            else: pax += o.total_pax
-        return pax
+        """Fallback: usa booked_pax iniettato o 0. Fase 9.A: ride.orders non esiste più."""
+        return getattr(ride, 'booked_pax', 0) or 0
 
     @staticmethod
     def _get_effective_bool(activity: ActivityDB, field: str, target_date: date) -> bool:

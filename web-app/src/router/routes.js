@@ -49,6 +49,9 @@ const routes = [
       // Segreteria (POS)
       { path: 'segreteria', component: () => import('pages/PlanningPage.vue') },
 
+      // FASE 10: Il Mangiasoldi (Cassa & CRM)
+      { path: 'cassa', component: () => import('pages/CassaPage.vue') },
+
       // Redirect legacy per backward-compatibility
       { path: 'pianificazione', redirect: '/admin/operativo' },
     ]

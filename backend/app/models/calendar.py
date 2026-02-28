@@ -3,8 +3,9 @@ Modelli SQL per il Motore Calendario (Tetris) e Logistica.
 Sostituisce i file JSON e si aggancia al modello esistente RegistrationDB.
 
 Fase 8 (27/02/2026): CustomerDB e TransactionDB INCENERITE.
-Ordini commerciali vivono su Supabase. OrderDB mantenuta SOLO per
-relazione SQLite con DailyRideDB/RegistrationDB (calcolo semafori).
+Fase 9.A (27/02/2026): OrderDB AMPUTATA. Ordini commerciali vivono
+ESCLUSIVAMENTE su Supabase. Il calcolo semafori usa booked_pax iniettato
+dalla Sync Sonda (external_pax_map).
 """
 
 import uuid
@@ -99,7 +100,7 @@ class DailyRideDB(Base):
     notes = Column(Text, nullable=True)
 
     activity = relationship("ActivityDB", back_populates="rides")
-    orders = relationship("OrderDB", back_populates="ride")
+    # orders: AMPUTATA Fase 9.A — OrderDB eliminata, pax da Supabase via Sync Sonda
     # crew_assignments, assigned_staff, assigned_fleet: amputati Fase 8
     # Composizione equipaggio gestita da ride_allocations JSONB in Supabase
 
@@ -109,42 +110,10 @@ class DailyRideDB(Base):
 # ==========================================
 
 # ==========================================
-# 3. PRENOTAZIONE COMMERCIALE (Il "Carrello")
+# 3. PRENOTAZIONE COMMERCIALE — AMPUTATA (Fase 9.A, 27/02/2026)
+# OrderDB eliminata: gli ordini commerciali vivono esclusivamente su Supabase.
+# Il calcolo semafori usa booked_pax iniettato dalla Sync Sonda.
 # ==========================================
-class OrderDB(Base):
-    __tablename__ = "orders"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
-    ride_id = Column(String(36), ForeignKey("daily_rides.id"), nullable=False)
-    
-    order_status = Column(String(20), default="IN_ATTESA") # IN_ATTESA, CONFERMATO, COMPLETATO, PAGATO
-    total_pax = Column(Integer, default=1)
-    
-    price_total = Column(Float, default=0.0)
-    price_paid = Column(Float, default=0.0)
-    payment_type = Column(String(50), nullable=True)
-    
-    is_exclusive_raft = Column(Boolean, default=False, comment="True se il gruppo vuole gommone privato")
-    discount_applied = Column(Float, default=0.0, comment="Percentuale sconto applicata (es. 0.10 = 10%)")
-    
-    # Chi ha prenotato online (non per forza chi scende in acqua)
-    customer_name = Column(String(100), nullable=True)
-    customer_email = Column(String(255), nullable=True)
-    customer_phone = Column(String(50), nullable=True)
-    notes = Column(Text, nullable=True)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # ── CAMPI DESK / SEGRETERIA (Cantiere 2) ──
-    booker_name = Column(String(100), nullable=True, comment="Referente gruppo")
-    booker_phone = Column(String(50), nullable=True)
-    booker_email = Column(String(255), nullable=True)
-    ride = relationship("DailyRideDB", back_populates="orders")
-    
-    # ---> IL PONTE D'ORO: 1 Ordine contiene N Registrazioni Fisiche (Kiosk)
-    registrations = relationship("RegistrationDB", back_populates="order", cascade="all, delete-orphan")
-    # TransactionDB: INCENERITA Fase 8 — ledger vive su Supabase
-    # CustomerDB: INCENERITA Fase 8 — CRM vive su Supabase
 
 # ==========================================
 # 3b. TRANSAZIONE (Libro Mastro) — INCENERITA (Fase 8, 27/02/2026)
