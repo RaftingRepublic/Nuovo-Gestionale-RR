@@ -55,7 +55,7 @@ Gli offset e i gap temporali tra le discese (es. AD -> CL) non sono hardcodati, 
 
 ### 🔴 AGGIORNAMENTO MANUALE V5: LIMITI ASIMMETRICI E LA REGOLA DI SARRE (MICRO-SNAVETTAMENTO)
 
-5. 1. **Il Sacco Risorse (Store Vue):** Lo store Pinia (`resource-store.js`) ora possiede i sensori per il pool aziendale: `riverGuides` (is_guide), `shuttleDrivers` (is_driver), `towVans` (has_tow_hitch) e `trailers`. Il getter `totalDailyPool` definisce la capienza massima all'alba.
+5. 1. **Il Sacco Risorse (Store Vue):** Lo store Pinia (`resource-store.js`) ora possiede i sensori per il pool aziendale: `riverGuides` (intersezione deterministica `expandRoles(roles)` × `NAUTICAL_ROLES` — Dogma 19), `shuttleDrivers` (filtra per tag ruolo `['N', 'C', 'F']` — Corollario Dogma 19 Terra), `towVans` (has_tow_hitch) e `trailers`. Il getter `totalDailyPool` definisce la capienza massima all'alba. ⚠️ I booleani `is_guide` e `is_driver` nella tabella `staff` sono MORTI e IGNORATI ovunque nel frontend.
 6. 2. **La Ricetta Logistica (JSON DB):** Le attività salvano il loro fabbisogno (es. guide minime, carrello, navetta) all'interno del DB SQL nella colonna `workflow_schema` (JSON), sotto il nodo `logistics`.
 7. 3. **Hard Limits vs Soft Limits (L'Eccezione di Sarre):** Nel calcolo predittivo della disponibilità, le risorse non si comportano allo stesso modo.
 8. - **Guide e Carrelli (Hard Limits):** Il loro assorbimento è rigido. Se mancano guide per garantire la sicurezza in acqua o carrelli per spostare i gommoni, la capacità del turno scende a ZERO (Semaforo Rosso - Vendite Bloccate).
