@@ -395,7 +395,7 @@
 import { computed, watch, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { useCrewStore } from 'stores/crew-store'
-import { useResourceStore } from 'stores/resource-store'
+import { useResourceStore, isGuideEligibleForActivity } from 'stores/resource-store'
 
 const $q = useQuasar()
 const crewStore = useCrewStore()
@@ -535,8 +535,44 @@ const varoBlockReason = computed(() => {
 const raftOptions = computed(() => {
   return (resourceStore.fleetList || []).filter(f => f.category === 'RAFT' && f.is_active !== false)
 })
+// Hotfix 10.F + Opzione C: Activity-Aware Guide Filtering + Date-Awareness
 const guideOptions = computed(() => {
-  return (resourceStore.staffList || []).filter(s => s.is_guide && s.is_active !== false)
+  const rideDate = props.ride?.date || props.ride?.ride_date || ''
+  return (resourceStore.staffList || []).filter(s => {
+    if (s.is_active === false) return false
+    // 1. Idoneità contestuale all'attività (Activity-Aware + Idratazione Difensiva)
+    const activity = props.ride?.activity || resourceStore.activities?.find(a => a.id === props.ride?.activity_id)
+    if (!isGuideEligibleForActivity(s.roles, activity)) return false
+    // 2. Contratto attivo nella data del turno (se specificato)
+    if (rideDate && s.contract_periods) {
+      let periods = []
+      try {
+        periods = typeof s.contract_periods === 'string' ? JSON.parse(s.contract_periods) : s.contract_periods
+      } catch { periods = [] }
+      if (Array.isArray(periods) && periods.length > 0) {
+        const targetTime = new Date(rideDate).setHours(0, 0, 0, 0)
+        const inContract = periods.some(cp => {
+          if (!cp.start || !cp.end) return false
+          return targetTime >= new Date(cp.start).setHours(0, 0, 0, 0) &&
+                 targetTime <= new Date(cp.end).setHours(23, 59, 59, 999)
+        })
+        if (!inContract) return false
+      }
+      // Array vuoto o assente = tempo indeterminato → valida
+    }
+    // 3. Nessuna eccezione di assenza per questa data
+    if (rideDate && s.id) {
+      const exceptions = resourceStore.resourceExceptions || []
+      const isAbsent = exceptions.some(exc =>
+        String(exc.resource_id) === String(s.id) &&
+        exc.resource_type === 'STAFF' &&
+        exc.is_available === false &&
+        Array.isArray(exc.dates) && exc.dates.includes(rideDate)
+      )
+      if (isAbsent) return false
+    }
+    return true
+  })
 })
 
 // ── Ordini ancora da imbarcare (con pax residui > 0) ──

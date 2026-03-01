@@ -20,6 +20,27 @@
 - [x] **Fase 10.fix — Operazione Acchiappafantasmi (28/02/2026):** Blindatura Frontend (DeskBookingForm.vue): rules Quasar obbligatorie su booker_name con trim + lazy-rules, validazione programmatica via ref, bottone CONFERMA disabilitato se nome vuoto o soli spazi. Blindatura Backend (desk.py): fallback difensivo "Cliente Walk-in" se booker_name vuoto, CRM UPSERT SEMPRE eseguito (rimosso bypass condizionale), parsing risposta Supabase robusto (list/dict), Kill-Switch Dogma 18 (HTTPException 400 se customer_id ancora None dopo il pipeline CRM). **BUG CRITICO 7.1 (Ordini orfani): RISOLTO E COLLAUDATO E2E.**
 - [x] **Fase 10.fix — Cura Allucinazioni Frontend (28/02/2026):** CassaPage.vue: corretta select relazionale rides(date, time) invece di rides(ride_date, ride_time). Rimossa colonna created_at inesistente dalla q-table transazioni e dal template pagamenti nel fascicolo. Ordinamento fetchTransactions cambiato da .order('created_at') a .order('id'). Campo notes corretto in note. Eliminati 2 errori Supabase 42703.
 - [x] **Fase 10.fix — Graffettatrice Vue (28/02/2026):** CassaPage.vue: importato uid() da Quasar e iniettato come Primary Key nel payload INSERT su tabella transactions. Fix violazione vincolo NOT NULL su colonna id. Corollario Dogma 18 sancito nel LORE_VAULT.
+- [x] **Fase 10.fix — Operazione Cronografo (28/02/2026):** Aggiunta colonna `created_at` (TIMESTAMPTZ, DEFAULT now()) alla tabella `transactions` in Supabase via ALTER TABLE + NOTIFY pgrst. Retrodatazione storica: UPDATE transactions SET created_at = orders.created_at FROM orders WHERE transactions.order_id = orders.id. UI CassaPage.vue aggiornata: colonna "Data" nella q-table transazioni, visualizzazione data nell'intestazione ordini del Fascicolo Cliente, fetchTransactions ora ordina per `created_at DESC` (incassi più recenti in cima). Fascicolo Cliente (`apriFascicolo`) ordina ordini per `created_at DESC`.
+
+### Fase 10.E — Hotfix Allineamento Sensori e Data-Awareness (28/02/2026) ✅ COMPLETATA
+
+- [x] **Hotfix 10.E.1 — Innesto Date-Awareness Crew Builder (28/02/2026):** Dato: i dropdown guide (CrewBuilderPanel.vue, ResourcePanel.vue) filtravano per brevetti nautici ma ignoravano i contratti e le assenze (Bug Viaggi nel Tempo). Fix: filtro incrociato a 3 livelli — (1) brevetto nautico NAUTICAL_ROLES, (2) contract_periods: se array popolato, ride.date DEVE cadere in almeno un intervallo [start, end]; se vuoto/assente = tempo indeterminato, (3) resource_exceptions: nessuna eccezione di assenza per quella data.
+- [x] **Hotfix 10.E.2 — Chiusura Leak NIMITZ in Modale (28/02/2026):** Dato: ResourcePanel.vue mostrava "Pax: 0 / 7992" nell'header. Violazione Dogma 15. Fix: condizionale `v-if="total_capacity < 1000"` sul denominatore. Se >= 1000 mostra solo "Pax: N confermati". RideDialog.vue era già conforme.
+- [x] **Hotfix 10.E.3 — Sincronizzazione Cromatica Timeline (28/02/2026):** Dato: blocchi Gantt in TimelinePage.vue usavano colore statico dal catalogo (getActivityColor), ignorando engine_status. Split-Brain cromatico. Fix: creata STATUS_COLOR_MAP (A→Verde, B→Giallo, C→Rosso, D→Blu). Funzioni getRideStatusBgColor/getRideStatusClass applicate a entrambe le viste (DISC + ROLE). enrichedBlock arricchito con rideStatus per la vista ROLE.
+
+### Fase 10.F — Hotfix Skill Hierarchy Matrix (28/02/2026) ✅ COMPLETATA
+
+- [x] **Hotfix 10.F.1 — Backend SKILL_MATRIX (28/02/2026):** Definite costanti globali `SKILL_MATRIX` e `NAUTICAL_ROLES` + funzione pura `expand_roles()` in `availability_engine.py`. Matrice di Ereditarietà Asimmetrica: RAF4→{RAF4,RAF3}, HYD→{HYD,SH,SK}. Il metodo `_count_active_guides` ora usa `expand_roles(raw_roles)` per l'intersezione con NAUTICAL_ROLES.
+- [x] **Hotfix 10.F.2 — Frontend Store SKILL_MATRIX (28/02/2026):** Esportate `SKILL_MATRIX` e `expandRoles()` da `resource-store.js` come funzioni globali pre-store. Getter `riverGuides` e `totalDailyPool` aggiornati: usano `expandRoles(roles)` con `.has()` al posto di `.includes()` piatto.
+- [x] **Hotfix 10.F.3 — Frontend Panels Date-Aware + Hierarchy (28/02/2026):** `CrewBuilderPanel.vue` e `ResourcePanel.vue`: importata `expandRoles` dallo store. Chunk competenze in `guideOptions` e `filteredGuideOptions` aggiornato con espansione gerarchica. Controlli Date-Awareness (contract_periods, resource_exceptions) intatti e non alterati.
+
+### Fase 10.G — Activity-Aware Guide Filtering + Flat Driver Fallacy (01/03/2026) ✅ COMPLETATA
+
+- [x] **Fase 10.G.1 — Funzione isGuideEligibleForActivity (01/03/2026):** Creata funzione corazzata `isGuideEligibleForActivity(guideRoles, activityObj)` in `resource-store.js` con cascata decisionale a 3 livelli: (1) Scudo Dogma 19 Assoluto (NAUTICAL_ROLES), (2) Match Codice DB (ACTIVITY_REQUIREMENTS: sigle legacy AD/CL/SL/FA/HYD + codici fisici DB A1/C1/S1/F1/H1/PL), (3) Fallback Macro-Classe (activity_class HYDRO/RAFTING). Seconda firma accetta oggetto attività completo, non stringa codice.
+- [x] **Fase 10.G.2 — Idratazione Difensiva Pinia (01/03/2026):** `props.ride.activity` è `undefined` nel 100% dei casi reali (dato orfano). Fix: `CrewBuilderPanel.vue` (store: `resourceStore`) e `ResourcePanel.vue` (store: `store`) eseguono lookup nel catalogo Pinia: `props.ride?.activity || STORE.activities?.find(a => a.id === props.ride?.activity_id)` prima di passare l'oggetto a `isGuideEligibleForActivity`.
+- [x] **Fase 10.G.3 — Rimozione logica obsoleta ResourcePanel (01/03/2026):** Eliminati `currentActivityClass`, `validGuideRoles`, `HYDRO_GUIDE_ROLES`, `RAFT_GUIDE_ROLES`. La logica HYDRO vs RAFTING è ora centralizzata nella funzione store.
+- [x] **Fase 10.G.4 — Espansione Verticale Calendario (01/03/2026):** Rimosso `MAX_VISIBLE_RIDES=5` e badge overflow "+ N altri" da `CalendarComponent.vue`. Grid CSS cambiato a `grid-auto-rows: auto`. I box si espandono verticalmente per contenere tutte le attività.
+- [x] **Fase 10.G.5 — Hotfix Flat Driver Fallacy (01/03/2026):** Estirpato il booleano `is_driver` dal frontend. `shuttleDrivers` e `totalDailyPool.drivers` in `resource-store.js` ora filtrano per `roles.some(r => ['N','C','F'].includes(r))`. `filteredDriverOptions` in `ResourcePanel.vue`: rimosso `s.is_driver`, `DRIVER_ROLES` aggiornato a `['N','C','F']`. Corollario Dogma 19 sancito.
 
 ---
 
@@ -105,7 +126,7 @@
 
 ## BACKLOG STRATEGICO (Priorità):
 
-1. **STABILE → Fase 10: Il Mangiasoldi (Cassa & CRM).** Fase 10.A-D completata + 3 fix (Acchiappafantasmi, Allucinazioni Schema, Graffettatrice). Prossimo: Reportistica avanzata, storico ordini per cliente, dashboard incassi giornalieri.
+1. **STABILE → Fase 10: Il Mangiasoldi (Cassa & CRM).** Fase 10.A-D completata + 4 fix + Hotfix 10.E/F/G. Prossimo: Reportistica avanzata, storico ordini per cliente, dashboard incassi giornalieri.
 2. **Opzione B:** Modulo Presenze Giornaliere Staff.
 
 **Completati:**
@@ -115,3 +136,5 @@
 - [x] ~~TATTICA IMMINENTE 1.5: Abortita amputazione ResourcesPage~~ → Falso Positivo UI
 - [x] ~~Fase 8: Smaltimento Debito Tecnico~~ → COMPLETATA (27/02/2026)
 - [x] ~~Fase 9: Migrazione OrderDB a Supabase~~ → COMPLETATA E SIGILLATA (28/02/2026)
+- [x] ~~Opzione C: Activity-Aware Guide Filtering~~ → COMPLETATA come Fase 10.G (01/03/2026)
+- [x] ~~Hotfix: Flat Driver Fallacy~~ → Estirpazione is_driver dal comparto terra (01/03/2026)

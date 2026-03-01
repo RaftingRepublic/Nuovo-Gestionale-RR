@@ -24,6 +24,30 @@ from app.models.calendar import (
 )
 # OrderDB: AMPUTATA Fase 9.A — pax reali arrivano da external_pax_map (Supabase Sync Sonda)
 
+# ═══ Hotfix 10.F — Skill Hierarchy Matrix (Dogma 19 Corollario) ═══
+# Matrice di Espansione Dinamica: il DB fornisce solo il Lead Role base.
+# Questa matrice calcola la fungibilità nautica per ereditarietà asimmetrica.
+SKILL_MATRIX = {
+    "RAF4": {"RAF4", "RAF3"},
+    "RAF3": {"RAF3"},
+    "HYD":  {"HYD", "SH", "SK"},
+    "SH":   {"SH"},
+    "SK":   {"SK"},
+    "CB":   {"CB"},
+}
+
+NAUTICAL_ROLES = {'RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB'}
+
+def expand_roles(base_roles: list) -> set:
+    """Espande i ruoli base applicando la Skill Hierarchy Matrix.
+    Es: ['RAF4'] -> {'RAF4', 'RAF3'}, ['HYD'] -> {'HYD', 'SH', 'SK'}
+    Un ruolo sconosciuto viene passato tal quale (fallback identity)."""
+    expanded = set()
+    for r in (base_roles or []):
+        expanded.update(SKILL_MATRIX.get(r, {r}))
+    return expanded
+
+
 class AvailabilityEngine:
     """Motore di calcolo disponibilità per una singola data."""
 
@@ -420,12 +444,28 @@ class AvailabilityEngine:
 
     @staticmethod
     def _count_active_guides(db: Session, target_date: date, date_str: str) -> int:
-        all_guides = db.query(StaffDB).filter(StaffDB.is_guide == True, StaffDB.is_active == True).all()
+        """Bugfix #2: Filtro deterministico ruoli nautici — MAI usare is_guide (include civili).
+        Conta solo staff il cui array 'roles' interseca la matrice brevetti fluviali."""
+        NAUTICAL_ROLES = {'RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB'}
+        all_staff = db.query(StaffDB).filter(StaffDB.is_active == True).all()
         count = 0
-        for guide in all_guides:
-            if guide.contract_type == "FISSO":
+        for staff in all_staff:
+            # Parse ruoli in modo difensivo
+            raw_roles = staff.roles or []
+            if isinstance(raw_roles, str):
+                try:
+                    raw_roles = json.loads(raw_roles)
+                except Exception:
+                    raw_roles = [r.strip().upper() for r in raw_roles.split(',') if r.strip()]
+            if not isinstance(raw_roles, list):
+                raw_roles = []
+            # Hotfix 10.F: Espansione gerarchica prima dell'intersezione
+            expanded = expand_roles(raw_roles)
+            if not NAUTICAL_ROLES.intersection(expanded):
+                continue
+            if staff.contract_type == "FISSO":
                 in_contract = False
-                for cp in (guide.contract_periods or []):
+                for cp in (staff.contract_periods or []):
                     try:
                         cp_start = date.fromisoformat(cp["start"])
                         cp_end = date.fromisoformat(cp["end"])
@@ -435,10 +475,10 @@ class AvailabilityEngine:
                     except Exception:
                         pass
                 if not in_contract: continue
-                if AvailabilityEngine._has_exception(db, guide.id, "STAFF", date_str, False): continue
+                if AvailabilityEngine._has_exception(db, staff.id, "STAFF", date_str, False): continue
                 count += 1
-            elif guide.contract_type == "EXTRA":
-                if AvailabilityEngine._has_exception(db, guide.id, "STAFF", date_str, True): count += 1
+            elif staff.contract_type == "EXTRA":
+                if AvailabilityEngine._has_exception(db, staff.id, "STAFF", date_str, True): count += 1
         return count
 
     @staticmethod

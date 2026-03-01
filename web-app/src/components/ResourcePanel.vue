@@ -9,7 +9,7 @@
 
       <q-card-section class="bg-blue-grey-8 text-white q-pt-xs">
         <div class="text-subtitle2">{{ localSlot.time ? String(localSlot.time).substring(0,5) : '' }} — {{ localSlot.activity_type || localSlot.activity_name || '' }}</div>
-        <div class="text-caption">Pax: {{ localSlot.booked_pax || 0 }} / {{ localSlot.total_capacity || 16 }}</div>
+        <div class="text-caption">Pax: {{ localSlot.booked_pax || 0 }}<template v-if="(localSlot.total_capacity || 0) < 1000"> / {{ localSlot.total_capacity || 16 }}</template><template v-else> confermati</template></div>
       </q-card-section>
 
       <q-card-section class="q-pt-md scroll" style="flex-grow: 1;">
@@ -167,7 +167,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
-import { useResourceStore } from 'stores/resource-store'
+import { useResourceStore, isGuideEligibleForActivity } from 'stores/resource-store'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -185,7 +185,7 @@ const isOpen = computed({
 })
 
 const GUIDE_ROLES = ['RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB'];
-const DRIVER_ROLES = ['N', 'C'];
+const DRIVER_ROLES = ['N', 'C', 'F'];
 
 function matchesResourceType(blockResources, allocType) {
   if (!blockResources || !Array.isArray(blockResources)) return false;
@@ -353,46 +353,44 @@ onMounted(async () => {
 // I value sono NOMI (stringhe) per compatibilità Yield Engine
 // ═══════════════════════════════════════════════════════════
 
-// Ruoli specifici per classe attività
-const HYDRO_GUIDE_ROLES = ['HYD', 'SH', 'SK', 'CB']
-const RAFT_GUIDE_ROLES = ['RAF4', 'RAF3', 'SK', 'CB']
-
-/**
- * Determina la classe dell'attività corrente (HYDRO o RAFTING).
- * Lookup: 1) activity_class dal backend SQLite (se caricata)
- *         2) Fallback: se il titolo contiene "hydro" → HYDRO, altrimenti RAFTING
- */
-const currentActivityClass = computed(() => {
-  const actId = localSlot.activity_id
-  const actName = localSlot.activity_type || localSlot.activity_name || ''
-
-  // Lookup nelle attività SQLite (hanno activity_class, code, color_hex)
-  if (actId) {
-    const act = store.activities.find(a => String(a.id) === String(actId))
-    if (act?.activity_class) return act.activity_class
-  }
-
-  // Fallback: deduzione dal nome
-  if (actName.toLowerCase().includes('hydro')) return 'HYDRO'
-  return 'RAFTING'
-})
-
-/**
- * Ruoli guida validi per l'attività corrente.
- * HYDRO: solo brevetti acquatici (HYD, SH, SK, CB)
- * RAFTING: solo brevetti raft (RAF4, RAF3, SK, CB)
- */
-const validGuideRoles = computed(() => {
-  return currentActivityClass.value === 'HYDRO' ? HYDRO_GUIDE_ROLES : RAFT_GUIDE_ROLES
-})
-
+// Hotfix 10.F + Opzione C: Activity-Aware Guide Filtering + Date-Awareness
 const filteredGuideOptions = computed(() => {
-  const roles = validGuideRoles.value
+  const rideDate = localSlot.date || ''
   return store.staffList
-    .filter(s =>
-      s.is_active !== false &&
-      (s.is_guide || (s.roles && s.roles.some(r => roles.includes(r))))
-    )
+    .filter(s => {
+      if (s.is_active === false) return false
+      // 1. Idoneità contestuale all'attività (Activity-Aware + Idratazione Difensiva)
+      const activity = props.ride?.activity || store.activities?.find(a => a.id === props.ride?.activity_id)
+      if (!isGuideEligibleForActivity(s.roles, activity)) return false
+      // 2. Contratto attivo nella data del turno
+      if (rideDate && s.contract_periods) {
+        let periods = []
+        try {
+          periods = typeof s.contract_periods === 'string' ? JSON.parse(s.contract_periods) : s.contract_periods
+        } catch { periods = [] }
+        if (Array.isArray(periods) && periods.length > 0) {
+          const targetTime = new Date(rideDate).setHours(0, 0, 0, 0)
+          const inContract = periods.some(cp => {
+            if (!cp.start || !cp.end) return false
+            return targetTime >= new Date(cp.start).setHours(0, 0, 0, 0) &&
+                   targetTime <= new Date(cp.end).setHours(23, 59, 59, 999)
+          })
+          if (!inContract) return false
+        }
+      }
+      // 3. Nessuna eccezione di assenza per questa data
+      if (rideDate && s.id) {
+        const exceptions = store.resourceExceptions || []
+        const isAbsent = exceptions.some(exc =>
+          String(exc.resource_id) === String(s.id) &&
+          exc.resource_type === 'STAFF' &&
+          exc.is_available === false &&
+          Array.isArray(exc.dates) && exc.dates.includes(rideDate)
+        )
+        if (isAbsent) return false
+      }
+      return true
+    })
     .map(s => ({ label: s.name, value: s.name, _roles: s.roles || [] }))
 })
 
@@ -400,7 +398,7 @@ const filteredDriverOptions = computed(() => {
   return store.staffList
     .filter(s =>
       s.is_active !== false &&
-      (s.is_driver || (s.roles && s.roles.some(r => DRIVER_ROLES.includes(r))))
+      Array.isArray(s.roles) && s.roles.some(r => DRIVER_ROLES.includes(r))
     )
     .map(s => ({ label: s.name, value: s.name, _roles: s.roles || [] }))
 })

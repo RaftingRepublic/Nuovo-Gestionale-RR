@@ -2,6 +2,72 @@ import { defineStore } from 'pinia'
 import { api } from 'src/boot/axios'
 import { supabase } from 'src/supabase'
 
+// ═══ Hotfix 10.F — Skill Hierarchy Matrix (Dogma 19 Corollario) ═══
+// Matrice di Espansione Dinamica: il DB fornisce solo il Lead Role base.
+// Questa matrice calcola la fungibilità nautica per ereditarietà asimmetrica.
+export const SKILL_MATRIX = {
+  RAF4: ['RAF4', 'RAF3'],
+  RAF3: ['RAF3'],
+  HYD:  ['HYD', 'SH', 'SK'],
+  SH:   ['SH'],
+  SK:   ['SK'],
+  CB:   ['CB']
+}
+
+export function expandRoles(roles) {
+  if (!roles || !Array.isArray(roles)) return new Set()
+  const expanded = new Set()
+  roles.forEach(r => {
+    if (SKILL_MATRIX[r]) {
+      SKILL_MATRIX[r].forEach(er => expanded.add(er))
+    } else {
+      expanded.add(r)
+    }
+  })
+  return expanded
+}
+
+// ═══ Opzione C — Activity-Aware Guide Filtering (Patch Blindata) ═══
+// Mappa codice attività → brevetti richiesti (Manuale Master Sez. 5 + Codici DB Reali)
+export const ACTIVITY_REQUIREMENTS = {
+  // Sigle Legacy / Teoriche
+  'AD': ['RAF4'], 'CL': ['RAF4'], 'SL': ['RAF4'], 'FA': ['RAF3'], 'HYD': ['HYD', 'SH', 'SK', 'CB'],
+  // Codici Fisici DB Reali (Estratti dal Costruttore Flussi)
+  'A1': ['RAF4'], 'C1': ['RAF4'], 'S1': ['RAF4'], 'F1': ['RAF3'], 'H1': ['HYD', 'SH', 'SK', 'CB'],
+  'PL': ['HYD', 'SH', 'SK', 'CB'] // Blocco prova laghetto
+}
+
+export function isGuideEligibleForActivity(guideRoles, activityObj) {
+  const expandedGuideRoles = expandRoles(guideRoles)
+  const NAUTICAL_ROLES = ['RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB']
+
+  // 1. SCUDO DOGMA 19 ASSOLUTO: Se non possiedi un brevetto nautico, sei un civile. Scarto immediato.
+  const isNautical = NAUTICAL_ROLES.some(role => expandedGuideRoles.has(role))
+  if (!isNautical) return false
+
+  // Se l'idratazione fallisce, la risorsa ha comunque superato lo scudo nautico. Viene ammessa per evitare blocchi.
+  if (!activityObj) return true
+
+  const code = activityObj.code ? activityObj.code.toUpperCase() : null
+  const aClass = activityObj.activity_class ? activityObj.activity_class.toUpperCase() : null
+
+  // 2. MATCH ESATTO SUL CODICE
+  if (code && ACTIVITY_REQUIREMENTS[code]) {
+    return ACTIVITY_REQUIREMENTS[code].some(reqRole => expandedGuideRoles.has(reqRole))
+  }
+
+  // 3. FALLBACK STRUTTURALE SULLA MACRO-CLASSE
+  if (aClass === 'HYDRO' || aClass === 'HYDROSPEED') {
+    return ['HYD', 'SH', 'SK', 'CB'].some(role => expandedGuideRoles.has(role))
+  }
+  if (aClass === 'RAFT' || aClass === 'RAFTING') {
+    return ['RAF4', 'RAF3'].some(role => expandedGuideRoles.has(role))
+  }
+
+  // Ultima ratio: Attività sconosciuta, ma la guida è nautica certificata (Scudo 1 superato).
+  return true
+}
+
 export const useResourceStore = defineStore('resource', {
   state: () => ({
     staffList: [],
@@ -41,14 +107,31 @@ export const useResourceStore = defineStore('resource', {
     vans: (state) => state.fleetList.filter(f => f.category === 'VAN'),
     trailers: (state) => state.fleetList.filter(f => f.category === 'TRAILER'),
     towVans: (state) => state.fleetList.filter(f => f.category === 'VAN' && f.has_tow_hitch),
-    riverGuides: (state) => state.staffList.filter(s => s.is_guide),
-    shuttleDrivers: (state) => state.staffList.filter(s => s.is_driver),
-    totalDailyPool: (state) => ({
-      guides: state.staffList.filter(s => s.is_guide).length,
-      drivers: state.staffList.filter(s => s.is_driver).length,
-      vans: state.fleetList.filter(f => f.category === 'VAN').length,
-      trailers: state.fleetList.filter(f => f.category === 'TRAILER').length
-    }),
+    // Hotfix 10.F: Filtro con Skill Hierarchy Matrix (Dogma 19)
+    // expandRoles applica l'ereditarietà asimmetrica prima dell'intersezione
+    riverGuides: (state) => {
+      const NAUTICAL_ROLES = ['RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB']
+      return state.staffList.filter(s => {
+        const roles = Array.isArray(s.roles) ? s.roles : []
+        const expanded = expandRoles(roles)
+        return NAUTICAL_ROLES.some(r => expanded.has(r))
+      })
+    },
+    // Hotfix Dogma 19: autisti identificati per ruolo, non per booleano obsoleto
+    shuttleDrivers: (state) => state.staffList.filter(s => s.is_active !== false && Array.isArray(s.roles) && s.roles.some(r => ['N', 'C', 'F'].includes(r))),
+    totalDailyPool: (state) => {
+      const NAUTICAL_ROLES = ['RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB']
+      return {
+        guides: state.staffList.filter(s => {
+          const roles = Array.isArray(s.roles) ? s.roles : []
+          const expanded = expandRoles(roles)
+          return NAUTICAL_ROLES.some(r => expanded.has(r))
+        }).length,
+        drivers: state.staffList.filter(s => s.is_active !== false && Array.isArray(s.roles) && s.roles.some(r => ['N', 'C', 'F'].includes(r))).length,
+        vans: state.fleetList.filter(f => f.category === 'VAN').length,
+        trailers: state.fleetList.filter(f => f.category === 'TRAILER').length
+      }
+    },
   },
 
   actions: {

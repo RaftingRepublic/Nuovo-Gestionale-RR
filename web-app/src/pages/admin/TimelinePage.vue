@@ -116,11 +116,12 @@
                 <div
                   v-for="(block, idx) in getComputedBlocks(ride)"
                   :key="idx"
-                  class="gantt-block absolute text-white row items-center shadow-1 overflow-hidden rounded-borders"
+                  class="gantt-block absolute row items-center shadow-1 overflow-hidden rounded-borders"
+                  :class="getRideStatusClass(ride)"
                   :style="{
                     left: calcLeftPercent(block.startMin) + '%',
                     width: Math.max(0.5, calcWidthPercent(block.duration)) + '%',
-                    backgroundColor: block.color || getActivityColor(ride),
+                    backgroundColor: getRideStatusBgColor(ride),
                     top: getBlockTop(block) + '%',
                     height: getBlockHeight(block) + '%',
                     borderRadius: '3px',
@@ -186,11 +187,12 @@
               <div
                 v-for="(block, bIdx) in row.blocks"
                 :key="bIdx"
-                class="gantt-block absolute text-white row items-center shadow-1 overflow-hidden rounded-borders"
+                class="gantt-block absolute row items-center shadow-1 overflow-hidden rounded-borders"
+                :class="getRideStatusClassFromBlock(block)"
                 :style="{
                   left: calcLeftPercent(block.startMin) + '%',
                   width: Math.max(0.5, calcWidthPercent(block.duration)) + '%',
-                  backgroundColor: block.rideColor || '#607d8b',
+                  backgroundColor: getRideStatusBgColorFromBlock(block),
                   top: getRoleLaneTop(block.laneIndex, row.lanesCount) + '%',
                   height: getRoleLaneHeight(row.lanesCount) + '%',
                   borderRadius: '3px',
@@ -376,6 +378,7 @@ const roleTimelineRows = computed(() => {
         rideColor,
         rideName,
         rideTime,
+        rideStatus: _resolveStatus(ride),
         allRoleTags: tags,
         laneIndex: 0, // Default, verrà sovrascritto dal packer
       }
@@ -448,6 +451,47 @@ function calcWidthPercent(durationMins) {
 function getActivityColor(ride) {
   const act = store.activities.find(a => String(a.id) === String(ride.activity_id))
   return act?.color_hex || ride.color_hex || '#1976D2'
+}
+
+// ═══════════════════════════════════════════════════════════
+// Obiettivo 3: Mappatura cromatica dinamica dal semaforo motore
+// Elimina lo Split-Brain: il colore del blocco Gantt dipende
+// ESCLUSIVAMENTE dallo status del turno, non dal catalogo.
+// ═══════════════════════════════════════════════════════════
+const STATUS_COLOR_MAP = {
+  'A': { bg: '#c8e6c9', text: 'text-green-9' },   // VERDE
+  'B': { bg: '#fff3e0', text: 'text-orange-9' },   // GIALLO
+  'C': { bg: '#ef5350', text: 'text-white' },       // ROSSO
+  'D': { bg: '#42a5f5', text: 'text-white' },       // BLU
+  'VERDE': { bg: '#c8e6c9', text: 'text-green-9' },
+  'GIALLO': { bg: '#fff3e0', text: 'text-orange-9' },
+  'ROSSO': { bg: '#ef5350', text: 'text-white' },
+  'BLU': { bg: '#42a5f5', text: 'text-white' },
+}
+
+function _resolveStatus(ride) {
+  return ride?.engine_status || ride?.status || ride?.status_code || 'A'
+}
+
+function getRideStatusBgColor(ride) {
+  const status = _resolveStatus(ride)
+  return STATUS_COLOR_MAP[status]?.bg || getActivityColor(ride)
+}
+
+function getRideStatusClass(ride) {
+  const status = _resolveStatus(ride)
+  return STATUS_COLOR_MAP[status]?.text || 'text-white'
+}
+
+// Per la vista ROLE: i blocchi trasportano rideStatus dal builder
+function getRideStatusBgColorFromBlock(block) {
+  const status = block.rideStatus || 'A'
+  return STATUS_COLOR_MAP[status]?.bg || block.rideColor || '#607d8b'
+}
+
+function getRideStatusClassFromBlock(block) {
+  const status = block.rideStatus || 'A'
+  return STATUS_COLOR_MAP[status]?.text || 'text-white'
 }
 
 // Posizionamento verticale per flussi paralleli

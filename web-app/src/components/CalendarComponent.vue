@@ -123,6 +123,7 @@
               <div v-if="ride.isGhost" class="text-grey-5">Slot disponibile — clicca per prenotare</div>
             </q-tooltip>
           </div>
+
         </div>
 
         <!-- FOOTER: Potenza di Fuoco — badge colorati (Date-Aware) -->
@@ -164,6 +165,8 @@ const internalViewMode = ref(props.viewMode)
 watch(() => props.viewMode, (v) => internalViewMode.value = v)
 
 const weekDays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
+
+// Opzione C: Nessun troncamento — tutti i mattoncini visibili, la riga si espande
 
 const currentMonthName = computed(() => {
   return new Date(props.year, props.month - 1).toLocaleString('it-IT', { month: 'long' })
@@ -395,7 +398,8 @@ function isToday(dateStr) {
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    grid-template-rows: auto 1fr 1fr 1fr 1fr 1fr;
+    grid-template-rows: auto;
+    grid-auto-rows: auto;
     gap: 4px;
     flex-grow: 1;
     overflow-y: auto;
@@ -447,8 +451,10 @@ function isToday(dateStr) {
 
 .slots-container {
     flex-grow: 1;
-    overflow-y: auto;
+    overflow-y: visible;
 }
+
+
 
 /* ── Mattoncini: Layout a colonna (corpo + allocazioni) ── */
 .ride-brick {

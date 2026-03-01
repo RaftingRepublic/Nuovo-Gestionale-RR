@@ -2,7 +2,17 @@ LORE VAULT - RAFTING REPUBLIC
 
 Documento di Riferimento Supremo. Architettura, Lore e Scelte di Business consolidate.
 
-Aggiornato a: Chiusura Fase 9 — OrderDB Amputata, Cablaggio HTTPX Supabase (27/02/2026 23:55)
+Aggiornato a: Fase 10.G — Activity-Aware Guide Filtering + Flat Driver Fallacy COMPLETATE (01/03/2026 01:33)
+
+0\. CONTESTO OPERATIVO E OBIETTIVI DI BUSINESS
+
+**Scadenza Tassativa:** Maggio 2026. Il sistema deve essere operativo e collaudato entro l'apertura della stagione.
+
+**Strategia Dogfooding:** Lo sviluppo di questo ERP risolve l'urgenza logistica di Rafting Republic, ma il fine ultimo è validare l'architettura per fondare una startup SaaS B2B dedicata ai commercialisti. L'infrastruttura e il codice DEVONO essere scalabili e modulari.
+
+**UX Requirement — "Velocità al Bancone":** Zero context-switching in Segreteria. L'Omni-Board (PlanningPage.vue + RideDialog.vue) è l'UNICA interfaccia operativa autorizzata. Qualsiasi funzione commerciale, logistica o di cassa DEVE collassare nella modale del turno o nella CassaPage, mai in interfacce standalone.
+
+**Infrastruttura:** DB cloud Supabase (datacenter Francoforte), deploy Ergonet CloudLinux (limite hardware granitico: 1GB RAM, Protocollo LVE). È SEVERAMENTE VIETATO eseguire modelli AI in locale. Qualsiasi servizio di intelligenza artificiale DEVE operare via API REST cloud (Azure OCR).
 
 🔴 MAPPA DEGLI ORGANI VITALI (L'Architettura Definitiva)
 
@@ -39,7 +49,7 @@ Architettura Ibrida (Split-Brain Controllato):
 
 SQLite (Locale): Catalogo deterministico. Single Source of Truth per activities, settings, staff, fleet.
 
-Supabase (Cloud PostgreSQL): Registro operativo per i dati caldi (rides, orders, ride_allocations).
+Supabase (Cloud PostgreSQL): Registro operativo per i dati caldi (rides, orders, transactions, customers, ride_allocations).
 
 🚨 **Architettura Ibrida Desk POS (Scelta Consolidata 27/02/2026):** Risolto lo Split-Brain. Gli ordini, le transazioni (Libro Mastro) e gli Slot Fantasma vengono scritti ESCLUSIVAMENTE su Supabase via API PostgREST (`httpx`). Il Catalogo (`activities`) viene letto DA SQLITE LOCALE. I Turni (`rides`) subiscono un DUAL-WRITE per garantire l'integrità referenzionale (stesso UUID in locale e in cloud). SQLAlchemy è DEPRECATO per la cassa.
 
@@ -234,6 +244,12 @@ Nessun ordine commerciale può essere inviato a Supabase senza prima aver creato
 
 ⚠️ **COROLLARIO — La Graffettatrice del Cassiere (28/02/2026):** Qualsiasi inserimento diretto (INSERT) proveniente dal client Vue.js verso tabelle Supabase (es. `transactions`) DEVE generare e includere la Primary Key (UUID) utilizzando l'utility `uid()` di Quasar PRIMA dell'invio del payload. Supabase Cloud respinge la query per violazione del vincolo NOT NULL se l'ID è assente. Il backend Python genera le PK con `uuid.uuid4()`, il frontend le genera con `uid()` di Quasar. Mai delegare la generazione ID al database cloud: il client è responsabile della propria graffetta.
 
+🔴 **DOGMA 19 — LA FLAT ROLE FALLACY (Anti-Data-Leakage Ruoli, 28/02/2026):**
+
+Il campo booleano `is_guide` nel database è un **vettore di data leakage mortale**. Un civile (segretaria, fotografo) con `is_guide=True` inquina silenziosamente: (A) il pool guide del Motore Predittivo (gonfia la capienza: 3 guide × 8 pax = 24 invece di 2 × 8 = 16 — Bug Allucinazione Capienza), (B) i dropdown di assegnazione guide nel Crew Builder e nel ResourcePanel (civili selezionabili come guide), (C) il conteggio "Potenza di Fuoco" nel footer del Calendario. **Regola aurea: MAI usare `is_guide` per filtrare le guide fluviali.** L'unica fonte di verità è l'intersezione deterministica tra l'array `roles[]` dello staff e la matrice dei brevetti nautici `NAUTICAL_ROLES = ['RAF4', 'RAF3', 'HYD', 'SH', 'SK', 'CB']`. Applicato in 4 punti: `availability_engine.py` (backend — `_count_active_guides`), `resource-store.js` (getter `riverGuides` e `totalDailyPool`), `CrewBuilderPanel.vue` (`guideOptions`) e `ResourcePanel.vue` (`filteredGuideOptions`). Scoperto e corretto nella sessione del 28/02/2026 (Operazione Disinfestazione).
+
+⚠️ **COROLLARIO — Matrice di Espansione Dinamica (Skill Hierarchy, 28/02/2026 — IMPLEMENTATA Hotfix 10.F):** Il DB fornisce SOLO il "Lead Role" base per ogni membro staff (es. RAF4, HYD). Il sistema applica una **Matrice di Ereditarietà** in memoria (`SKILL_MATRIX`) per calcolare la fungibilità nautica reale: RAF4 copre anche RAF3 (gerarchia verticale), HYD copre SH+SK (dipendenza orizzontale). La funzione `expand_roles(base_roles)` espande i ruoli base prima dell'intersezione con NAUTICAL_ROLES. Implementato su 4 file: `availability_engine.py` (Python: `SKILL_MATRIX` dict + `expand_roles()` globale + `_count_active_guides` aggiornato), `resource-store.js` (JS: `SKILL_MATRIX` + `expandRoles()` esportate globali + getter `riverGuides`/`totalDailyPool` aggiornati), `CrewBuilderPanel.vue` e `ResourcePanel.vue` (import `expandRoles`, chunk competenze aggiornato con `.has()`).
+
 **[SIGILLO FASE 10 — STABILE (28/02/2026 02:10)]**
 
 **FASE 10 STABILE (Il Mangiasoldi — Cassa & CRM)**
@@ -245,3 +261,25 @@ Nessun ordine commerciale può essere inviato a Supabase senza prima aver creato
 - Operazione Acchiappafantasmi: Blindatura form frontend + CRM obbligatorio backend + Kill-Switch Dogma 18. BUG ordini orfani RISOLTO.
 - Cura Allucinazioni Frontend: colonne rides corrette (date/time), created_at rimosso da transactions, campo note allineato.
 - Graffettatrice Vue: uid() di Quasar iniettato in INSERT transazioni. Corollario Dogma 18 sancito.
+- Operazione Cronografo: colonna `created_at` (TIMESTAMPTZ, DEFAULT now()) aggiunta alla tabella `transactions` in Supabase. Record storici retrodatati da `orders.created_at`. UI CassaPage.vue aggiornata con colonna data, ordinamento `created_at DESC` in Libro Mastro e Fascicolo Cliente.
+- **Hotfix 10.E — Allineamento Sensori e Data-Awareness (28/02/2026):**
+  - Operazione Disinfestazione: `is_guide` sostituito con intersezione deterministica `NAUTICAL_ROLES` in 4 punti (backend + 3 componenti frontend). Dogma 19 (Flat Role Fallacy) sancito.
+  - Date-Awareness Crew Builder: dropdown guide filtrate per contratto attivo (`contract_periods`) e assenze (`resource_exceptions`). Eliminato Bug Viaggi nel Tempo.
+  - Chiusura Leak NIMITZ in Modale: `ResourcePanel.vue` header conformato a Dogma 15 (nasconde denominatore se total_capacity >= 1000).
+  - Sincronizzazione Cromatica Timeline: blocchi Gantt mappati dinamicamente su engine_status (STATUS_COLOR_MAP). Eliminato Split-Brain cromatico in entrambe le viste (DISC + ROLE).
+  - Troncamento Calendario: limite visivo 5 mattoncini per cella + badge overflow "+ N altri".
+- **Hotfix 10.F — Skill Hierarchy Matrix (28/02/2026):**
+  - Backend: `SKILL_MATRIX` + `expand_roles()` + `NAUTICAL_ROLES` come costanti globali in `availability_engine.py`. `_count_active_guides` usa espansione gerarchica.
+  - Frontend Store: `SKILL_MATRIX` + `expandRoles()` esportate da `resource-store.js`. Getter `riverGuides` e `totalDailyPool` aggiornati con `.has()` su Set espanso.
+  - Frontend Panels: `CrewBuilderPanel.vue` e `ResourcePanel.vue` importano `expandRoles`. Chunk competenze aggiornato. Date-Awareness intatto.
+
+- **Fase 10.G — Activity-Aware Guide Filtering (01/03/2026):**
+  - Implementata funzione `isGuideEligibleForActivity(guideRoles, activityObj)` in `resource-store.js` con cascata decisionale a 3 livelli:
+    1. **Scudo Dogma 19 Assoluto:** intersezione `NAUTICAL_ROLES` con `expandRoles(guideRoles)`. Se la risorsa non possiede alcun brevetto nautico → scartata immediatamente (civile).
+    2. **Match Codice DB:** lookup in `ACTIVITY_REQUIREMENTS` (mappa sigle legacy AD/CL/SL/FA/HYD + codici fisici DB reali A1/C1/S1/F1/H1/PL). Se il codice ha un match, filtra per i brevetti specifici richiesti.
+    3. **Fallback Macro-Classe:** se il codice è sconosciuto, ricade su `activity_class` (HYDRO/HYDROSPEED → HYD/SH/SK/CB, RAFT/RAFTING → RAF4/RAF3). Ultima ratio: attività ignota ma guida nautica → ammessa.
+  - **Idratazione Difensiva Pinia:** `props.ride.activity` è spesso `undefined` (dato orfano). I componenti Vue (`CrewBuilderPanel.vue` e `ResourcePanel.vue`) eseguono un lookup nel catalogo Pinia: `props.ride?.activity || store.activities?.find(a => a.id === props.ride?.activity_id)` prima di passare l'oggetto attività alla funzione.
+  - Rimossa tutta la logica obsoleta di `currentActivityClass`, `validGuideRoles`, `HYDRO_GUIDE_ROLES`, `RAFT_GUIDE_ROLES` da `ResourcePanel.vue`.
+  - Rimosso troncamento calendario: `MAX_VISIBLE_RIDES` eliminato da `CalendarComponent.vue`. I box si espandono verticalmente per contenere tutte le attività.
+
+⚠️ **COROLLARIO DOGMA 19 — Estensione Comparto Terra (Marzo 2026):** È fatto DIVIETO ASSOLUTO di usare il booleano `is_driver` nel frontend per i filtri operativi del comparto logistico di terra. Un civile (segretaria, fotografo senza tag) con `is_driver=True` inquina i dropdown autisti, il pool navettisti e il conteggio \"Potenza di Fuoco\" mensile. **Regola aurea: l'unica fonte di verità per gli autisti è l'intersezione deterministica tra l'array `roles[]` dello staff e i tag `['N', 'C', 'F']`** (N=Navettista, C=Carrello, F=Fotografo). Applicato in 3 punti: `resource-store.js` (getter `shuttleDrivers` e `totalDailyPool.drivers`), `ResourcePanel.vue` (`filteredDriverOptions` + `DRIVER_ROLES` aggiornato a `['N', 'C', 'F']`). Scoperto e corretto nella sessione del 01/03/2026 (Operazione Estirpazione is_driver).
